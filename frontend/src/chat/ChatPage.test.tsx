@@ -67,6 +67,20 @@ describe('ChatPage', () => {
     )
   })
 
+  it('should send the chosen departure city with the request', async () => {
+    localStorage.setItem('1surak.departureCity', 'KZN')
+    streamReply([], { type: 'done', answer: 'Ок', chat_id: 'chat-1', title: 'Море' })
+    renderChat({ pathname: '/chat', state: { query: 'Хочу к морю' } })
+
+    await waitFor(() =>
+      expect(sendChatStream).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'Хочу к морю', origin: 'Казань' }),
+        expect.any(Function),
+        expect.anything(),
+      ),
+    )
+  })
+
   it('should show example trips in the empty state', () => {
     renderChat()
 

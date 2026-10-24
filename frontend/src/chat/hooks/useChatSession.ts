@@ -5,6 +5,7 @@ import type { ChatMeta, ChatStreamDone } from '@/types/api'
 import { addMyChat } from '@/chat/chatStorage'
 import { createTextPump } from '@/chat/textPump'
 import { applyTraceEvent, rehydrateTrace } from '@/chat/trace'
+import { getDepartureCity } from '@/lib/departureCity'
 import type { ChatLayoutContext, ChatTraceStep, WorkspaceChatMessage } from '@/chat/types'
 
 const MAX_RECENT_CHATS = 50
@@ -131,7 +132,7 @@ export function useChatSession(urlChatId: string | undefined) {
       const pump = createTextPump((shown) => patch({ content: shown }))
 
       sendChatStream(
-        { query, chat_id: run.chatId },
+        { query, chat_id: run.chatId, origin: getDepartureCity().name },
         (event) => {
           if (!isCurrent()) return
           if (event.type === 'assistant_token') {

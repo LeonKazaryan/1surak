@@ -35,7 +35,7 @@ async def _ndjson(events: AsyncIterator[dict]) -> AsyncIterator[bytes]:
 
 @router.post("/chat/stream")
 async def chat_stream(body: ChatRequest, sessionmaker: SessionFactory, llm: Llm) -> StreamingResponse:
-    events = service.stream_reply(sessionmaker, llm, str(body.chat_id or uuid4()), body.query)
+    events = service.stream_reply(sessionmaker, llm, str(body.chat_id or uuid4()), body.query, body.origin)
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 
 

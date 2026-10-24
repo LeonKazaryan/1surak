@@ -156,7 +156,7 @@ export function CardNav({
         className="relative block h-16 overflow-hidden rounded-2xl border border-border/70 p-0 shadow-md ring-1 ring-white/40 backdrop-blur-md will-change-[height]"
         style={{ backgroundColor: baseColor }}
       >
-        <div className="absolute inset-x-0 top-0 z-[2] flex h-16 items-center justify-between gap-3 px-4">
+        <div className="absolute inset-x-0 top-0 z-[2] flex h-16 items-center justify-between gap-3 px-4 max-sm:gap-2 max-sm:px-3">
           <Logo />
 
           <div className="flex items-center gap-2">

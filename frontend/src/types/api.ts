@@ -1,6 +1,7 @@
 export interface ChatRequest {
   query: string
   chat_id?: string
+  origin?: string
 }
 
 export interface ChatStreamDone {

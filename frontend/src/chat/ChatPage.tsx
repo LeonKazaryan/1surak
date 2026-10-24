@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { LogoMark } from '@/components/LogoMark'
+import { ScrollRow } from '@/components/ScrollRow'
 import { PageHeader, type Crumb } from '@/components/PageHeader'
 import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
@@ -159,7 +160,7 @@ export default function ChatPage() {
                 </h1>
               </div>
               {errorBanner}
-              <div className="flex flex-wrap justify-center gap-2">
+              <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
                 {EXAMPLE_TRIPS.map((trip) => (
                   <button
                     key={trip.label}
@@ -172,7 +173,7 @@ export default function ChatPage() {
                     {trip.label}
                   </button>
                 ))}
-              </div>
+              </ScrollRow>
               {composer}
               <p className="m-0 text-center text-sm leading-relaxed text-muted-foreground">{EMPTY_STATE_INTRO}</p>
             </div>

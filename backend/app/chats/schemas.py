@@ -4,13 +4,21 @@ from uuid import UUID
 from pydantic import BaseModel, StringConstraints
 
 MAX_QUERY_CHARS = 12_000
+MAX_ORIGIN_CHARS = 64
 
 Query = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUERY_CHARS)]
+Origin = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=MAX_ORIGIN_CHARS, pattern=r"^[^\x00-\x1f\x7f  ]+$"
+    ),
+]
 
 
 class ChatRequest(BaseModel):
     query: Query
     chat_id: UUID | None = None
+    origin: Origin | None = None
 
 
 class ChatMeta(BaseModel):

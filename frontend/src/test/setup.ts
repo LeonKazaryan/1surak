@@ -14,6 +14,8 @@ globalThis.IntersectionObserver = NoopObserver as unknown as typeof Intersection
 globalThis.ResizeObserver = NoopObserver as unknown as typeof ResizeObserver
 document.elementsFromPoint = () => []
 Element.prototype.scrollIntoView = () => {}
+Element.prototype.hasPointerCapture = () => false
+Element.prototype.releasePointerCapture = () => {}
 
 window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   matches: false,

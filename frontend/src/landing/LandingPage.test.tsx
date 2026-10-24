@@ -89,10 +89,17 @@ describe('LandingPage', () => {
     expect(sendChatStream).not.toHaveBeenCalled()
   })
 
-  it('should list all six tasks of the track', async () => {
+  it('should keep the hero intro to one short line', async () => {
     renderApp()
 
-    expect(await screen.findAllByTestId('brief-task')).toHaveLength(6)
+    expect(await screen.findByText('Напишите как есть, агент соберёт остальное.')).toBeInTheDocument()
+  })
+
+  it('should show how it works instead of the track task list', async () => {
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Как это работает' })).toBeInTheDocument()
+    expect(screen.queryByTestId('brief-task')).not.toBeInTheDocument()
   })
 
   it('should send unknown routes back to the landing page', async () => {

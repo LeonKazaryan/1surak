@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowRightIcon, XMarkIcon } from '@heroicons/react/20/solid'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { cn } from '@/components/ui/utils'
 
 interface TripPromptProps {
@@ -30,6 +31,7 @@ export function TripPrompt({ value, onChange, onSubmit }: TripPromptProps) {
           focused ? 'border-highlight/40 shadow-xl ring-4 ring-primary/25' : 'border-border hover:border-highlight/30 hover:shadow-md',
         )}
       >
+        <MagnifyingGlassIcon aria-hidden className="h-5 w-5 shrink-0 text-highlight" />
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}

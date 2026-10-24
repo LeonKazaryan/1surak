@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronLeftIcon, PlusIcon, TrashIcon } from '@heroicons/react/20/solid'
+import { Wordmark } from '@/components/Logo'
 import { LogoMark } from '@/components/LogoMark'
 import {
   Sidebar,
@@ -45,7 +46,7 @@ export function ChatSidebar({ recentChats, recentLoading, activeChatId, onDelete
                   <span className="flex size-8 shrink-0">
                     <LogoMark className="h-8 w-8" />
                   </span>
-                  <span className="text-[15px] font-semibold tracking-tight">1surak</span>
+                  <Wordmark />
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

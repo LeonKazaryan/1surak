@@ -29,7 +29,11 @@ def _final_answer(parts: list[str], failed: bool, finished: bool) -> str:
 
 
 async def stream_reply(
-    sessionmaker: async_sessionmaker[AsyncSession], llm: LLM, chat_id: str, query: str
+    sessionmaker: async_sessionmaker[AsyncSession],
+    llm: LLM,
+    chat_id: str,
+    query: str,
+    origin: str | None = None,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -42,7 +46,7 @@ async def stream_reply(
     trace: list[dict] = []
     failed = finished = False
     try:
-        async for event in agent.run(llm, [*history, {"role": "user", "content": query}]):
+        async for event in agent.run(llm, [*history, {"role": "user", "content": query}], origin):
             if event["type"] == "assistant_token":
                 answer_parts.append(event["text"])
             else:

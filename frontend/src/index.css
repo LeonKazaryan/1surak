@@ -42,6 +42,7 @@
 
 @theme inline {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-brand: "Unbounded", "Inter", sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -173,4 +174,20 @@
     animation: none;
     background: var(--skeleton);
   }
+}
+
+.scroll-row {
+  scrollbar-width: none;
+}
+.scroll-row::-webkit-scrollbar {
+  display: none;
+}
+.scroll-row[data-fade-start] {
+  mask-image: linear-gradient(to right, transparent, #000 2rem);
+}
+.scroll-row[data-fade-end] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+}
+.scroll-row[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }

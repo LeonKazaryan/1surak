@@ -1,22 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRightIcon } from '@heroicons/react/20/solid'
 import { CardNav, type CardNavItem } from '@/components/CardNav'
+import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { Footer } from '@/components/Footer'
 import { HeroBackground } from '@/components/HeroBackground'
+import { ScrollRow } from '@/components/ScrollRow'
 import { Reveal } from '@/components/Reveal'
 import { TextType } from '@/components/TextType'
-import { ScrollStack, ScrollStackItem } from '@/components/ui/ScrollStack'
+import { useSmoothScroll } from '@/hooks/use-smooth-scroll'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
-import {
-  HERO_HIGHLIGHTS,
-  HERO_PHRASES,
-  HERO_TITLE,
-  HERO_VIDEO_SRC,
-  STEPS,
-  TRACK_TASKS,
-} from './content'
+import { HERO_HIGHLIGHTS, HERO_PHRASES, HERO_TITLE, HERO_VIDEO_SRC } from './content'
 import { TripPrompt } from './TripPrompt'
+import { TripRoute } from './TripRoute'
 
 const NAV_ITEMS: CardNavItem[] = [
   {
@@ -28,37 +23,21 @@ const NAV_ITEMS: CardNavItem[] = [
       { label: 'Как это работает', href: '#how' },
     ],
   },
-  {
-    label: 'Трек',
-    bgColor: 'var(--secondary)',
-    textColor: 'var(--foreground)',
-    links: [{ label: 'Задачи трека', href: '#tasks' }],
-  },
 ]
 
 export default function LandingPage() {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
+  useSmoothScroll()
 
   const startChat = (query: string) => {
     const trimmed = query.trim()
     if (trimmed) navigate('/chat', { state: { query: trimmed } })
   }
 
-  const startButton = (
-    <button
-      type="button"
-      onClick={() => navigate('/chat')}
-      className="hidden h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover sm:inline-flex"
-    >
-      Начать
-      <ArrowRightIcon className="h-4 w-4" />
-    </button>
-  )
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <CardNav items={NAV_ITEMS} action={startButton} />
+      <CardNav items={NAV_ITEMS} action={<DepartureCityPicker />} />
 
       <section id="hero" className="relative isolate flex min-h-svh flex-col overflow-hidden">
         <HeroBackground videoSrc={HERO_VIDEO_SRC} />
@@ -79,8 +58,7 @@ export default function LandingPage() {
               </span>
             </h1>
             <p className="mx-auto mt-[clamp(0.75rem,2vh,1.5rem)] max-w-xl text-[clamp(1rem,1.6vw,1.375rem)] leading-relaxed text-muted-foreground">
-              Напишите как есть. Агент уточнит главное, подберёт направление, дорогу, отель и трансфер и соберёт
-              поездку.
+              Напишите как есть, агент соберёт остальное.
             </p>
           </Reveal>
 
@@ -88,8 +66,8 @@ export default function LandingPage() {
             <TripPrompt value={input} onChange={setInput} onSubmit={() => startChat(input)} />
           </Reveal>
 
-          <Reveal delay={230}>
-            <div className="flex flex-wrap justify-center gap-2">
+          <Reveal delay={230} className="self-stretch">
+            <ScrollRow label="Примеры поездок" className="-mx-4">
               {EXAMPLE_TRIPS.map((trip) => (
                 <button
                   key={trip.label}
@@ -100,53 +78,13 @@ export default function LandingPage() {
                   {trip.label}
                 </button>
               ))}
-            </div>
+            </ScrollRow>
           </Reveal>
         </div>
       </section>
 
-      <main className="flex-1 pb-20">
-        <section id="how" className="mx-auto w-full max-w-3xl scroll-mt-24 px-4">
-          <ScrollStack useWindowScroll rotationAmount={0.6} blurAmount={1.2}>
-            {STEPS.map(({ title, desc }, i) => (
-              <ScrollStackItem key={title}>
-                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-2xl font-semibold text-highlight tabular-nums">
-                  {i + 1}
-                </span>
-                <div className="mt-6 text-3xl font-semibold tracking-tight text-foreground">{title}</div>
-                <div className="mt-2 text-lg text-muted-foreground">{desc}</div>
-              </ScrollStackItem>
-            ))}
-          </ScrollStack>
-        </section>
-
-        <section id="tasks" className="mx-auto w-full max-w-5xl scroll-mt-24 px-4 pt-8">
-          <div className="text-center">
-            <span className="inline-block rounded-full bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-wider text-foreground">
-              Трек «О!дин запрос»
-            </span>
-            <h2 className="mt-3 text-[clamp(1.6rem,3vw,2.25rem)] font-semibold tracking-tight text-foreground">
-              Шесть задач, которые решает агент
-            </h2>
-            <p className="mx-auto mt-2 max-w-xl text-muted-foreground">
-              От размытого «хочу к морю» до собранной поездки с имитацией оплаты.
-            </p>
-          </div>
-          <ol className="mt-8 grid list-none gap-3 p-0 sm:grid-cols-2">
-            {TRACK_TASKS.map((task, i) => (
-              <li
-                key={task}
-                data-testid="brief-task"
-                className="flex gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground tabular-nums">
-                  {i + 1}
-                </span>
-                <span className="text-[15px] leading-relaxed text-foreground">{task}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
+      <main className="flex-1">
+        <TripRoute />
       </main>
 
       <Footer />
