@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, MetaData, Table, Text
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, MetaData, Table, Text, func
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -24,6 +24,36 @@ chat_messages = Table(
     Column("content", Text, nullable=False),
     Column("trace", JSON, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+
+facts = Table(
+    "facts",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("entity_type", Text, nullable=False),
+    Column("entity_id", Text, nullable=False),
+    Column("attribute", Text, nullable=False),
+    Column("period", Text),
+    Column("value", JSON, nullable=False),
+    Column("unit", Text),
+    Column("source", Text, nullable=False),
+    Column("source_url", Text),
+    Column("source_tier", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+    Column("valid_until", DateTime(timezone=True)),
+)
+
+# coalesce, because a unique index treats every NULL period as distinct
+Index(
+    "ux_facts_source_value",
+    facts.c.entity_type,
+    facts.c.entity_id,
+    facts.c.attribute,
+    func.coalesce(facts.c.period, ""),
+    facts.c.source,
+    unique=True,
 )
 
 

@@ -75,17 +75,13 @@ Stack is open, decide as a team: Python (FastAPI) fits Ostrovok's stack and juni
 
 ## Data sources
 
-| Need | Source | Real or mock | Key? | Notes |
-|---|---|---|---|---|
-| Destination catalogue | Hand-curated table of 40 to 60 places reachable from Russia: visa rule for a RU passport, sea/mountain/city, kid and pet tags, typical flight time | Curated (state it) | No | The agent's "brain" for inspiration. Use the Ostrovok homepage list as a hint |
-| Air temperature and climate | [Open-Meteo](https://open-meteo.com/) historical/climate API | **Real** | No | Snapshot monthly normals into the seed |
-| Sea temperature | Open-Meteo **Marine** API (`sea_surface_temperature`) | **Real** | No | The key fact behind «тёплое море» |
-| Flight prices | [Travelpayouts / Aviasales Data API](https://support.travelpayouts.com/hc/en-us/articles/203956163) `prices_for_dates` | **Real cached prices** | Free token | Snapshot for our origin and destination pairs. Schedules can be synthetic if missing |
-| Train schedules | [Yandex Rasp API](https://yandex.ru/dev/rasp/raspapi) | **Real schedules** | Free key | Prices synthetic. Requires the «Данные предоставлены сервисом Яндекс.Расписания» attribution |
-| Hotels | OpenStreetMap (Overpass): real hotel names, coordinates, sometimes stars | Real places + **synthetic** prices, rooms, policies | No | Needs ODbL attribution. Generate cancellation, meals, kids and pets attributes reproducibly from a seed |
-| Transfer time | OSRM / OpenRouteService routing from airport or station to hotel | **Real durations** | No / free | Price synthetic (per km) |
-| Exchange rates | CBR daily JSON | **Real** | No | For ₽ totals |
-| Payment and booking | Our mock checkout | Mock | No | Booking number + voucher page |
+The full research, with licences and links, is in [07-data-sources.md](./07-data-sources.md). How the facts join and how we check them is in [08-data-model.md](./08-data-model.md). The short version:
+
+- **Places:** Wikidata is the master id. Wikivoyage text gets embedded. GeoNames gives time zones and OurAirports gives airports.
+- **Weather:** Open-Meteo monthly normals. Sea temperature comes from Copernicus Marine, because Open-Meteo Marine only goes back to 2022.
+- **Getting there:** Travelpayouts cached prices and Yandex Schedules timetables run at runtime only (Yandex forbids storing), with a committed fallback. Flight time is estimated from distance.
+- **Hotels:** real places where the licence allows, with prices and availability synthetic but calibrated on real statistics, shaped like Ostrovok's own API.
+- **Calendar, visas, rates:** the official production calendar, a hand-checked visa table with dates, and CBR rates.
 
 **Don't use:** Amadeus Self-Service. It was shut down on 17 Jul 2026 and its keys no longer work ([PhocusWire](https://www.phocuswire.com/amadeus-shut-down-self-service-apis-portal-developers)).
 

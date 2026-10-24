@@ -37,6 +37,9 @@ All times are MSK (UTC+3). For Astana (UTC+5), add 2 hours.
 6. Do they prefer a web UI or a messenger bot for the "mobile" extra?
 7. How deep should post-purchase go to count?
 8. Any preferred response language or tone (formal «вы»)?
+9. **Data licences.** Rights in the submission pass to Ostrovok (rules 7.3 and 7.4). May we commit open data under share-alike licences (OpenStreetMap ODbL, Wikivoyage CC BY-SA) in separate files with their notices, or should hotels be fully synthetic? See [08](./08-data-model.md#licence-map).
+10. **Internet at judging.** Will the jury's machine have internet for optional live APIs (flight prices, timetables, rates), or should we assume offline except for the LLM?
+11. **Non-commercial data.** Is data whose free tier is non-commercial only (Open-Meteo) fine for the prototype?
 
 Write the answers into this file.
 

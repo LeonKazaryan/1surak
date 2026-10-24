@@ -26,8 +26,11 @@ Prize per track: **250k / 150k / 100k ₽** (after tax).
 4. [04-winning-strategy.md](./04-winning-strategy.md): thesis, differentiators, scope, architecture, data sources, risks
 5. [05-plan-and-checklists.md](./05-plan-and-checklists.md): day-by-day plan, expert questions, submission checklist, pitch
 6. [06-test-queries.md](./06-test-queries.md): the golden query plus 40+ jury-style test queries (the seed for our evals)
+7. [07-data-sources.md](./07-data-sources.md): every data source we researched, what to use, licences and links
+8. [08-data-model.md](./08-data-model.md): how the facts join (place → cost → availability → time), quality rules, what we embed
+9. [09-living-knowledge-base.md](./09-living-knowledge-base.md): the knowledge base the agent keeps growing with web search, its flexible entry shape, read and write rules
 
-Original texts: [source/](./source/). Those copies are verbatim. Everything outside `source/` is our analysis.
+Original texts: [source/](./source/). The Russian copies are verbatim, except that dashes became plain punctuation. Everything outside `source/` is our analysis.
 
 ## Do these first
 
