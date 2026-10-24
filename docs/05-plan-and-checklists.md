@@ -4,16 +4,16 @@ All times are MSK (UTC+3). For Astana (UTC+5), add 2 hours.
 
 ## Day by day
 
-| Day | Goal by end of day | Done when |
-|---|---|---|
-| **Sat 24 Oct** (today) | Track confirmed, org invite accepted, repo cloned. Stack and roles decided. Skeleton: `docker compose up` → UI on :8080, `/health`, CI build | A teammate on another laptop clones the repo and sees the empty UI |
-| **Sun 25 Oct**: expert day | Ask the expert questions (below). Agent loop with tool calling against seed data. Destination catalogue + climate/sea snapshot | The flagship query returns 3 grounded destinations with reasons |
-| **Mon 26 Oct** | Flights, trains, hotels, transfer tools. TripState. Connection validator. Cart + mock checkout. **The whole journey works end-to-end, however ugly** | The flagship query reaches a booking confirmation |
-| **Tue 27 Oct**: expert day | Show experts the working journey and write down every remark. Trip board UI, why/gave-up/risk cards, replan with a diff | «а если на два дня позже?» shows a correct diff |
-| **Wed 28 Oct** | Eval set + `make eval`. Hotel fit, memory, post-purchase basics, responsive layout. README, screenshots, video. **Fresh-clone test on a clean machine. Tag rehearsal** | README checklist below all green |
-| **Thu 29 Oct**, by **08:00** | Final push, then `git tag submission && git push origin submission`. Video link in the README, checked in incognito | The tag is visible on GitHub before 10:00 |
-| Thu 29 Oct after 19:00 | Finalist announcement. If we're in: rehearse the pitch 3× with a timer | |
-| **Fri 30 Oct 17:00** | Pitch: 5 + 5 min | |
+| Day                          | Goal by end of day                                                                                                                                                     | Done when                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Sat 24 Oct** (today)       | Track confirmed, org invite accepted, repo cloned. Stack and roles decided. Skeleton: `docker compose up` → UI on :8080, `/health`, CI build                           | A teammate on another laptop clones the repo and sees the empty UI |
+| **Sun 25 Oct**: expert day   | Ask the expert questions (below). Agent loop with tool calling against seed data. Destination catalogue + climate/sea snapshot                                         | The flagship query returns 3 grounded destinations with reasons    |
+| **Mon 26 Oct**               | Flights, trains, hotels, transfer tools. TripState. Connection validator. Cart + mock checkout. **The whole journey works end-to-end, however ugly**                   | The flagship query reaches a booking confirmation                  |
+| **Tue 27 Oct**: expert day   | Show experts the working journey and write down every remark. Trip board UI, why/gave-up/risk cards, replan with a diff                                                | «а если на два дня позже?» shows a correct diff                    |
+| **Wed 28 Oct**               | Eval set + `make eval`. Hotel fit, memory, post-purchase basics, responsive layout. README, screenshots, video. **Fresh-clone test on a clean machine. Tag rehearsal** | README checklist below all green                                   |
+| **Thu 29 Oct**, by **08:00** | Final push, then `git tag submission && git push origin submission`. Video link in the README, checked in incognito                                                    | The tag is visible on GitHub before 10:00                          |
+| Thu 29 Oct after 19:00       | Finalist announcement. If we're in: rehearse the pitch 3× with a timer                                                                                                 |                                                                    |
+| **Fri 30 Oct 17:00**         | Pitch: 5 + 5 min                                                                                                                                                       |                                                                    |
 
 **Freeze rule:** after 28 Oct 18:00 no new features, only fixes, README work and the video.
 
