@@ -1,6 +1,6 @@
 # Правила по технике
 
-> Verbatim copy, fetched 2026-10-24 from https://docs.ostrovok.tech/s/b9e6ec5e-5ad6-4091-9c85-a48eee9b21cc (revision 6). Source of truth is the link.
+> Copy fetched 2026-10-24 from https://docs.ostrovok.tech/s/b9e6ec5e-5ad6-4091-9c85-a48eee9b21cc (revision 6). Only the dashes were changed to plain punctuation. Source of truth is the link.
 
 # Общие правила
 
@@ -20,7 +20,7 @@
 
 
 :::warning
-В случае, если возникнут проблемы при локальной развёртке — мы не сможем убедиться в корректности вашего решения, проставить соответствующие баллы и оценить его.
+В случае, если возникнут проблемы при локальной развёртке, мы не сможем убедиться в корректности вашего решения, проставить соответствующие баллы и оценить его.
 
 :::
 
@@ -84,8 +84,8 @@ docker compose exec app bash -lc "python manage.py migrate && python manage.py l
 
 ## Маршруты/доступ
 
-- `/` — UI
-- `/health` — 200 OK, JSON `{ "status": "ok" }`
+- `/`: UI
+- `/health`: 200 OK, JSON `{ "status": "ok" }`
 - Тестовый пользователь: `admin / admin123` (если релевантно)
 
 ## Если нет веб-интерфейса
@@ -145,7 +145,7 @@ docker compose exec app bash -lc "python manage.py migrate && python manage.py l
 * **Логи**: приложение пишет в stdout/stderr; при docker compose logs app видно причины отказа.
 
 
-* **Сидирование/миграции**: автоматизируйте на старте контейнера или опишите 1–2 команды в README.
+* **Сидирование/миграции**: автоматизируйте на старте контейнера или опишите одну или две команды в README.
 
 
 * **Большие артефакты/модели**: не хранить в гите. Используйте OpenAI-совместимое API.

@@ -1,26 +1,23 @@
-import { MessageCircle, Route, Scale, type LucideIcon } from 'lucide-react'
-
 export const HERO_VIDEO_SRC = ''
 
-export const HERO_TITLE = 'Одно сообщение — вся поездка'
+export const HERO_TITLE = 'Вся поездка в одном сообщении'
 
 export const HERO_PHRASES = [
-  HERO_TITLE.replace(' —', '\u00a0—'),
+  'Вся поездка в одном сообщении',
   'Расскажите, куда хотите',
-  'Билеты, отель и трансфер в\u00a0одном плане',
+  'Билеты, отель и трансфер в одном плане',
 ]
-export const HERO_HIGHLIGHTS = ['вся поездка', 'куда хотите', 'в\u00a0одном плане']
+export const HERO_HIGHLIGHTS = ['Вся поездка', 'куда хотите', 'в одном плане']
 
 export interface Step {
-  Icon: LucideIcon
   title: string
   desc: string
 }
 
 export const STEPS: Step[] = [
-  { Icon: MessageCircle, title: 'Пишете как есть', desc: 'Одно сообщение вместо десяти вкладок с фильтрами' },
-  { Icon: Route, title: 'Агент собирает поездку', desc: 'Направление, дорога, отель и трансфер в одном плане' },
-  { Icon: Scale, title: 'Объясняет каждый выбор', desc: 'Почему этот вариант и чем пришлось пожертвовать' },
+  { title: 'Пишете как есть', desc: 'Одно сообщение вместо десяти вкладок с фильтрами' },
+  { title: 'Агент собирает поездку', desc: 'Направление, дорога, отель и трансфер в одном плане' },
+  { title: 'Объясняет каждый выбор', desc: 'Почему этот вариант и чем пришлось пожертвовать' },
 ]
 
 export const TRACK_TASKS = [

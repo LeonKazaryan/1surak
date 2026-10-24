@@ -8,13 +8,13 @@ Build a working prototype of an AI agent that turns one vague message («к тё
 
 ## Key dates (MSK = UTC+3; Astana = MSK+2)
 
-| When (MSK)                 | What                                                                                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Sun 25 Oct                 | Expert Q&A #1. Take the questions in [05](./05-plan-and-checklists.md#questions-for-the-experts-25-oct-most-important-first) |
-| Tue 27 Oct                 | Expert Q&A #2. Show them a working journey                                                                                   |
-| **Thu 29 Oct 10:00**       | **Deadline:** `submission` tag on the last main commit, plus the video link in the README                                    |
-| Thu 29 Oct after 19:00     | Finalists announced (up to 10)                                                                                               |
-| **Fri 30 Oct 17:00–19:00** | Final pitch: 5 min + 5 min Q&A                                                                                               |
+| When (MSK)                    | What                                                                                                                         |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| Sun 25 Oct                    | Expert Q&A #1. Take the questions in [05](./05-plan-and-checklists.md#questions-for-the-experts-25-oct-most-important-first) |
+| Tue 27 Oct                    | Expert Q&A #2. Show them a working journey                                                                                   |
+| **Thu 29 Oct 10:00**          | **Deadline:** `submission` tag on the last main commit, plus the video link in the README                                    |
+| Thu 29 Oct after 19:00        | Finalists announced (up to 10)                                                                                               |
+| **Fri 30 Oct 17:00 to 19:00** | Final pitch: 5 min + 5 min Q&A                                                                                               |
 
 Prize per track: **250k / 150k / 100k ₽** (after tax).
 

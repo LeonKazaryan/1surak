@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeftIcon } from '@heroicons/react/20/solid'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,11 +10,13 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 
 export interface Crumb {
   label: string
   href?: string
+  pending?: boolean
 }
 
 interface PageHeaderProps {
@@ -36,7 +38,7 @@ export function PageHeader({ breadcrumb, headerRight }: PageHeaderProps) {
           to={parent.href!}
           className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground md:hidden"
         >
-          <ChevronLeft className="h-4 w-4 shrink-0" />
+          <ChevronLeftIcon className="h-4 w-4 shrink-0" />
           <span className="truncate">{parent.label}</span>
         </Link>
       ) : (
@@ -50,7 +52,14 @@ export function PageHeader({ breadcrumb, headerRight }: PageHeaderProps) {
             return (
               <Fragment key={`${crumb.label}-${i}`}>
                 <BreadcrumbItem className={last ? 'min-w-0' : undefined}>
-                  {last || !crumb.href ? (
+                  {crumb.pending ? (
+                    <>
+                      <Skeleton data-testid="title-skeleton" aria-hidden className="h-4 w-40" />
+                      <span role="status" className="sr-only">
+                        Загрузка
+                      </span>
+                    </>
+                  ) : last || !crumb.href ? (
                     <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink asChild>

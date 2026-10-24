@@ -33,7 +33,7 @@ describe('LandingPage', () => {
   it('should state the product promise in the main heading', async () => {
     renderApp()
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Одно сообщение — вся поездка' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Вся поездка в одном сообщении' })).toBeInTheDocument()
   })
 
   it('should open a chat and send the typed trip description', async () => {
@@ -98,6 +98,6 @@ describe('LandingPage', () => {
   it('should send unknown routes back to the landing page', async () => {
     renderApp('/nope')
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Одно сообщение — вся поездка' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Вся поездка в одном сообщении' })).toBeInTheDocument()
   })
 })

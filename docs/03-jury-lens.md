@@ -39,7 +39,7 @@ The experts named on the site are Владимир Симонов (Senior Engine
 |---|---|---|---|
 | 1 | **Full journey works**, from first message to fake purchase | 20% | Any reasonable query reaches checkout in ≤6 turns, with no dead ends |
 | 2 | **Agent acts** (tools, state, plan), not chat retelling | 15% | Visible plan board, cart and timeline that the agent fills and changes |
-| 3 | **Clarification quality** | 10% | 0–2 blocking questions, assumptions shown and editable |
+| 3 | **Clarification quality** | 10% | At most 2 blocking questions, assumptions shown and editable |
 | 4 | **Comparison and explanation**: why, what we gave up, risks | 15% | Criteria change with the user. Every pick has why, trade-off and risk. The user can correct the logic |
 | 5 | **Connection checks** in the trip assembly | 10% | Deterministic timeline checks with clear warnings and fixes |
 | 6 | **Replanning** without starting from scratch | 10% | A change touches only what it must, and we show "what changed" with the price delta |
@@ -65,7 +65,7 @@ The experts named on the site are Владимир Симонов (Senior Engine
 2. **The agent catches a trap they planted.** "You land at 23:40 and reception closes at 23:00. I added a transfer and pre-paid late check-in. Or take the 14:10 flight for +3 200 ₽?"
 3. **The agent says no, honestly.** «Мальдивы на неделю за 30 000 на двоих» → "Not realistic, flights alone are from ~X ₽. Here's the warmest sea within your budget: …"
 4. **Numbers from our own evals.** One slide: "On 40 test queries: 92% reached checkout, 1.2 questions on average, 7 s to the first recommendation, 0 connection errors."
-5. **The hotel's side.** «Этот отель — adults only, поэтому я его исключил».
+5. **The hotel's side.** «Этот отель только для взрослых, поэтому я его исключил».
 
 ## Likely Q&A questions and how we answer them
 

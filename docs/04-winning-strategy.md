@@ -11,8 +11,8 @@ That one idea covers the brief's main demand («агент, который де�
 | # | Differentiator | Covers task | Why the jury cares |
 |---|---|---|---|
 | A | **Trip board UI**: chat on the left, live plan on the right (stacked on mobile) | 2, 3, 5 | Shows action instead of retelling |
-| B | **Assume, show, ask at most once.** Fill gaps with sensible defaults shown as editable chips («Вылет: Москва ✎», «Ребёнок: 2–11 лет ✎»). Ask only what blocks the next step, and still show options in the same turn | 1 | Hits «не анкета» precisely, and time to first recommendation stays low |
-| C | **Why / what we gave up / risk** on every card, plus a list of **excluded options and why** («Таиланд — 9–10 ч, а вы просили без долгих перелётов») | 2, 4 | Transparent logic the user can correct |
+| B | **Assume, show, ask at most once.** Fill gaps with sensible defaults shown as editable chips («Вылет: Москва ✎», «Ребёнок: от 2 до 11 лет ✎»). Ask only what blocks the next step, and still show options in the same turn | 1 | Hits «не анкета» precisely, and time to first recommendation stays low |
+| C | **Why / what we gave up / risk** on every card, plus a list of **excluded options and why** («Таиланд: около 10 часов в пути, а вы просили без долгих перелётов») | 2, 4 | Transparent logic the user can correct |
 | D | **Deterministic connection checker.** Code checks landing + transfer time against check-in, checkout against departure, night arrivals, child, pet and visa rules. It shows green, yellow or red with a suggested fix | 5 | Correctness the LLM can't fake. Engineers love it |
 | E | **Replan as a diff.** The plan is structured state, and a change re-runs only the affected tools. Shows "what changed" and the price delta | 6 | Proves "not from scratch" |
 | F | **Hotel fit** comes from the user's profile (kids, pet, quiet, beach type), including honest mismatches | 3, hotel story | The user story most teams will skip |
@@ -31,7 +31,7 @@ That one idea covers the brief's main demand («агент, который де�
 - Hotel fit and exclusions (F), the eval harness plus a metrics table (G), provenance badges (H).
 - A responsive layout, which counts as the "mobile version" extra at almost no cost.
 - Post-purchase basics: "can I check in early?" and "add a transfer to my booking", reusing the same tools on the confirmed booking.
-- Memory: a profile saved per user (SQLite) and reused next session («в прошлый раз вы ездили с ребёнком 5 лет — снова так?»).
+- Memory: a profile saved per user (SQLite) and reused next session («в прошлый раз вы ездили с ребёнком 5 лет. Снова так?»).
 
 **Could (only if Must and Should are solid by 28 Oct midday):**
 - A Telegram bot over the same agent API.
@@ -77,7 +77,7 @@ Stack is open, decide as a team: Python (FastAPI) fits Ostrovok's stack and juni
 
 | Need | Source | Real or mock | Key? | Notes |
 |---|---|---|---|---|
-| Destination catalogue | Hand-curated table of 40–60 places reachable from Russia: visa rule for a RU passport, sea/mountain/city, kid and pet tags, typical flight time | Curated (state it) | No | The agent's "brain" for inspiration. Use the Ostrovok homepage list as a hint |
+| Destination catalogue | Hand-curated table of 40 to 60 places reachable from Russia: visa rule for a RU passport, sea/mountain/city, kid and pet tags, typical flight time | Curated (state it) | No | The agent's "brain" for inspiration. Use the Ostrovok homepage list as a hint |
 | Air temperature and climate | [Open-Meteo](https://open-meteo.com/) historical/climate API | **Real** | No | Snapshot monthly normals into the seed |
 | Sea temperature | Open-Meteo **Marine** API (`sea_surface_temperature`) | **Real** | No | The key fact behind «тёплое море» |
 | Flight prices | [Travelpayouts / Aviasales Data API](https://support.travelpayouts.com/hc/en-us/articles/203956163) `prices_for_dates` | **Real cached prices** | Free token | Snapshot for our origin and destination pairs. Schedules can be synthetic if missing |

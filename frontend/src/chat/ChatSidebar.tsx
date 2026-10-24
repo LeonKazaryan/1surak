@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeftIcon, PlusIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { LogoMark } from '@/components/LogoMark'
 import {
   Sidebar,
@@ -16,17 +16,19 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import type { ChatMeta } from '@/types/api'
+import { RecentChatsSkeleton } from './components/ChatSkeletons'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 
 const UNTITLED = 'Новый чат'
 
 interface ChatSidebarProps {
   recentChats: ChatMeta[]
+  recentLoading: boolean
   activeChatId: string | null
   onDeleteChat: (chatId: string) => void
 }
 
-export function ChatSidebar({ recentChats, activeChatId, onDeleteChat }: ChatSidebarProps) {
+export function ChatSidebar({ recentChats, recentLoading, activeChatId, onDeleteChat }: ChatSidebarProps) {
   const { pathname } = useLocation()
   const { setOpenMobile } = useSidebar()
   const [deleteTarget, setDeleteTarget] = useState<ChatMeta | null>(null)
@@ -56,7 +58,7 @@ export function ChatSidebar({ recentChats, activeChatId, onDeleteChat }: ChatSid
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={pathname === '/chat'} tooltip="Новый чат">
                   <Link to="/chat" onClick={closeOnMobile}>
-                    <Plus />
+                    <PlusIcon />
                     <span>Новый чат</span>
                   </Link>
                 </SidebarMenuButton>
@@ -64,28 +66,32 @@ export function ChatSidebar({ recentChats, activeChatId, onDeleteChat }: ChatSid
             </SidebarMenu>
           </SidebarGroup>
 
-          {recentChats.length > 0 && (
+          {(recentLoading || recentChats.length > 0) && (
             <SidebarGroup>
               <SidebarGroupLabel>Недавние</SidebarGroupLabel>
-              <SidebarMenu>
-                {recentChats.map((chat) => (
-                  <SidebarMenuItem key={chat.id}>
-                    <SidebarMenuButton asChild isActive={chat.id === activeChatId} title={chat.title ?? UNTITLED}>
-                      <Link to={`/chat/${chat.id}`} onClick={closeOnMobile}>
-                        <span>{chat.title ?? UNTITLED}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                    <SidebarMenuAction
-                      showOnHover
-                      aria-label="Удалить чат"
-                      onClick={() => setDeleteTarget(chat)}
-                      className="hover:bg-danger-soft hover:text-danger"
-                    >
-                      <Trash2 />
-                    </SidebarMenuAction>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
+              {recentLoading ? (
+                <RecentChatsSkeleton />
+              ) : (
+                <SidebarMenu>
+                  {recentChats.map((chat) => (
+                    <SidebarMenuItem key={chat.id}>
+                      <SidebarMenuButton asChild isActive={chat.id === activeChatId} title={chat.title ?? UNTITLED}>
+                        <Link to={`/chat/${chat.id}`} onClick={closeOnMobile}>
+                          <span>{chat.title ?? UNTITLED}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      <SidebarMenuAction
+                        showOnHover
+                        aria-label="Удалить чат"
+                        onClick={() => setDeleteTarget(chat)}
+                        className="hover:bg-danger-soft hover:text-danger"
+                      >
+                        <TrashIcon />
+                      </SidebarMenuAction>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              )}
             </SidebarGroup>
           )}
         </SidebarContent>
@@ -95,7 +101,7 @@ export function ChatSidebar({ recentChats, activeChatId, onDeleteChat }: ChatSid
             <SidebarMenuItem>
               <SidebarMenuButton asChild className="text-muted-foreground">
                 <Link to="/" onClick={closeOnMobile}>
-                  <ChevronLeft />
+                  <ChevronLeftIcon />
                   <span>На главную</span>
                 </Link>
               </SidebarMenuButton>

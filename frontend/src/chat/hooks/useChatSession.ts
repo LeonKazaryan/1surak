@@ -177,5 +177,7 @@ export function useChatSession(urlChatId: string | undefined) {
     [isLoading, navigate, setActiveChatId, setMessages, setRecentChats, urlChatId],
   )
 
-  return { messages: chatMessages, send, isLoading, error, streamingId, chatTitle, chatLoading }
+  // The URL changes one render before the load effect runs; without this the old chat flashes.
+  const switching = Boolean(urlChatId) && urlChatId !== activeChatId
+  return { messages: chatMessages, send, isLoading, error, streamingId, chatTitle, chatLoading: chatLoading || switching }
 }

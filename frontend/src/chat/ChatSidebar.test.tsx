@@ -45,6 +45,31 @@ beforeEach(() => {
 })
 
 describe('ChatSidebar', () => {
+  it('should show placeholder rows while recent chats load', async () => {
+    let resolve!: (value: { items: typeof chats }) => void
+    vi.mocked(client.fetchChats).mockReturnValue(new Promise((r) => (resolve = r)))
+    renderLayout()
+
+    expect(sidebar().getByTestId('recent-chats-skeleton')).toBeInTheDocument()
+    resolve({ items: chats })
+    expect(await sidebar().findByText('Казань')).toBeInTheDocument()
+    expect(sidebar().queryByTestId('recent-chats-skeleton')).not.toBeInTheDocument()
+  })
+
+  it('should drop the placeholder rows when recent chats fail to load', async () => {
+    vi.mocked(client.fetchChats).mockRejectedValue(new Error('offline'))
+    renderLayout()
+
+    await waitFor(() => expect(sidebar().queryByTestId('recent-chats-skeleton')).not.toBeInTheDocument())
+  })
+
+  it('should not show placeholder rows when no chats are saved', () => {
+    localStorage.clear()
+    renderLayout()
+
+    expect(sidebar().queryByTestId('recent-chats-skeleton')).not.toBeInTheDocument()
+  })
+
   it('should list recent chats in the stored order', async () => {
     renderLayout()
 

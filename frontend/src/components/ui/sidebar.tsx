@@ -1,6 +1,5 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { PanelLeftIcon } from "lucide-react"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -238,6 +237,15 @@ function Sidebar({
         </div>
       </div>
     </div>
+  )
+}
+
+function PanelLeftIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.75" y="3.25" width="14.5" height="13.5" rx="2.25" />
+      <path d="M7.5 3.25v13.5" />
+    </svg>
   )
 }
 

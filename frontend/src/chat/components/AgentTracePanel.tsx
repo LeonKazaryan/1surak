@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { AlertCircle, Check, ChevronRight } from 'lucide-react'
+import { CheckIcon } from '@heroicons/react/16/solid'
+import { ChevronRightIcon, ExclamationCircleIcon } from '@heroicons/react/20/solid'
 import { LogoMark } from '@/components/LogoMark'
 import type { ChatTraceStep } from '../types'
 
@@ -10,12 +11,12 @@ interface AgentTracePanelProps {
 
 function StepIcon({ step }: { step: ChatTraceStep }) {
   if (step.kind === 'error') {
-    return <AlertCircle className="mt-[3px] h-3.5 w-3.5 shrink-0 text-danger" aria-hidden />
+    return <ExclamationCircleIcon className="mt-[3px] h-3.5 w-3.5 shrink-0 text-danger" aria-hidden />
   }
   if (step.status === 'done') {
     return (
       <span className="mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        <Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />
+        <CheckIcon className="h-2.5 w-2.5" aria-hidden />
       </span>
     )
   }
@@ -82,7 +83,7 @@ export function AgentTracePanel({ steps, isStreaming }: AgentTracePanelProps) {
     >
       <summary className="-mx-2 flex list-none items-center gap-2 rounded-lg px-2 py-1 transition-colors select-none hover:bg-secondary [&::-webkit-details-marker]:hidden">
         <LogoMark className={`h-7 w-7 shrink-0 ${isStreaming ? 'animate-logo-pulse' : ''}`} />
-        <ChevronRight
+        <ChevronRightIcon
           className="h-4 w-4 text-faint transition-transform duration-200 group-open/trace:rotate-90"
           aria-hidden
         />

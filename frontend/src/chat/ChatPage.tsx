@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
-import { Route } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
 import { PageHeader, type Crumb } from '@/components/PageHeader'
+import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
 import { AgentTracePanel } from './components/AgentTracePanel'
+import { MessagesSkeleton } from './components/ChatSkeletons'
 import { Composer } from './components/Composer'
 import { MessageContent } from './components/MessageContent'
 import { TripPlanPanel } from './components/TripPlanPanel'
@@ -44,7 +45,7 @@ interface PlanToggleProps {
 function PlanToggle({ open, onToggle }: PlanToggleProps) {
   return (
     <Button variant="outline" size="sm" onClick={onToggle} aria-pressed={open} className="rounded-lg bg-card">
-      <Route className="text-highlight" />
+      <MapIcon className="text-highlight" />
       <span className="whitespace-nowrap">{open ? 'Скрыть план' : 'План поездки'}</span>
     </Button>
   )
@@ -81,6 +82,7 @@ export default function ChatPage() {
   const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading } = useChatSession(chatId)
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const busy = isLoading || chatLoading
   const panel = useResizablePanel({ storageKey: 'chat.planPanelWidth', min: 300, max: 560, initial: 380 })
 
   useEffect(() => {
@@ -99,15 +101,17 @@ export default function ChatPage() {
   }, [location.state, location.pathname, navigate, send])
 
   const submit = (text: string = input) => {
-    if (!text.trim() || isLoading) return
+    if (!text.trim() || busy) return
     setInput('')
     send(text)
   }
   const togglePlan = () => setPlanPanelOpen((v) => !v)
-  const breadcrumb: Crumb[] = messages.length
-    ? [{ label: 'Чаты', href: '/chat' }, { label: chatTitle ?? 'Новый чат' }]
-    : [{ label: 'Новый чат' }]
-  const composer = <Composer value={input} onChange={setInput} onSubmit={() => submit()} disabled={isLoading} />
+  const breadcrumb: Crumb[] = chatLoading
+    ? [{ label: 'Чаты', href: '/chat' }, { label: 'Загрузка', pending: true }]
+    : messages.length
+      ? [{ label: 'Чаты', href: '/chat' }, { label: chatTitle ?? 'Новый чат' }]
+      : [{ label: 'Новый чат' }]
+  const composer = <Composer value={input} onChange={setInput} onSubmit={() => submit()} disabled={busy} />
   const errorBanner = error && (
     <div
       role="alert"
@@ -122,27 +126,29 @@ export default function ChatPage() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <PageHeader breadcrumb={breadcrumb} headerRight={<PlanToggle open={planPanelOpen} onToggle={togglePlan} />} />
 
-        {messages.length > 0 ? (
+        {chatLoading || messages.length > 0 ? (
           <>
-            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
-              <div className="flex min-h-full flex-col justify-end pt-4 pb-6">
-                <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 max-md:px-4">
-                  {errorBanner}
-                  {messages.map((m) => (
-                    <MessageBubble key={m.id} message={m} isStreaming={streamingId === m.id} />
-                  ))}
-                  <div ref={messagesEndRef} />
+            {chatLoading ? (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <MessagesSkeleton />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
+                <div className="flex min-h-full flex-col justify-end pt-4 pb-6">
+                  <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 max-md:px-4">
+                    {errorBanner}
+                    {messages.map((m) => (
+                      <MessageBubble key={m.id} message={m} isStreaming={streamingId === m.id} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
             <div className="shrink-0 px-6 pt-2 pb-5 max-md:px-4">
               <div className="mx-auto max-w-[720px]">{composer}</div>
             </div>
           </>
-        ) : chatLoading ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center">
-            <LogoMark className="h-12 w-12 animate-logo-pulse" />
-          </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-6 pb-16 max-md:px-4">
             <div className="flex w-full max-w-[min(92vw,44rem)] flex-col gap-5">

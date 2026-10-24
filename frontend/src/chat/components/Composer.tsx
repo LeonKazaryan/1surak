@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp } from 'lucide-react'
+import { ArrowUpIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 
 export const MAX_CHAT_INPUT_CHARS = 12_000
@@ -57,7 +57,7 @@ export function Composer({ value, onChange, onSubmit, disabled }: ComposerProps)
           aria-label="Отправить"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary-hover disabled:bg-secondary disabled:text-faint"
         >
-          <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+          <ArrowUpIcon className="h-4 w-4" />
         </button>
       </div>
       <p className="m-0 text-center text-[11px] text-faint">

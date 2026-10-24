@@ -9,13 +9,13 @@ This is our seed for the eval set (extra task 3) and our rehearsal list. The que
 **What a winning run looks like.** All numbers below are illustrative. The real ones must come from our tools.
 
 1. **Turn 1, first answer in under 10 s.**
-   - Chips: `Ноябрь 2026` · `Море ≥ 24 °C` · `2 взрослых + 1 ребёнок` · `Перелёт ≤ 5–6 ч` · `Бюджет: недорого (≈ до N ₽) ✎` · `Вылет: Москва (предположение) ✎`.
+   - Chips: `Ноябрь 2026` · `Море ≥ 24 °C` · `2 взрослых + 1 ребёнок` · `Перелёт до 6 ч` · `Бюджет: недорого (≈ до N ₽) ✎` · `Вылет: Москва (предположение) ✎`.
    - **One** question: «Сколько лет ребёнку и из какого города летите? Пока считаю для Москвы».
    - The same turn already shows 3 destinations with reasons: sea temperature, flight time, visa rule for a RU passport, price from…
      - Hurghada: sea about 26 °C, about 5 h, cheapest all-inclusive.
      - UAE: about 27 °C, no visa, but pricier.
-     - Antalya: shortest flight, but the sea is only about 21–22 °C. Say "warm" is a stretch.
-   - **Excluded, with the reason:** Thailand and Vietnam ("9–10 h, and you asked for no long flights"), Sochi ("sea about 15 °C").
+     - Antalya: shortest flight, but the sea is only about 21 to 22 °C. Say "warm" is a stretch.
+   - **Excluded, with the reason:** Thailand and Vietnam ("9 to 10 h, and you asked for no long flights"), Sochi ("sea about 15 °C").
 2. **Turn 2:** «сыну 5, летим из Казани». The agent updates two chips and re-runs only flights and prices (it doesn't start over). It shows a comparison of 3 hotels on what matters here: total for 7 nights, meals, sandy beach entry, kids club, cancellation terms, transfer minutes. Every card has why / what we gave up / risk. An adults-only hotel is excluded and labelled as such.
 3. **Turn 3:** the user picks a hotel. The timeline is built and **the validator catches problems.** Landing at 10:05 + a 25-min transfer against a 14:00 check-in gives ⚠ 3.5 h of waiting, with fixes offered: an early check-in request / a later flight. Checkout at 12:00 against a 23:30 departure gives ⚠ an 11 h gap, with a late checkout offered. Then the cart total and the fake checkout, ending in a booking number and a voucher.
 4. **Turn 4:** «а если на два дня позже?» The agent shows a diff: dates +2, the flight swapped, the hotel kept, the early check-in no longer needed, +X ₽.
@@ -29,9 +29,9 @@ This is our seed for the eval set (extra task 3) and our rehearsal list. The que
 - «посоветуй тёплое место на зимние каникулы, у нас двое детей 3 и 8 лет»
 
 ### 2. Concrete (it shouldn't ask anything, just act)
-- «Казань, 14–16 ноября, двое взрослых, отель в центре до 8 000 за ночь»
+- «Казань, с 14 по 16 ноября, двое взрослых, отель в центре до 8 000 за ночь»
 - «Санкт-Петербург на поезде из Москвы в пятницу вечером, обратно в воскресенье»
-- «командировка в Новосибирск 3–5 декабря, отель рядом с Академгородком, нужны закрывающие документы»
+- «командировка в Новосибирск с 3 по 5 декабря, отель рядом с Академгородком, нужны закрывающие документы»
 
 ### 3. Special constraints
 - «едем с собакой 25 кг, на машине нельзя»

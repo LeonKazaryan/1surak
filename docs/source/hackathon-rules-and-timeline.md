@@ -15,7 +15,7 @@ Taken from [the hackathon site](https://ostrovok.tech/hackathon/) and the offici
 | **29 Oct 10:00** | Thu | **Submissions close** (rules 3.9). Git tag `submission` goes on the last commit of the main branch |
 | 29 Oct 10:00 → 30 Oct 12:00 | | Jury scores *every* submission and picks **up to 10** finalists (the rules don't say whether that's per track or overall) |
 | 29 Oct after 19:00 | Thu | Finalists announced |
-| **30 Oct 17:00–19:00** | Fri | **Final pitch: 5 min presentation + 5 min jury Q&A.** The jury may revise scores based on the pitch |
+| **30 Oct 17:00 to 19:00** | Fri | **Final pitch: 5 min presentation + 5 min jury Q&A.** The jury may revise scores based on the pitch |
 | 30 Oct after 19:30 | Fri | Award ceremony (online) |
 
 Astana is UTC+5, so 10:00 MSK is 12:00 Astana time and 17:00 MSK is 19:00 Astana time.
@@ -32,7 +32,7 @@ Each track has its own podium. The amounts are paid **after tax**.
 
 A team splits a prize: either one member receives all of it, or it's divided equally. To get paid you need a ruble account in a Russian or a European bank (rules 4.6).
 
-## Judging (rules 3.7–3.9)
+## Judging (rules 3.7 to 3.9)
 
 - The criteria "are formed in closed expert sessions" and are **not published** (3.8). We reverse-engineer them in [03-jury-lens.md](../03-jury-lens.md).
 - Two stages: first every repo is scored, then the top ≤10 pitch live and can be re-scored.
@@ -43,10 +43,10 @@ A team splits a prize: either one member receives all of it, or it's divided equ
 
 | Rule | What it means for us |
 |---|---|
-| 6.5(4)–(5): no third-party images, personal data or IP | Don't scrape hotel photos from Ostrovok or Booking. Use licensed images with attribution (Wikimedia, Unsplash) or none. OSM data needs an attribution line |
+| 6.5(4) and 6.5(5): no third-party images, personal data or IP | Don't scrape hotel photos from Ostrovok or Booking. Use licensed images with attribution (Wikimedia, Unsplash) or none. OSM data needs an attribution line |
 | 6.6: don't use organizer resources for unrelated purposes | Don't scrape ostrovok.ru |
 | 7.1: don't share the task text with third parties without permission | Keep these docs inside the team repo |
-| 7.3–7.4: **the exclusive rights to the submitted solution pass to Ostrovok** | Don't put in code we can't give away (employer code, paid templates). Ostrovok may legally reuse our ideas, which is part of why they run this |
+| 7.3 and 7.4: **the exclusive rights to the submitted solution pass to Ostrovok** | Don't put in code we can't give away (employer code, paid templates). Ostrovok may legally reuse our ideas, which is part of why they run this |
 | 2.3: the organizer may advertise vacancies to participants | This doubles as hiring. Clean engineering gets noticed |
 | 9.3: the rules can change; participants must re-read them daily | Watch the Telegram channel |
 

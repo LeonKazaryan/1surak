@@ -5,12 +5,8 @@ import { deleteChat, fetchChats } from '@/api/client'
 import type { ChatMeta } from '@/types/api'
 import { getMyChats, removeMyChat } from './chatStorage'
 import { ChatSidebar } from './ChatSidebar'
+import { readSidebarOpen } from './sidebarCookie'
 import type { ChatLayoutContext, WorkspaceChatMessage } from './types'
-
-function readSidebarOpen(): boolean {
-  const match = document.cookie.match(/(?:^|;\s*)sidebar_state=([^;]+)/)
-  return match ? match[1] === 'true' : true
-}
 
 function inStoredOrder(items: ChatMeta[], ids: string[]): ChatMeta[] {
   const order = new Map(ids.map((id, i) => [id, i]))
@@ -24,6 +20,7 @@ export default function ChatLayout() {
   const [planPanelOpen, setPlanPanelOpen] = useState(false)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [recentChats, setRecentChats] = useState<ChatMeta[]>([])
+  const [recentLoading, setRecentLoading] = useState(() => getMyChats().length > 0)
 
   useEffect(() => {
     const ids = getMyChats()
@@ -31,6 +28,7 @@ export default function ChatLayout() {
     fetchChats(ids)
       .then(({ items }) => setRecentChats(inStoredOrder(items, ids)))
       .catch(() => setRecentChats([]))
+      .finally(() => setRecentLoading(false))
   }, [])
 
   const handleDeleteChat = useCallback(
@@ -57,7 +55,12 @@ export default function ChatLayout() {
 
   return (
     <SidebarProvider defaultOpen={readSidebarOpen()} className="h-svh overflow-hidden">
-      <ChatSidebar recentChats={recentChats} activeChatId={activeChatId} onDeleteChat={handleDeleteChat} />
+      <ChatSidebar
+        recentChats={recentChats}
+        recentLoading={recentLoading}
+        activeChatId={activeChatId}
+        onDeleteChat={handleDeleteChat}
+      />
       <SidebarInset className="min-w-0 overflow-hidden">
         <Outlet context={ctx} />
       </SidebarInset>

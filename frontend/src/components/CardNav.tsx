@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRightIcon } from "@heroicons/react/20/solid";
 import { gsap } from "gsap";
 
 import { Logo } from "./Logo";
@@ -211,7 +211,7 @@ export function CardNav({
                         : "bg-white/70 shadow-sm hover:bg-white"
                     }`}
                   >
-                    <ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden />
+                    <ArrowUpRightIcon className="h-4 w-4 shrink-0" />
                     {lnk.label}
                   </button>
                 ))}

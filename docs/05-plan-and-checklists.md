@@ -17,7 +17,7 @@ All times are MSK (UTC+3). For Astana (UTC+5), add 2 hours.
 
 **Freeze rule:** after 28 Oct 18:00 no new features, only fixes, README work and the video.
 
-## Roles (for 3–5 people, adjust to the team)
+## Roles (for 3 to 5 people, adjust to the team)
 
 | Role | Owns |
 |---|---|
@@ -60,15 +60,15 @@ Write the answers into this file.
 
 | Time | Content |
 |---|---|
-| 0:00–0:30 | Problem in one line plus the three stakeholders. "One message → whole trip bought." |
-| 0:30–3:15 | **Live demo** of the flagship query: chips → destinations with the excluded ones → hotel comparison → timeline with a caught connection problem → cart → checkout. Then one replan: «а если на два дня позже?» → diff |
-| 3:15–4:15 | How it works: one architecture slide (LLM decides / code computes), the eval numbers, the real-vs-mock table |
-| 4:15–5:00 | Value for Ostrovok (bundle = average check, fewer drop-offs), for the hotel (fit = fewer cancellations), and what we'd build next |
+| 0:00 to 0:30 | Problem in one line plus the three stakeholders. "One message → whole trip bought." |
+| 0:30 to 3:15 | **Live demo** of the flagship query: chips → destinations with the excluded ones → hotel comparison → timeline with a caught connection problem → cart → checkout. Then one replan: «а если на два дня позже?» → diff |
+| 3:15 to 4:15 | How it works: one architecture slide (LLM decides / code computes), the eval numbers, the real-vs-mock table |
+| 4:15 to 5:00 | Value for Ostrovok (bundle = average check, fewer drop-offs), for the hotel (fit = fewer cancellations), and what we'd build next |
 
 Backup: if the live demo hangs for more than 10 s, switch to the recorded video at the same timestamp without comment.
 
 For the Q&A, prepare answers to the table in [03-jury-lens.md](./03-jury-lens.md#likely-qa-questions-and-how-we-answer-them).
 
-## Video (mandatory, 3–5 min)
+## Video (mandatory, 3 to 5 min)
 
 Same story as the pitch, recorded from `localhost:8080` after a fresh `docker compose up`. Show the terminal command at the start, because it proves it runs locally. Add Russian captions or a voice-over, and show at least 2 different queries plus one replan.

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, Sparkles, X } from 'lucide-react'
+import { ArrowRightIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 
 interface TripPromptProps {
@@ -30,7 +30,6 @@ export function TripPrompt({ value, onChange, onSubmit }: TripPromptProps) {
           focused ? 'border-highlight/40 shadow-xl ring-4 ring-primary/25' : 'border-border hover:border-highlight/30 hover:shadow-md',
         )}
       >
-        <Sparkles className="h-5 w-5 shrink-0 text-highlight" aria-hidden />
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -48,7 +47,7 @@ export function TripPrompt({ value, onChange, onSubmit }: TripPromptProps) {
             onClick={() => onChange('')}
             className="flex shrink-0 items-center justify-center rounded-full bg-secondary p-1 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" />
           </button>
         )}
         <button
@@ -57,7 +56,7 @@ export function TripPrompt({ value, onChange, onSubmit }: TripPromptProps) {
           className="flex min-h-[38px] shrink-0 items-center rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover sm:px-5"
         >
           <span className="hidden sm:inline">Спланировать</span>
-          <ArrowRight className="h-4 w-4 sm:hidden" aria-hidden />
+          <ArrowRightIcon className="h-4 w-4 sm:hidden" aria-hidden />
         </button>
       </form>
     </div>

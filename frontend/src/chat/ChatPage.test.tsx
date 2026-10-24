@@ -115,6 +115,29 @@ describe('ChatPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось получить ответ')
   })
 
+  it('should show placeholders for the title and messages while a saved chat loads', async () => {
+    let resolveMessages!: (value: Awaited<ReturnType<typeof client.fetchChatMessages>>) => void
+    vi.mocked(client.fetchChatMeta).mockResolvedValue({
+      id: 'c1',
+      title: 'Море в ноябре',
+      created_at: '2026-10-24T10:00:00Z',
+      updated_at: '2026-10-24T10:00:00Z',
+    })
+    vi.mocked(client.fetchChatMessages).mockReturnValue(new Promise((r) => (resolveMessages = r)))
+    renderChat('/chat/c1')
+
+    expect(await screen.findByTestId('messages-skeleton')).toBeInTheDocument()
+    expect(screen.getByTestId('title-skeleton')).toBeInTheDocument()
+    resolveMessages({
+      messages: [
+        { id: 'm1', chat_id: 'c1', role: 'user', content: 'Хочу к морю', trace: [], created_at: '2026-10-24T10:00:00Z' },
+      ],
+    })
+    expect(await screen.findByText('Хочу к морю')).toBeInTheDocument()
+    expect(screen.queryByTestId('messages-skeleton')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('title-skeleton')).not.toBeInTheDocument()
+  })
+
   it('should load a saved chat from the URL with its agent steps', async () => {
     vi.mocked(client.fetchChatMeta).mockResolvedValue({
       id: 'c1',
@@ -144,6 +167,45 @@ describe('ChatPage', () => {
     expect(screen.getByText('Хочу к морю')).toBeInTheDocument()
     expect(screen.getByText('Ищу направления')).toBeInTheDocument()
     expect(screen.getAllByText('Море в ноябре').length).toBeGreaterThan(0)
+  })
+
+  it('should not send a message while a saved chat is still loading', async () => {
+    vi.mocked(client.fetchChatMeta).mockReturnValue(new Promise(() => {}))
+    vi.mocked(client.fetchChatMessages).mockReturnValue(new Promise(() => {}))
+    renderChat('/chat/c1')
+
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Сообщение агенту' }), 'Хочу к морю{Enter}')
+
+    expect(sendChatStream).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Отправить' })).toBeDisabled()
+  })
+
+  it('should show placeholders instead of the previous chat while switching chats', async () => {
+    const meta = (id: string, title: string) => ({
+      id,
+      title,
+      created_at: '2026-10-24T10:00:00Z',
+      updated_at: '2026-10-24T10:00:00Z',
+    })
+    localStorage.setItem('1surak.myChats', JSON.stringify(['b']))
+    vi.mocked(client.fetchChats).mockResolvedValue({ items: [meta('b', 'Казань')] })
+    vi.mocked(client.fetchChatMeta).mockImplementation(async (id) => (id === 'a' ? meta('a', 'Море') : meta('b', 'Казань')))
+    vi.mocked(client.fetchChatMessages).mockImplementation((id) =>
+      id === 'a'
+        ? Promise.resolve({
+            messages: [
+              { id: 'a-m', chat_id: 'a', role: 'assistant' as const, content: 'Ответ про море', trace: [], created_at: '2026-10-24T10:00:00Z' },
+            ],
+          })
+        : new Promise(() => {}),
+    )
+    renderChat('/chat/a')
+    expect(await screen.findByText('Ответ про море')).toBeInTheDocument()
+
+    await userEvent.click(within(screen.getByTestId('chat-sidebar')).getByRole('link', { name: 'Казань' }))
+
+    expect(await screen.findByTestId('messages-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText('Ответ про море')).toBeNull()
   })
 
   it('should keep the chat opened last when an earlier chat finishes loading late', async () => {

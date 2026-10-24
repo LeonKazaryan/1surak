@@ -4,7 +4,7 @@ import { MessageContent } from './MessageContent'
 
 describe('MessageContent', () => {
   it('should render markdown lists, headings and emphasis', () => {
-    render(<MessageContent text={'## Варианты\n\n- **Хургада** — *море 26 °C*\n- Дубай\n\n1. Первый\n\n`код`'} />)
+    render(<MessageContent text={'## Варианты\n\n- **Хургада**: *море 26 °C*\n- Дубай\n\n1. Первый\n\n`код`'} />)
 
     expect(screen.getByRole('heading', { name: 'Варианты' })).toBeInTheDocument()
     expect(screen.getAllByRole('listitem')).toHaveLength(3)

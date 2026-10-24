@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRightIcon } from '@heroicons/react/20/solid'
 import { CardNav, type CardNavItem } from '@/components/CardNav'
 import { Footer } from '@/components/Footer'
 import { HeroBackground } from '@/components/HeroBackground'
@@ -52,7 +52,7 @@ export default function LandingPage() {
       className="hidden h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover sm:inline-flex"
     >
       Начать
-      <ArrowRight className="h-4 w-4" aria-hidden />
+      <ArrowRightIcon className="h-4 w-4" />
     </button>
   )
 
@@ -108,10 +108,10 @@ export default function LandingPage() {
       <main className="flex-1 pb-20">
         <section id="how" className="mx-auto w-full max-w-3xl scroll-mt-24 px-4">
           <ScrollStack useWindowScroll rotationAmount={0.6} blurAmount={1.2}>
-            {STEPS.map(({ Icon, title, desc }) => (
+            {STEPS.map(({ title, desc }, i) => (
               <ScrollStackItem key={title}>
-                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent">
-                  <Icon className="h-8 w-8 text-highlight" />
+                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-2xl font-semibold text-highlight tabular-nums">
+                  {i + 1}
                 </span>
                 <div className="mt-6 text-3xl font-semibold tracking-tight text-foreground">{title}</div>
                 <div className="mt-2 text-lg text-muted-foreground">{desc}</div>
