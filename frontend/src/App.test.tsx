@@ -1,7 +1,16 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as client from '@/api/client'
 import { AppRoutes } from './App'
+
+vi.mock('@/api/client', () => ({
+  sendChatStream: vi.fn(),
+  fetchChats: vi.fn(),
+  fetchChatMeta: vi.fn(),
+  fetchChatMessages: vi.fn(),
+  deleteChat: vi.fn(),
+}))
 
 function renderAt(path: string) {
   return render(
@@ -13,23 +22,36 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   localStorage.clear()
+  vi.mocked(client.fetchChats).mockReturnValue(new Promise(() => {}))
+  vi.mocked(client.fetchChatMeta).mockReturnValue(new Promise(() => {}))
+  vi.mocked(client.fetchChatMessages).mockReturnValue(new Promise(() => {}))
 })
 
 describe('AppRoutes', () => {
-  it('should show a landing skeleton while the landing page code loads', async () => {
+  it('should render the landing text right away, with no placeholders', () => {
     renderAt('/')
 
-    expect(screen.getByTestId('landing-skeleton')).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { level: 1, name: 'Вся поездка в одном сообщении' })).toBeInTheDocument()
-    expect(screen.queryByTestId('landing-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Вся поездка в одном сообщении' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Опишите поездку' })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="skeleton"]')).toBeNull()
   })
 
-  it('should show a chat skeleton while the chat code loads', async () => {
+  it('should render the empty chat screen right away, with no placeholders', () => {
     renderAt('/chat')
 
-    expect(screen.getByTestId('chat-skeleton')).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { level: 1, name: 'Куда отправимся?' })).toBeInTheDocument()
-    expect(screen.queryByTestId('chat-skeleton')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('chat-page-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Куда отправимся?' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="skeleton"]')).toBeNull()
+  })
+
+  it('should keep the header and composer real while a saved chat loads', () => {
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1']))
+    renderAt('/chat/c1')
+
+    expect(screen.getByRole('button', { name: 'План поездки' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Новый чат' })).toBeInTheDocument()
+    expect(screen.getByTestId('messages-skeleton')).toBeInTheDocument()
+    expect(screen.getByTestId('recent-chats-skeleton')).toBeInTheDocument()
   })
 })

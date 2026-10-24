@@ -54,7 +54,9 @@ export function PageHeader({ breadcrumb, headerRight }: PageHeaderProps) {
                 <BreadcrumbItem className={last ? 'min-w-0' : undefined}>
                   {crumb.pending ? (
                     <>
-                      <Skeleton data-testid="title-skeleton" aria-hidden className="h-4 w-40" />
+                      <div data-testid="title-skeleton" aria-hidden className="skeleton-reveal">
+                        <Skeleton className="h-4 w-40" />
+                      </div>
                       <span role="status" className="sr-only">
                         Загрузка
                       </span>

@@ -5,8 +5,12 @@ import { deleteChat, fetchChats } from '@/api/client'
 import type { ChatMeta } from '@/types/api'
 import { getMyChats, removeMyChat } from './chatStorage'
 import { ChatSidebar } from './ChatSidebar'
-import { readSidebarOpen } from './sidebarCookie'
 import type { ChatLayoutContext, WorkspaceChatMessage } from './types'
+
+function readSidebarOpen(): boolean {
+  const match = document.cookie.match(/(?:^|;\s*)sidebar_state=([^;]+)/)
+  return match ? match[1] === 'true' : true
+}
 
 function inStoredOrder(items: ChatMeta[], ids: string[]): ChatMeta[] {
   const order = new Map(ids.map((id, i) => [id, i]))
