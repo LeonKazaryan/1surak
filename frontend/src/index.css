@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #f8f8f7;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --primary: #adef81;
+  --primary-foreground: #0f172a;
+  --primary-hover: #98e066;
+  --highlight: #0a40d1;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #475569;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --faint: #94a3b8;
+  --faintest: #cbd5e1;
+  --inset: #f8f8f7;
+  --muted-foreground: #64748b;
+  --accent: #effbe6;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --border: #e2e8f0;
+  --input: transparent;
+  --input-background: #f8f8f7;
+  --ring: #0a40d1;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #adef81;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #effbe6;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #0a40d1;
+}
+
+@theme inline {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-highlight: var(--highlight);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-faint: var(--faint);
+  --color-faintest: var(--faintest);
+  --color-inset: var(--inset);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+@keyframes logo-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.14); opacity: 0.85; }
+}
+.animate-logo-pulse {
+  animation: logo-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes prep-answer-text {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.animate-prep-answer-text {
+  animation: prep-answer-text 2.4s ease-in-out infinite;
+}
+
+@keyframes prep-dot-wave {
+  0%, 80%, 100% { opacity: 0.15; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.prep-dot {
+  display: inline-block;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+  animation: prep-dot-wave 1.15s ease-in-out infinite;
+}
+.prep-dot:nth-child(2) { animation-delay: 0.18s; }
+.prep-dot:nth-child(3) { animation-delay: 0.36s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
