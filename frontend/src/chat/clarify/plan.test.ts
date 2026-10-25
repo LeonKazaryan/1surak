@@ -1,31 +1,54 @@
 import { describe, expect, it } from 'vitest'
-import type { ClarifyEvent, ClarifyPrefill } from '@/types/api'
-import { knownFacts, planCards } from './plan'
+import type { ClarifyEvent, ClarifyPrefill, ClarifySlot } from '@/types/api'
+import { buildSteps, knownFacts, partyOptions, progressAt, type StepState } from './plan'
 
 const EMPTY: ClarifyPrefill = { kinds: [], month: null, nights: null, adults: null, children: null, children_ages: [], budget_level: null }
+const NOTHING_PICKED: StepState = { party: null, ages: [] }
 
-function event(slots: ClarifyEvent['questions'][number]['slot'][], prefill: Partial<ClarifyPrefill> = {}): ClarifyEvent {
-  return { type: 'clarify', questions: slots.map((slot) => ({ slot, title: 'x' })), prefill: { ...EMPTY, ...prefill } }
+function event(slots: ClarifySlot[], prefill: Partial<ClarifyPrefill> = {}): ClarifyEvent {
+  return { type: 'clarify', questions: slots.map((slot) => ({ slot, title: 'x', hint: `про ${slot}` })), prefill: { ...EMPTY, ...prefill } }
 }
 
-describe('planCards', () => {
+const keys = (e: ClarifyEvent, state: StepState = NOTHING_PICKED) => buildSteps(e, state).map((s) => s.key)
+
+describe('buildSteps', () => {
   it('should not ask again for the month the user already named', () => {
-    const [when] = planCards(event(['when'], { month: 11 }))
-
-    expect(when).toMatchObject({ title: 'На сколько ночей?', askMonth: false, askNights: true })
+    expect(keys(event(['when'], { month: 11 }))).toEqual(['nights'])
+    expect(keys(event(['when']))).toEqual(['month', 'nights'])
   })
 
-  it('should ask for both parts of the dates when nothing is known', () => {
-    const [when] = planCards(event(['when']))
-
-    expect(when).toMatchObject({ title: 'Когда и на сколько?', askMonth: true, askNights: true })
+  it('should put the agent hint on the first tap of a question only', () => {
+    expect(buildSteps(event(['when']), NOTHING_PICKED).map((s) => s.hint)).toEqual(['про when', null])
   })
 
-  it('should only ask the age when the party is known but a child has none', () => {
-    const [travelers] = planCards(event(['travelers'], { adults: 2, children: 2 }))
+  it('should grow the travellers question with the taps: kids, then an age per child', () => {
+    const e = event(['travelers', 'budget'])
 
-    expect(travelers).toMatchObject({ title: 'Сколько лет детям?', askCounts: false })
-    expect(planCards(event(['travelers'], { children: 1 }))[0]).toMatchObject({ title: 'Кто едет?', askCounts: true })
+    expect(keys(e)).toEqual(['party', 'budget'])
+    expect(keys(e, { party: 'kids', ages: [] })).toEqual(['party', 'kids', 'budget'])
+    expect(keys(e, { party: 'kids', ages: [null, null] })).toEqual(['party', 'kids', 'age-0', 'age-1', 'budget'])
+    expect(keys(e, { party: 'group', ages: [] })).toEqual(['party', 'adults', 'budget'])
+  })
+
+  it('should only ask the ages when the party is known from the message', () => {
+    const steps = buildSteps(event(['travelers'], { adults: 2, children: 2, children_ages: [7] }), { party: null, ages: [7, null] })
+
+    expect(steps.map((s) => [s.key, s.title])).toEqual([['age-1', 'Сколько лет второму ребёнку?']])
+  })
+
+  it('should move the plane forward with every tap, never back', () => {
+    const slots: ClarifySlot[] = ['travelers', 'budget']
+    const steps = buildSteps(event(slots), { party: 'kids', ages: [null] })
+
+    expect(steps.map((_, i) => progressAt(steps, i, slots))).toEqual([0, 1 / 6, 1 / 3, 0.5])
+  })
+})
+
+describe('partyOptions', () => {
+  it('should offer only the adults when the kids are already known', () => {
+    expect(partyOptions({ ...EMPTY, children: 1 })).toEqual(['oneAdult', 'twoAdults'])
+    expect(partyOptions({ ...EMPTY, children: 0 })).toEqual(['solo', 'couple', 'group'])
+    expect(partyOptions(EMPTY)).toEqual(['solo', 'couple', 'kids', 'group'])
   })
 })
 

@@ -44,7 +44,7 @@ class BriefPatch(BaseModel):
         max_length=10,
         description="Only wishes the fields above cannot hold, in the user's words: 'без долгих перелётов', "
         "'всё включено', 'с собакой'. Never repeat budget ('недорого'), party ('с ребёнком'), "
-        "kind of trip ('тёплое море') or dates.",
+        "kind of trip ('тёплое море'), dates or the departure city.",
     )
 
 

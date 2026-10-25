@@ -31,11 +31,17 @@ LLMEvent = TextDelta | ToolCall
 
 
 class LLM(Protocol):
-    def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]: ...
+    def stream(
+        self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
+    ) -> AsyncIterator[LLMEvent]:
+        """`tool_choice` names a tool the model must call this time."""
+        ...
 
 
 class StubLLM:
-    async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
+    async def stream(
+        self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
+    ) -> AsyncIterator[LLMEvent]:
         for token in re.findall(r"\S+\s*", STUB_REPLY):
             await asyncio.sleep(STUB_TOKEN_DELAY_S)
             yield TextDelta(token)
@@ -54,10 +60,14 @@ class OpenAICompatibleLLM:
     def model(self) -> str:
         return self._model
 
-    async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
+    async def stream(
+        self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
+    ) -> AsyncIterator[LLMEvent]:
         kwargs: dict[str, Any] = {"model": self._model, "messages": messages, "stream": True}
         if tools:  # some providers reject an empty tools list
             kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = {"type": "function", "function": {"name": tool_choice}}
         response = await self._client.chat.completions.create(**kwargs)
 
         # Tool calls arrive in fragments keyed by index; they are only usable once complete.

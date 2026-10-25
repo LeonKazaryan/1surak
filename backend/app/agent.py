@@ -65,7 +65,8 @@ REPLY_CHECKLIST = (
     "Перед ответом проверь: 1) цифры и факты только из результатов инструментов; "
     "2) если использовал research, в конце блок «Источники:» со ссылками; "
     "3) даты, состав и бюджет уточняй только карточками ask_user и только один раз: если уточнение уже было, "
-    "не спрашивай снова, а назови допущения."
+    "не спрашивай снова, а назови допущения; "
+    "4) найденные через search_destinations места показывай вызовом show_destinations, не списком в тексте."
 )
 ENGLISH_NOTE = (
     "The user writes in English. Write the whole answer in English, including place names and the facts "
@@ -150,6 +151,8 @@ async def run(
     language = _language_note(turns)
     checklist = [{"role": "system", "content": REPLY_CHECKLIST}]
     said_something = False
+    owed: str | None = None  # a call the model still has to make before answering (Tool.then)
+    force: str | None = None
 
     for round_index in range(MAX_TOOL_ROUNDS + 1):
         last_round = round_index == MAX_TOOL_ROUNDS
@@ -161,7 +164,9 @@ async def run(
         # Short text is held back until we know whether tool calls follow it: then it is a step, not the answer.
         streaming = False
         async for event in llm.stream(
-            [*messages, *(checklist if round_index else []), *language], None if last_round else specs
+            [*messages, *(checklist if round_index else []), *language],
+            None if last_round else specs,
+            None if last_round else force,
         ):
             if isinstance(event, TextDelta):
                 text_parts.append(event.text)
@@ -174,8 +179,14 @@ async def run(
             elif isinstance(event, ToolCall):
                 calls.append(event)
         text = "".join(text_parts)
+        force = None
+        # The model answers in words while it still owes a call (found places, showed none): its words become
+        # a step, and the next round makes the call. Once, so a refusing model cannot loop.
+        insist = bool(owed) and not calls and not last_round
         if text.strip() and not streaming:
-            if not calls or last_round:
+            if insist:
+                yield {"type": "assistant_note", "text": text.strip()}
+            elif not calls or last_round:
                 streaming = True
                 for token in _tokens(text_parts, said_something):
                     yield token
@@ -183,6 +194,11 @@ async def run(
                 yield {"type": "assistant_note", "text": text.strip()}
         said_something = said_something or streaming
 
+        if insist:
+            if text.strip():
+                messages.append({"role": "assistant", "content": text})
+            force, owed = owed, None
+            continue
         if not calls or last_round:
             return
 
@@ -197,6 +213,11 @@ async def run(
             result = await tools.execute(call.name, call.arguments)
             yield {"type": "tool_end", "name": call.name, "output_preview": result.preview, "ok": result.ok}
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
+            tool = tools.get(call.name)
+            if call.name == owed:
+                owed = None
+            if result.ok and tool and tool.then and tools.get(tool.then):
+                owed = tool.then
             if result.text:
                 separator = "\n\n" if said_something else ""
                 yield {"type": "assistant_token", "text": separator + result.text}

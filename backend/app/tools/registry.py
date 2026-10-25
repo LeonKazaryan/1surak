@@ -28,6 +28,8 @@ class Tool:
     args: type[BaseModel]
     handler: Callable[[Any], Awaitable[Any]]
     preview: Callable[[Any], str] | None = None
+    # A tool the model must call after this one before it answers, e.g. show the places it found as cards.
+    then: str | None = None
 
     def spec(self) -> dict:
         return {

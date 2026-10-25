@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import type { BriefAnswers, ClarifyEvent, ClarifySlot, TripKind } from '@/types/api'
+import type { Party } from './plan'
+
+const PARTY_ADULTS: Record<Party, number> = { solo: 1, couple: 2, kids: 2, group: 3, oneAdult: 1, twoAdults: 2 }
 
 /** The answers being picked on the cards. Starts from what the agent already understood. */
 export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
   const [kinds, setKinds] = useState<TripKind[]>(prefill.kinds)
   const [month, setMonth] = useState<number | null>(prefill.month)
   const [nights, setNights] = useState<[number, number] | null>(prefill.nights)
+  const [party, setParty] = useState<Party | null>(null)
   const [adults, setAdults] = useState(prefill.adults ?? 2)
   const [ages, setAges] = useState<(number | null)[]>(() =>
     Array.from({ length: prefill.children ?? 0 }, (_, i) => prefill.children_ages[i] ?? null),
@@ -13,10 +17,13 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
   const [level, setLevelState] = useState<number | null>(prefill.budget_level)
   const [total, setTotalState] = useState<number | null>(null)
 
+  const knowsParty = prefill.adults !== null || party !== null
+  const knowsKids = party !== 'kids' || ages.length > 0
   const answered: Record<ClarifySlot, boolean> = {
     vibe: kinds.length > 0,
     when: month !== null && nights !== null,
-    travelers: adults >= 1 && ages.every((a) => a !== null),
+    // a default of two adults is not an answer: only what was tapped or said counts
+    travelers: knowsParty && knowsKids && ages.every((a) => a !== null),
     budget: total !== null || level !== null,
   }
 
@@ -47,12 +54,21 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
     setMonth,
     nights,
     setNights,
+    party,
     adults,
     setAdults,
     ages,
     setAges,
     level,
     total,
+    choose: (picked: Party) => {
+      setParty(picked)
+      setAdults(PARTY_ADULTS[picked])
+      // with the kids known from the message they stay; otherwise «С детьми» asks how many next
+      if (!prefill.children) setAges([])
+    },
+    setKids: (count: number) => setAges(Array(count).fill(null)),
+    setAge: (child: number, age: number) => setAges((prev) => prev.map((a, i) => (i === child ? age : a))),
     // a level and a custom sum exclude each other
     setLevel: (value: number) => {
       setLevelState(value)

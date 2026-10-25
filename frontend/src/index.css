@@ -206,6 +206,7 @@
   to { transform: translate(8px, 14px); }
 }
 .art-snow { animation: art-snow 3.6s ease-in-out infinite alternate; }
+.art-still * { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   *,

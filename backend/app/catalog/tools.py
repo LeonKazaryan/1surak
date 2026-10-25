@@ -70,6 +70,7 @@ def catalog_tools(
             args=SearchQuery,
             handler=search_destinations,
             preview=_search_preview,
+            then="show_destinations",
         ),
         Tool(
             name="get_destination",

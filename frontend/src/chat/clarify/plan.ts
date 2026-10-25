@@ -1,12 +1,11 @@
 import type { ClarifyEvent, ClarifyPrefill, ClarifySlot } from '@/types/api'
 import { BUDGET_OPTIONS, KIND_OPTIONS, MONTHS, nightsLabel, plural } from '../widgets'
 
-/** One card of the deck: which parts of its question are still unknown, so nothing is asked twice. */
+/** One question of the agent: which parts of it are still unknown, so nothing is asked twice. */
 export interface CardPlan {
   slot: ClarifySlot
-  title: string
   hint?: string | null
-  /** Short name on the progress trail. */
+  /** Short name of the question, for the chat chip. */
   label: string
   askMonth: boolean
   askNights: boolean
@@ -18,25 +17,92 @@ export function planCards({ questions, prefill }: ClarifyEvent): CardPlan[] {
     const base = { slot: q.slot, hint: q.hint, askMonth: false, askNights: false, askCounts: false }
     switch (q.slot) {
       case 'vibe':
-        return { ...base, title: 'Какой отдых хочется?', label: 'Отдых', hint: q.hint || 'Можно выбрать несколько' }
+        return { ...base, label: 'Отдых' }
       case 'when': {
         const knowsMonth = prefill.month !== null
         const knowsNights = prefill.nights !== null
-        const askMonth = !knowsMonth || knowsNights
-        const askNights = !knowsNights || knowsMonth
-        const title = askMonth && askNights ? 'Когда и на сколько?' : askMonth ? 'В каком месяце?' : 'На сколько ночей?'
-        return { ...base, title, label: 'Даты', askMonth, askNights }
+        return { ...base, label: 'Даты', askMonth: !knowsMonth || knowsNights, askNights: !knowsNights || knowsMonth }
       }
-      case 'travelers': {
-        const askCounts = prefill.adults === null
-        const kids = prefill.children ?? 0
-        const title = askCounts ? 'Кто едет?' : kids > 1 ? 'Сколько лет детям?' : 'Сколько лет ребёнку?'
-        return { ...base, title, label: 'Кто едет', askCounts }
-      }
+      case 'travelers':
+        return { ...base, label: 'Кто едет', askCounts: prefill.adults === null }
       case 'budget':
-        return { ...base, title: 'Какой бюджет?', label: 'Бюджет' }
+        return { ...base, label: 'Бюджет' }
     }
   })
+}
+
+/** Who travels, picked with one tap; the ones with children know the kids from the message already. */
+export type Party = 'solo' | 'couple' | 'kids' | 'group' | 'oneAdult' | 'twoAdults'
+
+export function partyOptions(prefill: ClarifyPrefill): Party[] {
+  if (prefill.children) return ['oneAdult', 'twoAdults']
+  return prefill.children === 0 ? ['solo', 'couple', 'group'] : ['solo', 'couple', 'kids', 'group']
+}
+
+export type StepKind = 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'budget'
+
+/** One tap of the deck. A question can take a few: «С детьми» adds «Сколько детей?» and an age per child. */
+export interface Step {
+  key: string
+  kind: StepKind
+  slot: ClarifySlot
+  title: string
+  hint?: string | null
+  child?: number
+}
+
+export interface StepState {
+  party: Party | null
+  ages: (number | null)[]
+}
+
+const ORDINALS = ['первому', 'второму', 'третьему', 'четвёртому', 'пятому']
+
+function ageTitle(child: number, kids: number): string {
+  return kids > 1 ? `Сколько лет ${ORDINALS[child] ?? `${child + 1}-му`} ребёнку?` : 'Сколько лет ребёнку?'
+}
+
+export function buildSteps(event: ClarifyEvent, state: StepState): Step[] {
+  const { prefill } = event
+  const steps: Step[] = []
+  for (const plan of planCards(event)) {
+    const first = steps.length
+    const add = (step: Omit<Step, 'slot' | 'hint'>) =>
+      steps.push({ ...step, slot: plan.slot, hint: steps.length === first ? plan.hint : null })
+    switch (plan.slot) {
+      case 'vibe':
+        add({ key: 'vibe', kind: 'vibe', title: 'Какой отдых хочется?' })
+        break
+      case 'when':
+        if (plan.askMonth) add({ key: 'month', kind: 'month', title: 'В каком месяце?' })
+        if (plan.askNights) add({ key: 'nights', kind: 'nights', title: 'На сколько ночей?' })
+        break
+      case 'travelers':
+        if (plan.askCounts) {
+          add({ key: 'party', kind: 'party', title: 'Кто едет?' })
+          if (state.party === 'kids') add({ key: 'kids', kind: 'kids', title: 'Сколько детей?' })
+          if (state.party === 'group') add({ key: 'adults', kind: 'adults', title: 'Сколько взрослых?' })
+        }
+        state.ages.forEach((_, child) => {
+          if (prefill.children_ages[child] === undefined) {
+            add({ key: `age-${child}`, kind: 'age', child, title: ageTitle(child, state.ages.length) })
+          }
+        })
+        break
+      case 'budget':
+        add({ key: 'budget', kind: 'budget', title: 'Какой бюджет?' })
+        break
+    }
+  }
+  return steps
+}
+
+/** How far the plane has flown at this step: whole questions done plus the share of the current one. */
+export function progressAt(steps: Step[], index: number, slots: ClarifySlot[]): number {
+  const step = steps[index]
+  if (!step || !slots.length) return 0
+  const ofSlot = steps.filter((s) => s.slot === step.slot)
+  return (slots.indexOf(step.slot) + ofSlot.indexOf(step) / ofSlot.length) / slots.length
 }
 
 /** What the agent already understood from the message, shown above the cards. */

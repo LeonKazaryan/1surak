@@ -90,6 +90,18 @@ def test_should_assemble_tool_calls_from_streamed_fragments():
     assert completions.kwargs["tools"] == tools
 
 
+def test_should_force_the_named_tool_only_when_tools_are_sent():
+    llm, completions = llm_with([chunk(tool_calls=[fragment(0, id="c", name="show", arguments="{}")])])
+    tools = [{"type": "function", "function": {"name": "show"}}]
+
+    asyncio.run(collect(llm.stream([], tools, "show")))
+
+    assert completions.kwargs["tool_choice"] == {"type": "function", "function": {"name": "show"}}
+    llm, completions = llm_with([chunk("Привет")])
+    asyncio.run(collect(llm.stream([], None, "show")))
+    assert "tool_choice" not in completions.kwargs
+
+
 def test_should_accept_openai_api_key_as_the_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "from-openai-var")
     monkeypatch.delenv("LLM_API_KEY", raising=False)

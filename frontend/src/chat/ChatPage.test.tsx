@@ -311,7 +311,7 @@ describe('ChatPage', () => {
     expect(within(loader).getByText('Сверяю климат по месяцам…')).toBeInTheDocument()
   })
 
-  it('should fly in the missing questions one card at a time and send the answers in one message', async () => {
+  it('should move to the next card on a single tap and send the answers in one message', async () => {
     streamReply(
       [
         { type: 'tool_start', name: 'update_trip_brief', title: 'Разбираю запрос' },
@@ -333,25 +333,24 @@ describe('ChatPage', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Уточняющие вопросы' }, { timeout: 3000 })
     expect(within(dialog).getByText('Кто едет?')).toBeInTheDocument()
-    expect(within(dialog).queryByText('Какой бюджет?')).toBeNull() // one card at a time
     expect(within(dialog).getByText('1 ребёнок')).toBeInTheDocument() // what is known is shown, not asked
-    expect(within(dialog).getByText('Ноябрь')).toBeInTheDocument()
-    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: 'Возраст ребёнка 1' }), '5')
+    expect(within(dialog).queryByRole('button', { name: /Дальше/ })).toBeNull() // no extra buttons
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Вдвоём с детьми' }))
+    expect(await within(dialog).findByText('Сколько лет ребёнку?')).toBeInTheDocument()
 
-    // closing keeps the picks: the chip in the chat brings the same cards back
+    // closing keeps the picks and the place: the chip in the chat brings back the same card
     await userEvent.click(within(dialog).getByRole('button', { name: 'Закрыть вопросы' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: /2 вопроса до подборки/ }))
     const reopened = await screen.findByRole('dialog', { name: 'Уточняющие вопросы' })
-    expect(within(reopened).getByRole('combobox', { name: 'Возраст ребёнка 1' })).toHaveValue('5')
+    expect(within(reopened).getByText('Сколько лет ребёнку?')).toBeInTheDocument()
 
-    await userEvent.click(within(reopened).getByRole('button', { name: /Дальше/ }))
+    await userEvent.click(within(reopened).getByRole('button', { name: '5 лет' }))
     expect(await within(reopened).findByText('Вы написали «недорого»')).toBeInTheDocument()
-    await userEvent.click(within(reopened).getByRole('button', { name: /Средне/ }))
     streamReply([], { type: 'done', answer: 'Ищу', chat_id: 'chat-1', title: 'Море' })
-    await userEvent.click(within(reopened).getByRole('button', { name: /Подобрать направления/ }))
+    await userEvent.click(within(reopened).getByRole('button', { name: /Средне/ }))
 
-    await waitFor(() => expect(sendChatStream).toHaveBeenCalledTimes(2), { timeout: 4000 })
+    await waitFor(() => expect(sendChatStream).toHaveBeenCalledTimes(2), { timeout: 5000 })
     expect(sendChatStream).toHaveBeenLastCalledWith(
       expect.objectContaining({
         query: '2 взрослых + 1 ребёнок (5 лет) · бюджет: средне',

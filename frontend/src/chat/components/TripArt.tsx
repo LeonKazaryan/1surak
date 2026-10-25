@@ -7,6 +7,8 @@ interface TripArtProps {
   /** Varies the scene (sun position, skyline) so neighbouring cards differ. */
   seed?: string
   image?: string | null
+  /** Freezes the waves, clouds and snow: for many scenes on screen at once. */
+  still?: boolean
   className?: string
 }
 
@@ -203,7 +205,7 @@ const SCENES: Record<TripKind, (props: { id: string; r: number }) => ReactElemen
 }
 
 /** Illustration for a kind of trip. Stands in for a destination photo until we have one. */
-export function TripArt({ kind, seed = '', image, className }: TripArtProps) {
+export function TripArt({ kind, seed = '', image, still, className }: TripArtProps) {
   const id = useId().replace(/:/g, '')
   if (image) {
     return <img src={image} alt="" draggable={false} className={cn('h-full w-full object-cover', className)} />
@@ -214,7 +216,7 @@ export function TripArt({ kind, seed = '', image, className }: TripArtProps) {
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid slice"
       aria-hidden
-      className={cn('h-full w-full overflow-hidden', className)}
+      className={cn('h-full w-full overflow-hidden', still && 'art-still', className)}
     >
       <Scene id={id} r={hash(seed || kind)} />
     </svg>

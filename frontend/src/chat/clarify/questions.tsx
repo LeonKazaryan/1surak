@@ -1,13 +1,12 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { AnimatePresence, motion, type Variants } from 'motion/react'
-import { CheckIcon, MinusIcon, PlusIcon } from '@heroicons/react/20/solid'
+import { ArrowRightIcon, CheckIcon, FaceSmileIcon, UserGroupIcon, UserIcon, UsersIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { TripKind } from '@/types/api'
 import { TripArt } from '../components/TripArt'
-import { BUDGET_OPTIONS, KIND_OPTIONS, nightsLabel, plural, upcomingMonths } from '../widgets'
+import { BUDGET_OPTIONS, KIND_OPTIONS, NIGHT_OPTIONS, nightsLabel, plural, upcomingMonths } from '../widgets'
+import type { Party } from './plan'
 
-const MAX_ADULTS = 8
-const MAX_CHILDREN = 5
 const VIBE_TAGLINES: Record<TripKind, string> = {
   sea: 'тёплая вода и песок',
   mountains: 'виды и тропы',
@@ -23,24 +22,39 @@ const VIBE_LAYOUT: Record<TripKind, string> = {
   nature: 'col-span-1 sm:col-span-2 h-28',
   ski: 'col-span-2 sm:col-span-2 h-28',
 }
+const PARTIES: Record<Party, { icon: ComponentType<SVGProps<SVGSVGElement>>; label: string; sub: string }> = {
+  solo: { icon: UserIcon, label: 'Один', sub: '1 взрослый' },
+  couple: { icon: UsersIcon, label: 'Вдвоём', sub: '2 взрослых' },
+  kids: { icon: FaceSmileIcon, label: 'С детьми', sub: 'спрошу возраст' },
+  group: { icon: UserGroupIcon, label: 'Компанией', sub: '3 и больше' },
+  oneAdult: { icon: UserIcon, label: 'Я с детьми', sub: 'один взрослый' },
+  twoAdults: { icon: UsersIcon, label: 'Вдвоём с детьми', sub: 'двое взрослых' },
+}
 
-/** Options inside a card fall into place one after another once the card has landed. */
+/** Options fall into place one after another once the card has landed. */
 const options: Variants = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.045, delayChildren: 0.18 } },
+  show: { transition: { staggerChildren: 0.04, delayChildren: 0.12 } },
 }
 const option: Variants = {
-  hidden: { opacity: 0, y: 12, scale: 0.96 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 380, damping: 26 } },
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 420, damping: 28 } },
 }
 
-export function CheckBadge({ className }: { className?: string }) {
+function Options({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <motion.div variants={options} initial="hidden" animate="show" className={className}>
+      {children}
+    </motion.div>
+  )
+}
+
+function CheckBadge({ className }: { className?: string }) {
   return (
     <motion.span
-      initial={{ scale: 0, rotate: -45 }}
-      animate={{ scale: 1, rotate: 0 }}
-      exit={{ scale: 0 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ type: 'spring', stiffness: 520, damping: 22 }}
       className={cn('flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground', className)}
     >
       <CheckIcon className="h-4 w-4" aria-hidden />
@@ -48,284 +62,215 @@ export function CheckBadge({ className }: { className?: string }) {
   )
 }
 
-interface ChoiceChipProps {
+interface ChipProps {
   selected: boolean
-  onSelect: () => void
+  onPick: () => void
   pillId: string
   children: ReactNode
   className?: string
+  label?: string
 }
 
-/** A chip whose highlight slides to the chosen option. */
-function ChoiceChip({ selected, onSelect, pillId, children, className }: ChoiceChipProps) {
+/** A tap target whose lime highlight slides over to the picked option. */
+function Chip({ selected, onPick, pillId, children, className, label }: ChipProps) {
   return (
     <motion.button
       type="button"
       variants={option}
       aria-pressed={selected}
-      onClick={onSelect}
+      aria-label={label}
+      onClick={onPick}
       whileTap={{ scale: 0.94 }}
       className={cn(
-        'relative min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
-        selected
-          ? 'border-transparent text-primary-foreground'
-          : 'border-border bg-white text-foreground hover:border-highlight/30 hover:bg-accent/60',
+        'relative min-h-12 rounded-2xl border px-3 py-2 text-[15px] font-medium transition-colors',
+        selected ? 'border-transparent text-primary-foreground' : 'border-border bg-white text-foreground hover:border-highlight/30 hover:bg-accent/60',
         className,
       )}
     >
       {selected && (
-        <motion.span
-          layoutId={pillId}
-          className="absolute inset-0 rounded-[11px] bg-primary shadow-[0_6px_16px_-8px_rgba(84,160,40,0.7)]"
-          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-        />
+        <motion.span layoutId={pillId} className="absolute inset-0 rounded-[15px] bg-primary" transition={{ type: 'spring', stiffness: 460, damping: 34 }} />
       )}
       <span className="relative">{children}</span>
     </motion.button>
   )
 }
 
-export function VibeQuestion({ kinds, onChange }: { kinds: TripKind[]; onChange: (kinds: TripKind[]) => void }) {
-  const toggle = (kind: TripKind) => onChange(kinds.includes(kind) ? kinds.filter((k) => k !== kind) : [...kinds, kind])
+interface PickProps<T> {
+  selected: T | null
+  onPick: (value: T) => void
+}
+
+export function VibeStep({ selected, onPick }: PickProps<TripKind>) {
   return (
-    <motion.div variants={options} initial="hidden" animate="show" className="grid grid-cols-2 gap-2.5 sm:grid-cols-6">
-      {KIND_OPTIONS.map(({ kind, label }) => {
-        const selected = kinds.includes(kind)
-        return (
-          <motion.button
-            key={kind}
-            type="button"
-            variants={option}
-            aria-pressed={selected}
-            aria-label={label}
-            onClick={() => toggle(kind)}
-            whileHover={{ y: -4 }}
-            whileTap={{ scale: 0.97 }}
-            className={cn(
-              'group relative overflow-hidden rounded-2xl text-left ring-offset-2 ring-offset-card transition-[box-shadow] duration-200',
-              VIBE_LAYOUT[kind],
-              selected
-                ? 'ring-[3px] ring-highlight shadow-[0_18px_30px_-18px_rgba(10,64,209,0.7)]'
-                : 'shadow-[0_12px_24px_-20px_rgba(15,23,42,0.6)]',
-            )}
-          >
-            <TripArt kind={kind} seed={`vibe-${kind}`} className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110" />
-            <span className="absolute inset-0 bg-linear-to-t from-slate-950/65 via-slate-950/10 to-transparent" />
-            <span className="absolute right-3 bottom-2.5 left-3">
-              <span className="block text-[15px] leading-tight font-semibold text-white drop-shadow">{label}</span>
-              <span className="block text-[12px] text-white/80">{VIBE_TAGLINES[kind]}</span>
-            </span>
-            <AnimatePresence>{selected && <CheckBadge className="absolute top-2.5 right-2.5 shadow-md" />}</AnimatePresence>
-          </motion.button>
-        )
-      })}
-    </motion.div>
+    <Options className="grid grid-cols-2 gap-2.5 sm:grid-cols-6">
+      {KIND_OPTIONS.map(({ kind, label }) => (
+        <motion.button
+          key={kind}
+          type="button"
+          variants={option}
+          aria-pressed={selected === kind}
+          aria-label={label}
+          onClick={() => onPick(kind)}
+          whileHover={{ y: -3 }}
+          whileTap={{ scale: 0.97 }}
+          className={cn(
+            'group relative overflow-hidden rounded-2xl text-left ring-offset-2 ring-offset-card',
+            VIBE_LAYOUT[kind],
+            selected === kind && 'ring-[3px] ring-highlight',
+          )}
+        >
+          <TripArt kind={kind} seed={`vibe-${kind}`} still className="absolute inset-0 transition-transform duration-500 ease-out group-hover:scale-105" />
+          <span className="absolute inset-0 bg-linear-to-t from-slate-950/65 via-slate-950/10 to-transparent" />
+          <span className="absolute right-3 bottom-2.5 left-3">
+            <span className="block text-[15px] leading-tight font-semibold text-white">{label}</span>
+            <span className="block text-[12px] text-white/80">{VIBE_TAGLINES[kind]}</span>
+          </span>
+          {selected === kind && <CheckBadge className="absolute top-2.5 right-2.5" />}
+        </motion.button>
+      ))}
+    </Options>
   )
 }
 
-interface WhenQuestionProps {
-  askMonth: boolean
-  askNights: boolean
-  month: number | null
-  nights: [number, number] | null
-  nightOptions: [number, number][]
-  onMonth: (month: number) => void
-  onNights: (nights: [number, number]) => void
-}
-
-export function WhenQuestion({ askMonth, askNights, month, nights, nightOptions, onMonth, onNights }: WhenQuestionProps) {
+export function MonthStep({ selected, onPick }: PickProps<number>) {
   const id = useId()
   const months = upcomingMonths()
   const thisYear = months[0].year
   return (
-    <motion.div variants={options} initial="hidden" animate="show" className="flex flex-col gap-5">
-      {askMonth && (
-        <div>
-          {askNights && <p className="m-0 mb-2 text-xs font-semibold tracking-wider text-faint uppercase">Месяц</p>}
-          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
-            {months.map((m) => (
-              <ChoiceChip
-                key={`${m.year}-${m.month}`}
-                selected={month === m.month}
-                onSelect={() => onMonth(m.month)}
-                pillId={`${id}-month`}
-                className="flex flex-col items-center px-1 py-1.5 leading-tight"
-              >
-                <span className="capitalize">{m.label}</span>
-                {m.year !== thisYear && <span className="block text-[10px] font-normal opacity-60">{m.year}</span>}
-              </ChoiceChip>
-            ))}
-          </div>
-        </div>
-      )}
-      {askNights && (
-        <div>
-          {askMonth && <p className="m-0 mb-2 text-xs font-semibold tracking-wider text-faint uppercase">На сколько</p>}
-          <div className="flex flex-wrap gap-1.5">
-            {nightOptions.map((o) => (
-              <ChoiceChip
-                key={o.join('-')}
-                selected={nights?.[0] === o[0] && nights?.[1] === o[1]}
-                onSelect={() => onNights(o)}
-                pillId={`${id}-nights`}
-                className="px-4"
-              >
-                {nightsLabel(o)}
-              </ChoiceChip>
-            ))}
-          </div>
-        </div>
-      )}
-    </motion.div>
+    <Options className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+      {months.map((m) => (
+        <Chip
+          key={`${m.year}-${m.month}`}
+          selected={selected === m.month}
+          onPick={() => onPick(m.month)}
+          pillId={`${id}-month`}
+          className="flex flex-col items-center px-1 py-2 leading-tight"
+        >
+          <span className="capitalize">{m.label}</span>
+          {m.year !== thisYear && <span className="block text-[10px] font-normal opacity-60">{m.year}</span>}
+        </Chip>
+      ))}
+    </Options>
   )
 }
 
-interface StepperProps {
-  label: string
-  hint: string
-  value: number
-  min: number
-  max: number
-  onChange: (value: number) => void
-}
-
-function Stepper({ label, hint, value, min, max, onChange }: StepperProps) {
-  const button =
-    'flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white text-foreground transition-colors hover:border-highlight/40 hover:bg-accent disabled:opacity-35'
+export function NightsStep({ selected, onPick, extra }: PickProps<[number, number]> & { extra?: [number, number] | null }) {
+  const id = useId()
+  const list = extra && !NIGHT_OPTIONS.some((o) => o.join() === extra.join()) ? [extra, ...NIGHT_OPTIONS] : NIGHT_OPTIONS
   return (
-    <motion.div variants={option} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-inset px-4 py-3">
-      <div>
-        <p className="m-0 text-[15px] font-semibold text-foreground">{label}</p>
-        <p className="m-0 text-xs text-muted-foreground">{hint}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <motion.button type="button" whileTap={{ scale: 0.88 }} className={button} onClick={() => onChange(value - 1)} disabled={value <= min} aria-label={`${label}: меньше`}>
-          <MinusIcon className="h-4 w-4" />
-        </motion.button>
-        <span className="relative flex h-8 w-7 items-center justify-center overflow-hidden text-xl font-semibold text-foreground tabular-nums" aria-live="polite">
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.span
-              key={value}
-              initial={{ y: 16, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -16, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            >
-              {value}
-            </motion.span>
-          </AnimatePresence>
-        </span>
-        <motion.button type="button" whileTap={{ scale: 0.88 }} className={button} onClick={() => onChange(value + 1)} disabled={value >= max} aria-label={`${label}: больше`}>
-          <PlusIcon className="h-4 w-4" />
-        </motion.button>
-      </div>
-    </motion.div>
+    <Options className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {list.map((o) => (
+        <Chip key={o.join('-')} selected={selected?.join() === o.join()} onPick={() => onPick(o)} pillId={`${id}-nights`} className="py-3">
+          {nightsLabel(o)}
+        </Chip>
+      ))}
+    </Options>
   )
 }
 
-function ageLabel(age: number): string {
-  return age === 0 ? 'до 1 года' : `${age} ${plural(age, ['год', 'года', 'лет'])}`
-}
-
-interface TravelersQuestionProps {
-  askCounts: boolean
-  adults: number
-  ages: (number | null)[]
-  onAdults: (value: number) => void
-  onAges: (ages: (number | null)[]) => void
-}
-
-export function TravelersQuestion({ askCounts, adults, ages, onAdults, onAges }: TravelersQuestionProps) {
-  const setChildren = (count: number) =>
-    onAges(count > ages.length ? [...ages, ...Array(count - ages.length).fill(null)] : ages.slice(0, count))
+export function PartyStep({ choices, selected, onPick }: PickProps<Party> & { choices: Party[] }) {
   return (
-    <motion.div variants={options} initial="hidden" animate="show" className="flex flex-col gap-2.5">
-      {askCounts && (
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <Stepper label="Взрослые" hint="от 18 лет" value={adults} min={1} max={MAX_ADULTS} onChange={onAdults} />
-          <Stepper label="Дети" hint="до 17 лет" value={ages.length} min={0} max={MAX_CHILDREN} onChange={setChildren} />
-        </div>
-      )}
-      <AnimatePresence initial={false}>
-        {ages.length > 0 && (
-          <motion.div
-            initial={askCounts ? { height: 0, opacity: 0 } : false}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="overflow-hidden"
+    <Options className="grid grid-cols-2 gap-2.5">
+      {choices.map((party) => {
+        const { icon: Icon, label, sub } = PARTIES[party]
+        const on = selected === party
+        return (
+          <motion.button
+            key={party}
+            type="button"
+            variants={option}
+            aria-pressed={on}
+            aria-label={label}
+            onClick={() => onPick(party)}
+            whileHover={{ y: -3 }}
+            whileTap={{ scale: 0.96 }}
+            className={cn(
+              'relative flex flex-col items-start gap-2 rounded-2xl border p-4 text-left transition-colors',
+              on ? 'border-highlight bg-highlight/5' : 'border-border bg-white hover:bg-accent/50',
+            )}
           >
-            <div className="flex flex-wrap gap-2 pt-1">
-              <AnimatePresence initial={false}>
-                {ages.map((age, i) => (
-                  <motion.label
-                    key={i}
-                    layout
-                    variants={option}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className={cn(
-                      'flex min-h-11 items-center gap-2 rounded-xl border px-3.5 py-2 text-sm transition-colors',
-                      age === null ? 'border-highlight/40 bg-highlight/5' : 'border-primary bg-accent',
-                    )}
-                  >
-                    <span className="text-muted-foreground">Ребёнок {ages.length > 1 ? i + 1 : ''}</span>
-                    <select
-                      value={age ?? ''}
-                      onChange={(e) => onAges(ages.map((a, j) => (j === i ? Number(e.target.value) : a)))}
-                      className="cursor-pointer rounded-md bg-transparent py-0.5 font-semibold text-foreground outline-none"
-                      aria-label={`Возраст ребёнка ${i + 1}`}
-                    >
-                      <option value="" disabled>
-                        возраст?
-                      </option>
-                      {Array.from({ length: 18 }, (_, a) => (
-                        <option key={a} value={a}>
-                          {ageLabel(a)}
-                        </option>
-                      ))}
-                    </select>
-                  </motion.label>
-                ))}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', on ? 'bg-highlight text-white' : 'bg-accent text-highlight')}>
+              <Icon className="h-5 w-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block text-base font-semibold text-foreground">{label}</span>
+              <span className="block text-[13px] text-muted-foreground">{sub}</span>
+            </span>
+            {on && <CheckBadge className="absolute top-3 right-3 h-5 w-5" />}
+          </motion.button>
+        )
+      })}
+    </Options>
   )
 }
 
-interface BudgetQuestionProps {
-  level: number | null
-  total: number | null
-  onLevel: (level: number) => void
-  onTotal: (total: number | null) => void
+export function CountStep({ values, selected, onPick, unit }: PickProps<number> & { values: number[]; unit: [string, string, string] }) {
+  const id = useId()
+  return (
+    <Options className="flex flex-wrap gap-2.5">
+      {values.map((n) => (
+        <Chip
+          key={n}
+          selected={selected === n}
+          onPick={() => onPick(n)}
+          pillId={`${id}-count`}
+          label={`${n} ${plural(n, unit)}`}
+          className="flex h-16 w-16 flex-col items-center justify-center p-0 leading-none"
+        >
+          <span className="text-xl font-semibold">{n}</span>
+        </Chip>
+      ))}
+    </Options>
+  )
 }
 
-export function BudgetQuestion({ level, total, onLevel, onTotal }: BudgetQuestionProps) {
-  const [custom, setCustom] = useState(total !== null)
+export function AgeStep({ selected, onPick }: PickProps<number>) {
+  const id = useId()
   return (
-    <motion.div variants={options} initial="hidden" animate="show" className="flex flex-col gap-2.5">
+    <Options className="grid grid-cols-6 gap-2">
+      {Array.from({ length: 18 }, (_, age) => (
+        <Chip
+          key={age}
+          selected={selected === age}
+          onPick={() => onPick(age)}
+          pillId={`${id}-age`}
+          label={age === 0 ? 'до 1 года' : `${age} ${plural(age, ['год', 'года', 'лет'])}`}
+          className="px-0 text-base font-semibold"
+        >
+          {age === 0 ? '<1' : age}
+        </Chip>
+      ))}
+    </Options>
+  )
+}
+
+interface BudgetStepProps {
+  level: number | null
+  onLevel: (level: number) => void
+  onTotal: (total: number) => void
+}
+
+export function BudgetStep({ level, onLevel, onTotal }: BudgetStepProps) {
+  const [custom, setCustom] = useState(false)
+  const [draft, setDraft] = useState<number | null>(null)
+  const send = () => draft && onTotal(draft)
+  return (
+    <Options className="flex flex-col gap-2.5">
       <div className="grid grid-cols-2 gap-2.5">
         {BUDGET_OPTIONS.map((o) => {
-          const selected = level === o.level && !custom
+          const on = level === o.level && !custom
           return (
             <motion.button
               key={o.level}
               type="button"
               variants={option}
-              aria-pressed={selected}
-              onClick={() => {
-                setCustom(false)
-                onLevel(o.level)
-              }}
+              aria-pressed={on}
+              onClick={() => onLevel(o.level)}
               whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.97 }}
+              whileTap={{ scale: 0.96 }}
               className={cn(
-                'relative flex flex-col items-start gap-1 overflow-hidden rounded-2xl border px-4 py-3.5 text-left transition-[border-color,background-color,box-shadow] duration-200',
-                selected
-                  ? 'border-highlight bg-highlight/4 shadow-[0_0_0_3px_rgba(10,64,209,0.12)]'
-                  : 'border-border bg-white hover:bg-accent/50',
+                'relative flex flex-col items-start gap-1 rounded-2xl border px-4 py-3.5 text-left transition-colors',
+                on ? 'border-highlight bg-highlight/5' : 'border-border bg-white hover:bg-accent/50',
               )}
             >
               <span className="flex gap-0.5 text-base leading-none font-bold" aria-hidden>
@@ -341,50 +286,59 @@ export function BudgetQuestion({ level, total, onLevel, onTotal }: BudgetQuestio
               </span>
               <span className="text-[15px] font-semibold text-foreground">{o.label}</span>
               <span className="text-xs leading-snug text-muted-foreground">{o.hint}</span>
-              <AnimatePresence>{selected && <CheckBadge className="absolute top-3 right-3 h-5 w-5" />}</AnimatePresence>
+              {on && <CheckBadge className="absolute top-3 right-3 h-5 w-5" />}
             </motion.button>
           )
         })}
       </div>
       <AnimatePresence initial={false} mode="wait">
         {custom ? (
-          <motion.label
-            key="input"
+          <motion.form
+            key="sum"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-2 rounded-2xl border border-highlight/40 bg-white px-4 py-3 shadow-[0_0_0_3px_rgba(10,64,209,0.08)]"
+            onSubmit={(e) => {
+              e.preventDefault()
+              send()
+            }}
+            className="flex items-center gap-2 rounded-2xl border border-highlight/40 bg-white py-1.5 pr-1.5 pl-4"
           >
             <span className="text-sm text-muted-foreground">Сумма на всех</span>
             <input
               autoFocus
               inputMode="numeric"
-              value={total ? total.toLocaleString('ru-RU') : ''}
+              value={draft ? draft.toLocaleString('ru-RU') : ''}
               onChange={(e) => {
                 const digits = Number(e.target.value.replace(/\D/g, '').slice(0, 9))
-                onTotal(digits > 0 ? digits : null)
+                setDraft(digits > 0 ? digits : null)
               }}
               placeholder="300 000"
               className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold text-foreground outline-none placeholder:font-normal placeholder:text-faint"
               aria-label="Бюджет на всех, рублей"
             />
             <span className="text-sm font-semibold text-foreground">₽</span>
-          </motion.label>
+            <button
+              type="submit"
+              disabled={!draft}
+              aria-label="Готово"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary-hover disabled:bg-secondary disabled:text-faint"
+            >
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
+          </motion.form>
         ) : (
           <motion.button
             key="toggle"
             type="button"
             variants={option}
-            onClick={() => {
-              setCustom(true)
-              onTotal(null)
-            }}
+            onClick={() => setCustom(true)}
             className="self-start text-[13px] font-medium text-highlight underline-offset-4 hover:underline"
           >
             Указать свою сумму
           </motion.button>
         )}
       </AnimatePresence>
-    </motion.div>
+    </Options>
   )
 }

@@ -244,3 +244,50 @@ def test_should_show_a_tool_widget_with_its_text_and_hand_the_turn_back():
     assert text_of(events) == "Уточню одно"
     assert events[-1] == {"type": "clarify", "questions": [{"slot": "when"}]}
     assert len(llm.calls) == 1  # the model is not called again: the user answers next
+
+
+def _search_then_show() -> ToolRegistry:
+    search = Tool(
+        name="search", title="Ищу", description="Find", args=CityArgs, handler=_weather, then="show"
+    )
+    return ToolRegistry(
+        [search, Tool(name="show", title="Показываю", description="Show", args=CityArgs, handler=_ask)]
+    )
+
+
+def test_should_make_the_model_show_what_it_found_instead_of_listing_it():
+    llm = FakeLLM(
+        rounds=[
+            [call("search", '{"city": "Сочи"}', "a")],
+            ["Подходят Сочи и Анапа."],
+            [call("show", '{"city": "Сочи"}', "b")],
+        ]
+    )
+
+    events = run(llm, _search_then_show())
+
+    assert llm.tool_choices == [None, None, "show"]
+    assert {"type": "assistant_note", "text": "Подходят Сочи и Анапа."} in events
+    assert text_of(events) == "Уточню одно"  # the words came from the shown cards, not the list
+    assert events[-1]["type"] == "clarify"
+
+
+def test_should_insist_on_showing_only_once():
+    llm = FakeLLM(rounds=[[call("search", '{"city": "Сочи"}')], ["Подходят Сочи."], ["Всё равно текстом."]])
+
+    events = run(llm, _search_then_show())
+
+    assert llm.tool_choices == [None, None, "show"]
+    assert text_of(events) == "Всё равно текстом."
+
+
+def test_should_not_insist_when_the_follow_up_tool_is_not_registered():
+    search = Tool(
+        name="search", title="Ищу", description="Find", args=CityArgs, handler=_weather, then="show"
+    )
+    llm = FakeLLM(rounds=[[call("search", '{"city": "Сочи"}')], ["Подходят Сочи."]])
+
+    events = run(llm, ToolRegistry([search]))
+
+    assert llm.tool_choices == [None, None]
+    assert text_of(events) == "Подходят Сочи."

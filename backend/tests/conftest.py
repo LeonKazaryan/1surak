@@ -24,8 +24,12 @@ class FakeLLM:
         self.calls: list[list[dict]] = []  # exactly what the model saw
         self.conversations: list[list[dict]] = []  # the same without the reminders appended at the end
         self.tools_seen: list[list[dict] | None] = []
+        self.tool_choices: list[str | None] = []
 
-    async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
+    async def stream(
+        self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
+    ) -> AsyncIterator[LLMEvent]:
+        self.tool_choices.append(tool_choice)
         seen = [dict(m) for m in messages]
         self.calls.append(seen)
         end = len(seen)
