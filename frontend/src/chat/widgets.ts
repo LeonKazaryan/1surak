@@ -25,8 +25,8 @@ export const BUDGET_OPTIONS = [
   { level: 0, label: 'Не важно', hint: 'покажу разные варианты' },
 ]
 
-const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
-const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+export const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
+export const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 export interface MonthOption {
   month: number
@@ -51,7 +51,7 @@ export function plural(n: number, forms: [string, string, string]): string {
 }
 
 export function nightsLabel([low, high]: [number, number]): string {
-  return `${low}–${high} ${plural(high, ['ночь', 'ночи', 'ночей'])}`
+  return `${low === high ? low : `${low}–${high}`} ${plural(high, ['ночь', 'ночи', 'ночей'])}`
 }
 
 export function formatRub(value: number): string {

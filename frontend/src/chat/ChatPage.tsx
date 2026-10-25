@@ -8,9 +8,10 @@ import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
 import type { BriefAnswers, DestinationCard } from '@/types/api'
+import { ClarifyFlow } from './clarify/ClarifyOverlay'
+import { ClarifyPrompt } from './clarify/ClarifyPrompt'
 import { AgentTracePanel } from './components/AgentTracePanel'
 import { MessagesSkeleton } from './components/ChatSkeletons'
-import { ClarifyCards } from './components/ClarifyCards'
 import { Composer } from './components/Composer'
 import { DestinationCards } from './components/DestinationCards'
 import { FlightLoader } from './components/FlightLoader'
@@ -20,6 +21,8 @@ import { useChatSession } from './hooks/useChatSession'
 import { useResizablePanel } from './hooks/useResizablePanel'
 import type { ChatLayoutContext, WorkspaceChatMessage } from './types'
 
+// Long enough for the agent's words to finish typing in the chat before the cards fly in.
+const CLARIFY_OPEN_DELAY_MS = 700
 const EMPTY_STATE_INTRO =
   'Напишите, куда и как хотите поехать. Агент уточнит главное, подберёт варианты и соберёт план поездки.'
 
@@ -50,11 +53,11 @@ interface MessageBubbleProps {
   /** The latest message: its cards take answers and picks (sent once the chat is idle). */
   isLast: boolean
   busy: boolean
-  onAnswer: (text: string, answers: BriefAnswers) => void
+  onOpenClarify: () => void
   onPick: (card: DestinationCard) => void
 }
 
-function MessageBubble({ message, isStreaming, isLast, busy, onAnswer, onPick }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming, isLast, busy, onOpenClarify, onPick }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -77,7 +80,7 @@ function MessageBubble({ message, isStreaming, isLast, busy, onAnswer, onPick }:
           </div>
         )}
       </AnimatePresence>
-      {widget?.type === 'clarify' && <ClarifyCards widget={widget} active={isLast} busy={busy} onSubmit={onAnswer} />}
+      {widget?.type === 'clarify' && <ClarifyPrompt widget={widget} pending={isLast} onOpen={onOpenClarify} />}
       {widget?.type === 'destinations' && (
         <DestinationCards widget={widget} canPick={isLast && !busy} onPick={onPick} />
       )}
@@ -96,7 +99,22 @@ export default function ChatPage() {
   const lastMessageRef = useRef<HTMLDivElement>(null)
   const busy = isLoading || chatLoading
   const panel = useResizablePanel({ storageKey: 'chat.planPanelWidth', min: 300, max: 560, initial: 380 })
-  const lastWidget = messages.at(-1)?.widget
+  const last = messages.at(-1)
+  const lastWidget = last?.widget
+  const pendingClarify = last && lastWidget?.type === 'clarify' && streamingId !== last.id ? lastWidget : null
+  const pendingId = pendingClarify ? last!.id : null
+  const [clarifyOpenFor, setClarifyOpenFor] = useState<string | null>(null)
+  const autoOpened = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!pendingId || busy || autoOpened.current === pendingId) return
+    // marked inside the timer, so StrictMode's double effect cannot cancel the only opening
+    const timer = setTimeout(() => {
+      autoOpened.current = pendingId
+      setClarifyOpenFor(pendingId)
+    }, CLARIFY_OPEN_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [pendingId, busy])
 
   useEffect(() => {
     // Cards are taller than the screen: show them from the top, starting with the agent's words.
@@ -160,7 +178,7 @@ export default function ChatPage() {
                             isStreaming={streamingId === m.id}
                             isLast={i === messages.length - 1}
                           busy={busy}
-                            onAnswer={(text, answers) => send(text, answers)}
+                            onOpenClarify={() => setClarifyOpenFor(m.id)}
                             onPick={(card) => send(`Выбираю ${card.name}`)}
                           />
                         </div>
@@ -205,7 +223,19 @@ export default function ChatPage() {
           )}
         </div>
 
-        {planPanelOpen && (
+        {pendingClarify && pendingId && (
+        <ClarifyFlow
+          key={pendingId}
+          widget={pendingClarify}
+          intro={last?.content ?? ''}
+          open={clarifyOpenFor === pendingId}
+          busy={busy}
+          onOpenChange={(open) => setClarifyOpenFor(open ? pendingId : null)}
+          onSubmit={(text: string, answers: BriefAnswers) => send(text, answers)}
+        />
+      )}
+
+      {planPanelOpen && (
           <>
             <div
               role="separator"
