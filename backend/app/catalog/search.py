@@ -89,6 +89,9 @@ class SearchQuery(BaseModel):
     )
     max_price_level: int | None = Field(None, ge=1, le=3, description="1 budget, 2 mid-range, 3 expensive.")
     region: Literal["any", "russia", "abroad"] = "any"
+    countries: list[str] | None = Field(
+        None, description="Only these countries, names in Russian as the user said them: ['Турция']."
+    )
     exclude: list[str] = Field(
         default_factory=list, description="Destination ids to leave out, e.g. rejected ones."
     )
@@ -174,6 +177,8 @@ def in_scope(s: Snapshot, q: SearchQuery) -> bool:
     if q.min_sea_temp is not None and "sea" not in place.kinds:  # a sea temperature implies a sea trip
         return False
     if q.region != "any" and place.domestic != (q.region == "russia"):
+        return False
+    if q.countries and place.country.name.casefold() not in {c.strip().casefold() for c in q.countries}:
         return False
     excluded = {e.strip().casefold() for e in q.exclude}
     return place.id not in excluded and place.name.casefold() not in excluded
@@ -325,6 +330,41 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
     if s.flags:
         result["data_flags"] = s.flags
     return {k: v for k, v in result.items() if v is not None}
+
+
+def _card_climate(values: dict[str, float], month: int) -> dict:
+    view = {
+        "day": values.get("air_max"),
+        "night": values.get("air_min"),
+        "sea": values.get("sea_temp"),
+        "rain_days": values.get("rain_days"),
+    }
+    rounded = {k: round(v) if k != "rain_days" else round(v, 1) for k, v in view.items() if v is not None}
+    return {"month": MONTHS[month - 1], "month_in": MONTHS_IN[month - 1], **rounded}
+
+
+def card(s: Snapshot, month: int | None = None) -> dict:
+    """One destination as the chat draws it: the facts as numbers, so the UI can lay them out."""
+    place, climate = s.place, s.climate.get(month) if month else None
+    return {
+        "id": place.id,
+        "name": place.name,
+        "country": place.country.name,
+        "country_code": place.country.code,
+        "kinds": list(place.kinds),
+        "flight_hours": _hours(s.flight_min),
+        "direct": s.direct,
+        "train_hours": _hours(s.train_min),
+        "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
+        "visa_easy": s.visa_rule in EASY_VISA,
+        "price_level": place.price_level,
+        "price": PRICE_LABELS[place.price_level],
+        "kids": KIDS_LABELS[place.kids],
+        "kids_fit": place.kids,
+        "climate": _card_climate(climate, month) if climate else None,
+        "highlights": list(place.highlights),
+        "watch_out": list(place.watch_out),
+    }
 
 
 def search(snapshots: list[Snapshot], q: SearchQuery) -> dict:

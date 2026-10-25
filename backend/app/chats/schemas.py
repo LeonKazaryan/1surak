@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, StringConstraints
 
+from app.trip import BriefPatch
+
 MAX_QUERY_CHARS = 12_000
 MAX_ORIGIN_CHARS = 64
 
@@ -19,6 +21,7 @@ class ChatRequest(BaseModel):
     query: Query
     chat_id: UUID | None = None
     origin: Origin | None = None
+    answers: BriefPatch | None = None  # what the user picked on the question cards
 
 
 class ChatMeta(BaseModel):

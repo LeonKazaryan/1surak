@@ -160,6 +160,53 @@
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
 
+/* Flight loader: a plane circles a tiny spinning globe, its trail fading behind it. */
+@keyframes orbit {
+  to { transform: rotate(360deg); }
+}
+.animate-orbit {
+  animation: orbit 2.4s linear infinite;
+}
+.orbit-trail {
+  background: conic-gradient(from 0deg, transparent 0deg 210deg, color-mix(in srgb, var(--highlight) 75%, transparent) 360deg);
+  mask: radial-gradient(circle, transparent 25.5px, #000 26px, #000 28px, transparent 28.5px);
+}
+@keyframes globe-spin {
+  to { transform: translateX(-50%); }
+}
+.animate-globe-spin {
+  animation: globe-spin 5s linear infinite;
+}
+@keyframes text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+.text-shimmer {
+  background: linear-gradient(90deg, var(--foreground) 0%, var(--foreground) 40%, var(--faint) 50%, var(--foreground) 60%, var(--foreground) 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: text-shimmer 2.2s linear infinite;
+}
+
+/* Trip illustrations: SVG transforms are in scene units (the scene is 320 wide). */
+@keyframes art-drift {
+  to { transform: translateX(-320px); }
+}
+.art-drift { animation: art-drift 9s linear infinite; }
+.art-drift-reverse { animation: art-drift 14s linear infinite reverse; }
+.art-drift-slow { animation: art-drift 48s linear infinite; }
+@keyframes art-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.art-twinkle { animation: art-twinkle 2.6s ease-in-out infinite; }
+@keyframes art-snow {
+  to { transform: translate(8px, 14px); }
+}
+.art-snow { animation: art-snow 3.6s ease-in-out infinite alternate; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -173,6 +220,11 @@
   .skeleton {
     animation: none;
     background: var(--skeleton);
+  }
+
+  .text-shimmer {
+    animation: none;
+    color: var(--foreground);
   }
 }
 

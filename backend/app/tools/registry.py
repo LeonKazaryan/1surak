@@ -19,6 +19,7 @@ class Tool:
 
     `title` is shown to the user while the tool runs, `description` and `args` are what the model sees.
     The handler returns plain JSON-serializable data; facts the agent quotes must come from it.
+    To also show something in the chat (cards, questions), it returns a ToolReply instead.
     """
 
     name: str
@@ -40,11 +41,25 @@ class Tool:
 
 
 @dataclass(frozen=True)
+class ToolReply:
+    """A result for the model plus what the user sees: `text` as the agent's words, `event` as a chat widget.
+    `ends_turn` hands the turn back to the user, e.g. after asking a question."""
+
+    result: Any
+    event: dict
+    text: str = ""
+    ends_turn: bool = False
+
+
+@dataclass(frozen=True)
 class ToolResult:
     ok: bool
     content: str  # what goes back to the model
     preview: str  # one line for the user
     args: dict
+    event: dict | None = None
+    text: str = ""
+    ends_turn: bool = False
 
 
 def _short(text: str) -> str:
@@ -73,6 +88,10 @@ class ToolRegistry:
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
+
+    def extended(self, tools: list[Tool]) -> "ToolRegistry":
+        """A new registry with these tools added, e.g. the ones bound to a single chat."""
+        return ToolRegistry([*self._tools.values(), *tools])
 
     def specs(self) -> list[dict]:
         return [tool.spec() for tool in self._tools.values()]
@@ -110,10 +129,16 @@ class ToolRegistry:
             log.exception("Tool %s failed", name)
             return _error("Tool failed", args, "Не удалось получить данные")
 
+        reply = result if isinstance(result, ToolReply) else None
+        if reply:
+            result = reply.result
         preview = tool.preview(result) if tool.preview else "Готово"
         return ToolResult(
             ok=True,
             content=json.dumps(result, ensure_ascii=False, default=str),
             preview=_short(preview),
             args=args,
+            event=reply.event if reply else None,
+            text=reply.text if reply else "",
+            ends_turn=bool(reply and reply.ends_turn),
         )

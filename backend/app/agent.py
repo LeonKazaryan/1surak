@@ -14,6 +14,8 @@ from app.llm import LLM, TextDelta, ToolCall
 from app.tools import ToolRegistry
 
 MAX_TOOL_ROUNDS = 8
+# Text this short followed by tool calls is the model thinking aloud, not the answer.
+NARRATION_MAX_CHARS = 280
 MSK = timezone(timedelta(hours=3), "MSK")  # Moscow has no DST, so a fixed offset is exact
 WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
@@ -31,7 +33,7 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 Откуда брать факты:
 - Цены, расписания, наличие мест, погоду и условия отелей бери только из результатов инструментов. \
 Если инструмента для этого нет или он вернул ошибку, честно скажи об этом и не придумывай цифры.
-- Если пользователь называет конкретное место, сначала открой его карточку (get_destination). \
+- Если пользователь называет конкретное место, открой его карточку (get_destination). \
 Если места нет в каталоге, так и скажи, назови главную известную причину, почему туда сложно \
 (например, для Франции и других стран Шенгена россиянам нужна шенгенская виза, прямых рейсов из России нет), \
 без цифр и сроков, которых нет в инструментах, и предложи похожие места из каталога.
@@ -43,24 +45,27 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 и всё, чего нет в каталоге.
 - Если в ответе есть факты из research, закончи его строкой «Источники:» и списком: название, дата, ссылка.
 
-Как вести разговор:
-- Не устраивай анкету. Если чего-то не хватает (город вылета, даты, сколько человек), прими разумные \
-допущения, назови их одной строкой в начале («Считаю: вылет из Москвы, 2 взрослых и ребёнок, неделя») \
-и сразу покажи варианты.
-- Последняя строка ответа одна из двух:
-  1) уточняющий вопрос, если не хватает того, от чего зависит выбор. Едут дети, а возраст не назван: \
-«Сколько лет ребёнку? От этого зависит выбор отеля.» Нет точных дат: «На какие даты смотреть?» \
-Спрашивай об одном, самом важном.
-  2) если всё названо, предложение следующего шага без вопроса: «Могу подобрать отели в Хургаде.»
-- Кроме этого вопроса, вопросительных знаков в ответе нет."""
+Как вести диалог:
+1. На каждое сообщение о поездке сначала вызови update_trip_brief. Передавай только сказанное явно \
+или однозначно следующее из слов. Возраст, бюджет и число людей не придумывай.
+2. Не устраивай анкету. Если missing не пуст и уточнений ещё не было, вызови ask_user один раз \
+со всеми пунктами из missing: пользователь ответит на карточках. Вопросы о датах, составе и бюджете \
+обычным текстом не задавай.
+3. Иначе вызови search_destinations: возьми фильтры из search_hint и добавь то, что следует из пожеланий \
+(«тёплое море» = море от 24 °C, «без долгих перелётов» = до 5 часов). Если совпадений мало, \
+ослабь один фильтр и скажи об этом. Затем вызови show_destinations с 3-5 лучшими вариантами. \
+Если отвечаешь с допущениями (assumptions), назови их в intro.
+4. Отели, билеты и цены пока не подбираем. Если пользователь выбрал направление, коротко подтверди выбор \
+и предложи следующий шаг без вопроса: «Следующим шагом подберу перелёт и отель.»
+- Перед вызовом инструментов текст не пиши: слова для пользователя передавай в intro."""
 
 # Rules the model drops in long answers work when repeated right before it writes (like the language note).
 # Only after tool results: on the first call it pushes the model to answer before looking anything up.
 REPLY_CHECKLIST = (
     "Перед ответом проверь: 1) цифры и факты только из результатов инструментов; "
     "2) если использовал research, в конце блок «Источники:» со ссылками; "
-    "3) если едут дети и возраст не назван, или нет точных дат, или неясен бюджет, последняя строка "
-    "ответа: один вопрос о самом важном из этого, например «Сколько лет ребёнку?»."
+    "3) даты, состав и бюджет уточняй только карточками ask_user и только один раз: если уточнение уже было, "
+    "не спрашивай снова, а назови допущения."
 )
 ENGLISH_NOTE = (
     "The user writes in English. Write the whole answer in English, including place names and the facts "
@@ -104,6 +109,23 @@ def _display_args(raw: str) -> dict:
     return args if isinstance(args, dict) else {}
 
 
+def _tokens(chunks: list[str], after_text: bool) -> list[dict]:
+    separator = (
+        [{"type": "assistant_token", "text": "\n\n"}] if after_text else []
+    )  # apart from earlier rounds
+    return separator + [{"type": "assistant_token", "text": chunk} for chunk in chunks]
+
+
+def _repeats_an_argument(text: str, calls: list[ToolCall]) -> bool:
+    """The model often says aloud the very intro it passes to a tool; the tool shows it anyway."""
+    said = " ".join(text.split())
+    return any(
+        isinstance(value, str) and " ".join(value.split()) == said
+        for call in calls
+        for value in _display_args(call.arguments).values()
+    )
+
+
 def _assistant_message(text: str, calls: list[ToolCall]) -> dict:
     return {
         "role": "assistant",
@@ -136,22 +158,35 @@ async def run(
 
         text_parts: list[str] = []
         calls: list[ToolCall] = []
+        # Short text is held back until we know whether tool calls follow it: then it is a step, not the answer.
+        streaming = False
         async for event in llm.stream(
             [*messages, *(checklist if round_index else []), *language], None if last_round else specs
         ):
             if isinstance(event, TextDelta):
-                if not text_parts and said_something:
-                    yield {"type": "assistant_token", "text": "\n\n"}  # separate text from earlier rounds
                 text_parts.append(event.text)
-                yield {"type": "assistant_token", "text": event.text}
+                if streaming:
+                    yield {"type": "assistant_token", "text": event.text}
+                elif sum(map(len, text_parts)) > NARRATION_MAX_CHARS:
+                    streaming = True
+                    for token in _tokens(text_parts, said_something):
+                        yield token
             elif isinstance(event, ToolCall):
                 calls.append(event)
-        said_something = said_something or bool(text_parts)
+        text = "".join(text_parts)
+        if text.strip() and not streaming:
+            if not calls or last_round:
+                streaming = True
+                for token in _tokens(text_parts, said_something):
+                    yield token
+            elif not _repeats_an_argument(text, calls):
+                yield {"type": "assistant_note", "text": text.strip()}
+        said_something = said_something or streaming
 
         if not calls or last_round:
             return
 
-        messages.append(_assistant_message("".join(text_parts), calls))
+        messages.append(_assistant_message(text, calls))
         for call in calls:
             yield {
                 "type": "tool_start",
@@ -162,3 +197,11 @@ async def run(
             result = await tools.execute(call.name, call.arguments)
             yield {"type": "tool_end", "name": call.name, "output_preview": result.preview, "ok": result.ok}
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
+            if result.text:
+                separator = "\n\n" if said_something else ""
+                yield {"type": "assistant_token", "text": separator + result.text}
+                said_something = True
+            if result.event:
+                yield result.event
+            if result.ends_turn:
+                return

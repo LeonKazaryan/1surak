@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app import agent
 from app.llm import ToolCall
-from app.tools import Tool, ToolRegistry
+from app.tools import Tool, ToolRegistry, ToolReply
 from tests.conftest import FakeLLM
 
 FIXED_NOW = datetime(2026, 10, 24, 12, 0, tzinfo=agent.MSK)
@@ -24,9 +24,19 @@ async def _broken(args: CityArgs) -> dict:
     raise RuntimeError("db password is hunter2")
 
 
+async def _ask(args: CityArgs) -> ToolReply:
+    return ToolReply(
+        result={"asked": True},
+        text="Уточню одно",
+        event={"type": "clarify", "questions": [{"slot": "when"}]},
+        ends_turn=True,
+    )
+
+
 def registry() -> ToolRegistry:
     return ToolRegistry(
         [
+            Tool(name="ask", title="Спрашиваю", description="Ask the user", args=CityArgs, handler=_ask),
             Tool(
                 name="get_weather",
                 title="Смотрю погоду",
@@ -90,7 +100,7 @@ def test_should_run_requested_tool_and_feed_result_back_before_answering():
     assert events[1]["ok"] is True
     assert events[1]["output_preview"] == "Анталья: море 26 °C"
 
-    assert [t["function"]["name"] for t in llm.tools_seen[0]] == ["get_weather", "broken"]
+    assert [t["function"]["name"] for t in llm.tools_seen[0]] == ["ask", "get_weather", "broken"]
     second_call = llm.conversations[1]
     assistant, tool_msg = second_call[-2], second_call[-1]
     assert assistant["tool_calls"][0]["function"] == {
@@ -146,13 +156,33 @@ def test_should_hide_tool_exception_details_from_user_and_model():
     assert "hunter2" not in json.dumps(llm.calls, ensure_ascii=False)
 
 
-def test_should_separate_text_from_different_rounds():
+def test_should_turn_short_text_before_tool_calls_into_a_step_not_the_answer():
     llm = FakeLLM(rounds=[["Смотрю погоду.", call("get_weather", '{"city": "Сочи"}')], ["Тепло."]])
 
     events = run(llm, registry())
 
-    assert text_of(events) == "Смотрю погоду.\n\nТепло."
+    assert events[0] == {"type": "assistant_note", "text": "Смотрю погоду."}
+    assert text_of(events) == "Тепло."
     assert llm.conversations[1][-2]["content"] == "Смотрю погоду."
+
+
+def test_should_stream_long_text_live_even_when_tools_follow():
+    long = "Сначала расскажу подробно. " * 12
+    llm = FakeLLM(rounds=[[long, call("get_weather", '{"city": "Сочи"}')], ["Тепло."]])
+
+    events = run(llm, registry())
+
+    assert events[0]["type"] == "assistant_token"
+    assert text_of(events) == f"{long}\n\nТепло."
+
+
+def test_should_drop_text_that_repeats_a_tool_argument():
+    args = '{"city": "Сочи, у моря"}'
+    llm = FakeLLM(rounds=[["Сочи,  у моря", call("get_weather", args)], ["Ок"]])
+
+    events = run(llm, registry())
+
+    assert not any(e["type"] == "assistant_note" for e in events)
 
 
 def test_should_force_a_final_answer_without_tools_after_the_round_limit():
@@ -194,3 +224,23 @@ def test_should_not_add_the_english_reminder_to_russian_or_mixed_messages():
         llm = FakeLLM()
         run(llm, query=query)
         assert all(m.get("content") != agent.ENGLISH_NOTE for m in llm.calls[0])
+
+
+def test_should_show_a_tool_widget_with_its_text_and_hand_the_turn_back():
+    llm = FakeLLM(
+        rounds=[[call("get_weather", '{"city": "Сочи"}', "a"), call("ask", '{"city": "Сочи"}', "b")]]
+    )
+
+    events = run(llm, registry())
+
+    assert [e["type"] for e in events] == [
+        "tool_start",
+        "tool_end",
+        "tool_start",
+        "tool_end",
+        "assistant_token",
+        "clarify",
+    ]
+    assert text_of(events) == "Уточню одно"
+    assert events[-1] == {"type": "clarify", "questions": [{"slot": "when"}]}
+    assert len(llm.calls) == 1  # the model is not called again: the user answers next

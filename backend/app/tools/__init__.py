@@ -1,8 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.tools.registry import Tool, ToolRegistry, ToolResult
+from app.tools.registry import Tool, ToolRegistry, ToolReply, ToolResult
 
-__all__ = ["Tool", "ToolRegistry", "ToolResult", "build_registry"]
+__all__ = ["Tool", "ToolRegistry", "ToolReply", "ToolResult", "build_registry"]
 
 
 def build_registry(sessionmaker: async_sessionmaker[AsyncSession], web=None) -> ToolRegistry:

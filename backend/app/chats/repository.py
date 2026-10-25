@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import chat_messages, chats
+from app.db import chat_messages, chats, trip_briefs
 
 
 def _now() -> datetime:
@@ -84,7 +84,20 @@ async def add_message(
     await db.execute(update(chats).where(chats.c.id == chat_id).values(updated_at=now))
 
 
+async def get_brief(db: AsyncSession, chat_id: str) -> dict | None:
+    row = (await db.execute(select(trip_briefs.c.brief).where(trip_briefs.c.chat_id == chat_id))).first()
+    return row.brief if row else None
+
+
+async def save_brief(db: AsyncSession, chat_id: str, brief: dict) -> None:
+    values = {"brief": brief, "updated_at": _now()}
+    result = await db.execute(update(trip_briefs).where(trip_briefs.c.chat_id == chat_id).values(**values))
+    if result.rowcount == 0:
+        await db.execute(insert(trip_briefs).values(chat_id=chat_id, **values))
+
+
 async def delete_chat(db: AsyncSession, chat_id: str) -> bool:
+    await db.execute(delete(trip_briefs).where(trip_briefs.c.chat_id == chat_id))
     await db.execute(delete(chat_messages).where(chat_messages.c.chat_id == chat_id))
     result = await db.execute(delete(chats).where(chats.c.id == chat_id))
     return result.rowcount > 0

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { fetchChatMessages, fetchChatMeta, sendChatStream } from '@/api/client'
-import type { ChatMeta, ChatStreamDone } from '@/types/api'
+import type { BriefAnswers, ChatMeta, ChatStreamDone } from '@/types/api'
 import { addMyChat } from '@/chat/chatStorage'
 import { createTextPump } from '@/chat/textPump'
 import { applyTraceEvent, rehydrateTrace } from '@/chat/trace'
+import { isWidgetEvent, widgetFromTrace } from '@/chat/widgets'
 import { getDepartureCity } from '@/lib/departureCity'
 import type { ChatLayoutContext, ChatTraceStep, WorkspaceChatMessage } from '@/chat/types'
 
@@ -35,11 +36,13 @@ function upsertRecent(prev: ChatMeta[], done: ChatStreamDone): ChatMeta[] {
 }
 
 function toWorkspaceMessage(m: Awaited<ReturnType<typeof fetchChatMessages>>['messages'][number]): WorkspaceChatMessage {
+  const trace = Array.isArray(m.trace) ? m.trace : []
   return {
     id: m.id,
     role: m.role,
     content: m.content,
-    traceSteps: rehydrateTrace(Array.isArray(m.trace) ? m.trace : []),
+    traceSteps: rehydrateTrace(trace),
+    widget: widgetFromTrace(trace),
     timestamp: new Date(m.created_at),
   }
 }
@@ -101,7 +104,7 @@ export function useChatSession(urlChatId: string | undefined) {
   }, [urlChatId])
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, answers?: BriefAnswers) => {
       const query = text.trim()
       if (!query || isLoading) return
 
@@ -109,7 +112,7 @@ export function useChatSession(urlChatId: string | undefined) {
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'user', content: query, timestamp: new Date() },
-        { id: assistantId, role: 'assistant', content: '', traceSteps: [], timestamp: new Date() },
+        { id: assistantId, role: 'assistant', content: '', traceSteps: [], phase: 'working', timestamp: new Date() },
       ])
       setStreamingId(assistantId)
       setIsLoading(true)
@@ -129,20 +132,32 @@ export function useChatSession(urlChatId: string | undefined) {
       }
 
       let steps: ChatTraceStep[] = []
+      let phase: WorkspaceChatMessage['phase'] = 'working'
+      const setPhase = (next: WorkspaceChatMessage['phase']) => {
+        if (next === phase) return
+        phase = next
+        patch({ phase })
+      }
       const pump = createTextPump((shown) => patch({ content: shown }))
 
       sendChatStream(
-        { query, chat_id: run.chatId, origin: getDepartureCity().name },
+        { query, chat_id: run.chatId, origin: getDepartureCity().name, answers },
         (event) => {
           if (!isCurrent()) return
           if (event.type === 'assistant_token') {
             pump.push(event.text)
+            setPhase('writing')
+            return
+          }
+          if (isWidgetEvent(event)) {
+            patch({ widget: event })
             return
           }
           const next = applyTraceEvent(steps, event)
           if (next !== steps) {
             steps = next
             patch({ traceSteps: steps })
+            setPhase('working')
           }
         },
         { signal: run.controller.signal },
@@ -150,7 +165,7 @@ export function useChatSession(urlChatId: string | undefined) {
         .then((done) => {
           if (!isCurrent()) return
           pump.stop()
-          patch({ content: done.answer || pump.text(), traceSteps: steps })
+          patch({ content: done.answer || pump.text(), traceSteps: steps, phase: undefined })
           addMyChat(done.chat_id)
           setActiveChatId(done.chat_id)
           if (done.title) setChatTitle(done.title)
@@ -163,7 +178,7 @@ export function useChatSession(urlChatId: string | undefined) {
           setError(SEND_ERROR)
           const partial = pump.text()
           if (partial || steps.length) {
-            patch({ content: partial, traceSteps: steps })
+            patch({ content: partial, traceSteps: steps, phase: undefined })
           } else {
             setMessages((prev) => prev.filter((m) => m.id !== assistantId))
           }

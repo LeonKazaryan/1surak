@@ -38,7 +38,7 @@ async def chat_stream(
     body: ChatRequest, sessionmaker: SessionFactory, llm: Llm, tools: Tools
 ) -> StreamingResponse:
     chat_id = str(body.chat_id or uuid4())
-    events = service.stream_reply(sessionmaker, llm, chat_id, body.query, body.origin, tools)
+    events = service.stream_reply(sessionmaker, llm, chat_id, body.query, body.origin, tools, body.answers)
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 
 

@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { AnimatePresence, MotionConfig } from 'motion/react'
 import { LogoMark } from '@/components/LogoMark'
 import { ScrollRow } from '@/components/ScrollRow'
 import { PageHeader, type Crumb } from '@/components/PageHeader'
 import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
+import type { BriefAnswers, DestinationCard } from '@/types/api'
 import { AgentTracePanel } from './components/AgentTracePanel'
 import { MessagesSkeleton } from './components/ChatSkeletons'
+import { ClarifyCards } from './components/ClarifyCards'
 import { Composer } from './components/Composer'
+import { DestinationCards } from './components/DestinationCards'
+import { FlightLoader } from './components/FlightLoader'
 import { MessageContent } from './components/MessageContent'
 import { TripPlanPanel } from './components/TripPlanPanel'
 import { useChatSession } from './hooks/useChatSession'
@@ -23,19 +28,6 @@ function readHandoffQuery(state: unknown): string | null {
     return state.query.trim() || null
   }
   return null
-}
-
-function PreparingAnswerLine() {
-  return (
-    <p className="m-0 flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-muted-foreground">
-      <span className="animate-prep-answer-text">Готовлю ответ</span>
-      <span className="inline-flex translate-y-px items-center gap-1" aria-hidden>
-        <span className="prep-dot" />
-        <span className="prep-dot" />
-        <span className="prep-dot" />
-      </span>
-    </p>
-  )
 }
 
 interface PlanToggleProps {
@@ -55,9 +47,14 @@ function PlanToggle({ open, onToggle }: PlanToggleProps) {
 interface MessageBubbleProps {
   message: WorkspaceChatMessage
   isStreaming: boolean
+  /** The latest message: its cards take answers and picks (sent once the chat is idle). */
+  isLast: boolean
+  busy: boolean
+  onAnswer: (text: string, answers: BriefAnswers) => void
+  onPick: (card: DestinationCard) => void
 }
 
-function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming, isLast, busy, onAnswer, onPick }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -67,10 +64,23 @@ function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
       </div>
     )
   }
+  const { widget, content } = message
+  const working = isStreaming && !widget && (!content || message.phase === 'working')
   return (
     <div className="min-w-0">
-      <AgentTracePanel steps={message.traceSteps ?? []} isStreaming={isStreaming} />
-      {message.content ? <MessageContent text={message.content} /> : isStreaming && <PreparingAnswerLine />}
+      {!working && <AgentTracePanel steps={message.traceSteps ?? []} isStreaming={false} />}
+      {content && <MessageContent text={content} />}
+      <AnimatePresence>
+        {working && (
+          <div key="loader" className={content ? 'mt-3' : undefined}>
+            <FlightLoader steps={message.traceSteps ?? []} />
+          </div>
+        )}
+      </AnimatePresence>
+      {widget?.type === 'clarify' && <ClarifyCards widget={widget} active={isLast} busy={busy} onSubmit={onAnswer} />}
+      {widget?.type === 'destinations' && (
+        <DestinationCards widget={widget} canPick={isLast && !busy} onPick={onPick} />
+      )}
     </div>
   )
 }
@@ -83,12 +93,16 @@ export default function ChatPage() {
   const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading } = useChatSession(chatId)
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const lastMessageRef = useRef<HTMLDivElement>(null)
   const busy = isLoading || chatLoading
   const panel = useResizablePanel({ storageKey: 'chat.planPanelWidth', min: 300, max: 560, initial: 380 })
+  const lastWidget = messages.at(-1)?.widget
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    // Cards are taller than the screen: show them from the top, starting with the agent's words.
+    if (lastWidget) lastMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    else messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, lastWidget])
 
   useEffect(() => {
     const query = readHandoffQuery(location.state)
@@ -123,84 +137,95 @@ export default function ChatPage() {
   )
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <PageHeader breadcrumb={breadcrumb} headerRight={<PlanToggle open={planPanelOpen} onToggle={togglePlan} />} />
+    <MotionConfig reducedMotion="user">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <PageHeader breadcrumb={breadcrumb} headerRight={<PlanToggle open={planPanelOpen} onToggle={togglePlan} />} />
 
-        {chatLoading || messages.length > 0 ? (
-          <>
-            {chatLoading ? (
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <MessagesSkeleton />
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
-                <div className="flex min-h-full flex-col justify-end pt-4 pb-6">
-                  <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 max-md:px-4">
-                    {errorBanner}
-                    {messages.map((m) => (
-                      <MessageBubble key={m.id} message={m} isStreaming={streamingId === m.id} />
-                    ))}
-                    <div ref={messagesEndRef} />
+          {chatLoading || messages.length > 0 ? (
+            <>
+              {chatLoading ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <MessagesSkeleton />
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
+                  <div className="flex min-h-full flex-col justify-end pt-4 pb-6">
+                    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 max-md:px-4">
+                      {errorBanner}
+                      {messages.map((m, i) => (
+                        <div key={m.id} ref={i === messages.length - 1 ? lastMessageRef : undefined} className="scroll-mt-4">
+                          <MessageBubble
+                            message={m}
+                            isStreaming={streamingId === m.id}
+                            isLast={i === messages.length - 1}
+                          busy={busy}
+                            onAnswer={(text, answers) => send(text, answers)}
+                            onPick={(card) => send(`Выбираю ${card.name}`)}
+                          />
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
                   </div>
                 </div>
+              )}
+              <div className="shrink-0 px-6 pt-2 pb-5 max-md:px-4">
+                <div className="mx-auto max-w-[720px]">{composer}</div>
               </div>
-            )}
-            <div className="shrink-0 px-6 pt-2 pb-5 max-md:px-4">
-              <div className="mx-auto max-w-[720px]">{composer}</div>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-6 pb-16 max-md:px-4">
+              <div className="flex w-full max-w-[min(92vw,44rem)] flex-col gap-5">
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <LogoMark className="h-14 w-14" />
+                  <h1 className="m-0 text-[clamp(26px,3vw,34px)] font-semibold tracking-tight text-foreground">
+                    Куда отправимся?
+                  </h1>
+                </div>
+                {errorBanner}
+                <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
+                  {EXAMPLE_TRIPS.map((trip) => (
+                    <button
+                      key={trip.label}
+                      type="button"
+                      onClick={() => submit(trip.query)}
+                      disabled={isLoading}
+                      title={trip.query}
+                      className="min-h-[36px] rounded-full border border-border bg-card px-4 py-1.5 text-sm text-muted-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    >
+                      {trip.label}
+                    </button>
+                  ))}
+                </ScrollRow>
+                {composer}
+                <p className="m-0 text-center text-sm leading-relaxed text-muted-foreground">{EMPTY_STATE_INTRO}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {planPanelOpen && (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Изменить ширину плана поездки"
+              tabIndex={0}
+              onMouseDown={panel.startResize}
+              onDoubleClick={panel.reset}
+              onKeyDown={panel.onSeparatorKeyDown}
+              className="hidden w-1.5 shrink-0 cursor-col-resize bg-border select-none hover:bg-faintest focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-faint md:block"
+            />
+            <div
+              className={`min-h-0 overflow-hidden max-md:fixed max-md:inset-0 max-md:z-50 md:w-(--plan-w) md:shrink-0 ${panel.isResizing ? '' : 'transition-[width] duration-300 ease-in-out'}`}
+              style={{ '--plan-w': `${panel.width}px` } as CSSProperties}
+            >
+              <TripPlanPanel onClose={() => setPlanPanelOpen(false)} />
             </div>
           </>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-6 pb-16 max-md:px-4">
-            <div className="flex w-full max-w-[min(92vw,44rem)] flex-col gap-5">
-              <div className="flex flex-col items-center gap-3 text-center">
-                <LogoMark className="h-14 w-14" />
-                <h1 className="m-0 text-[clamp(26px,3vw,34px)] font-semibold tracking-tight text-foreground">
-                  Куда отправимся?
-                </h1>
-              </div>
-              {errorBanner}
-              <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
-                {EXAMPLE_TRIPS.map((trip) => (
-                  <button
-                    key={trip.label}
-                    type="button"
-                    onClick={() => submit(trip.query)}
-                    disabled={isLoading}
-                    title={trip.query}
-                    className="min-h-[36px] rounded-full border border-border bg-card px-4 py-1.5 text-sm text-muted-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    {trip.label}
-                  </button>
-                ))}
-              </ScrollRow>
-              {composer}
-              <p className="m-0 text-center text-sm leading-relaxed text-muted-foreground">{EMPTY_STATE_INTRO}</p>
-            </div>
-          </div>
         )}
       </div>
-
-      {planPanelOpen && (
-        <>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Изменить ширину плана поездки"
-            tabIndex={0}
-            onMouseDown={panel.startResize}
-            onDoubleClick={panel.reset}
-            onKeyDown={panel.onSeparatorKeyDown}
-            className="hidden w-1.5 shrink-0 cursor-col-resize bg-border select-none hover:bg-faintest focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-faint md:block"
-          />
-          <div
-            className={`min-h-0 overflow-hidden max-md:fixed max-md:inset-0 max-md:z-50 md:w-(--plan-w) md:shrink-0 ${panel.isResizing ? '' : 'transition-[width] duration-300 ease-in-out'}`}
-            style={{ '--plan-w': `${panel.width}px` } as CSSProperties}
-          >
-            <TripPlanPanel onClose={() => setPlanPanelOpen(false)} />
-          </div>
-        </>
-      )}
-    </div>
+    </MotionConfig>
   )
 }

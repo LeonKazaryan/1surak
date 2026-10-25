@@ -101,6 +101,7 @@ describe('ChatPage', () => {
     await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
 
     expect(await screen.findByText('Хургаду')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Агент работает' })).not.toBeInTheDocument())
     expect(screen.getByText('Ищу направления')).toBeInTheDocument()
     expect(sendChatStream).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'Море в ноябре' }),
@@ -294,5 +295,143 @@ describe('ChatPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Скрыть план/ }))
     expect(screen.queryByRole('region', { name: 'План поездки' })).toBeNull()
+  })
+
+  it('should show the flight loader with the current step while the agent works', async () => {
+    sendChatStream.mockImplementation(async (_body, onEvent) => {
+      onEvent({ type: 'tool_start', name: 'search_destinations', title: 'Подбираю направления' })
+      return new Promise(() => {})
+    })
+    renderChat()
+
+    await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
+
+    const loader = await screen.findByRole('status', { name: 'Агент работает' })
+    expect(within(loader).getByText('Подбираю направления')).toBeInTheDocument()
+    expect(within(loader).getByText('Сверяю климат по месяцам…')).toBeInTheDocument()
+  })
+
+  it('should ask only the missing questions as cards and send the answers in one message', async () => {
+    streamReply(
+      [
+        { type: 'tool_start', name: 'update_trip_brief', title: 'Разбираю запрос' },
+        { type: 'tool_end', name: 'update_trip_brief', output_preview: 'Понял' },
+        { type: 'assistant_token', text: 'Уточню пару моментов' },
+        {
+          type: 'clarify',
+          questions: [
+            { slot: 'travelers', title: 'Кто едет?', hint: null },
+            { slot: 'budget', title: 'Какой бюджет?', hint: 'Вы написали «недорого»' },
+          ],
+          prefill: { kinds: ['sea'], month: 11, nights: null, adults: null, children: 1, children_ages: [], budget_level: null },
+        },
+      ],
+      { type: 'done', answer: 'Уточню пару моментов', chat_id: 'chat-1', title: 'Море' },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'К морю с ребёнком, недорого{Enter}')
+
+    expect(await screen.findByText('Кто едет?')).toBeInTheDocument()
+    expect(screen.getByText('Вы написали «недорого»')).toBeInTheDocument()
+    expect(screen.queryByText('Какой отдых хочется?')).toBeNull()
+    const submit = await screen.findByRole('button', { name: /Подобрать направления/ })
+    expect(submit).toBeDisabled()
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Возраст ребёнка 1' }), '5')
+    await userEvent.click(screen.getByRole('button', { name: /Средне/ }))
+    streamReply([], { type: 'done', answer: 'Ищу', chat_id: 'chat-1', title: 'Море' })
+    await userEvent.click(submit)
+
+    await waitFor(() => expect(sendChatStream).toHaveBeenCalledTimes(2))
+    expect(sendChatStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: '2 взрослых + 1 ребёнок (5 лет) · бюджет: средне',
+        answers: { adults: 2, children: 1, children_ages: [5], budget_level: 2 },
+      }),
+      expect.any(Function),
+      expect.anything(),
+    )
+    expect(await screen.findByText('Уточнили: кто едет, бюджет')).toBeInTheDocument()
+  })
+
+  it('should show destination cards and send the picked one', async () => {
+    const card = (id: string, name: string) => ({
+      id,
+      name,
+      country: 'Египет',
+      country_code: 'EG',
+      kinds: ['sea' as const],
+      flight_hours: 4.5,
+      direct: true,
+      visa: 'виза по прибытии',
+      visa_easy: true,
+      price_level: 1,
+      price: 'недорого',
+      kids: 'хорошо с детьми',
+      kids_fit: 'good' as const,
+      climate: { month: 'ноябрь', month_in: 'ноябре', day: 27, sea: 26 },
+      highlights: ['коралловые рифы'],
+      watch_out: ['ветрено'],
+      why: `${name} подходит`,
+      tradeoff: 'Ветрено вечером',
+    })
+    streamReply(
+      [
+        { type: 'assistant_token', text: 'Вот что нашёл' },
+        { type: 'destinations', summary: ['Море', 'Ноябрь'], cards: [card('hurghada', 'Хургада'), card('sharm', 'Шарм-эль-Шейх')] },
+      ],
+      { type: 'done', answer: 'Вот что нашёл', chat_id: 'chat-1', title: 'Море' },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
+
+    expect(await screen.findByRole('heading', { name: 'Хургада' })).toBeInTheDocument()
+    expect(screen.getByText('Шарм-эль-Шейх подходит')).toBeInTheDocument()
+    expect(screen.getByText('Лучшее совпадение')).toBeInTheDocument()
+    expect(screen.getAllByText('+26°')).toHaveLength(2)
+    expect(screen.getAllByText('4,5 ч · прямой')).toHaveLength(2)
+
+    streamReply([], { type: 'done', answer: 'Отличный выбор', chat_id: 'chat-1', title: 'Море' })
+    await userEvent.click(screen.getAllByRole('button', { name: 'Выбрать' })[1])
+
+    await waitFor(() =>
+      expect(sendChatStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: 'Выбираю Шарм-эль-Шейх' }),
+        expect.any(Function),
+        expect.anything(),
+      ),
+    )
+  })
+
+  it('should show answered questions from a saved chat as done', async () => {
+    vi.mocked(client.fetchChatMeta).mockResolvedValue({
+      id: 'c1',
+      title: 'Море',
+      created_at: '2026-10-24T10:00:00Z',
+      updated_at: '2026-10-24T10:00:00Z',
+    })
+    vi.mocked(client.fetchChatMessages).mockResolvedValue({
+      messages: [
+        {
+          id: 'm1',
+          chat_id: 'c1',
+          role: 'assistant',
+          content: 'Уточню',
+          trace: [
+            {
+              type: 'clarify',
+              questions: [{ slot: 'budget', title: 'Какой бюджет?' }],
+              prefill: { kinds: [], month: null, nights: null, adults: null, children: null, children_ages: [], budget_level: null },
+            },
+          ],
+          created_at: '2026-10-24T10:00:00Z',
+        },
+        { id: 'm2', chat_id: 'c1', role: 'user', content: 'бюджет не важен', trace: [], created_at: '2026-10-24T10:00:01Z' },
+      ],
+    })
+    renderChat('/chat/c1')
+
+    expect(await screen.findByText('Уточнили: бюджет')).toBeInTheDocument()
+    expect(screen.queryByText('Какой бюджет?')).toBeNull()
   })
 })

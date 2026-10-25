@@ -26,6 +26,15 @@ chat_messages = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
+# What the agent knows about the chat's trip (app.trip.TripBrief), carried from turn to turn.
+trip_briefs = Table(
+    "trip_briefs",
+    metadata,
+    Column("chat_id", Text, ForeignKey("chats.id"), primary_key=True),
+    Column("brief", JSON, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 
 facts = Table(
     "facts",
