@@ -6,14 +6,17 @@ Every failure becomes «no data» for that route, never an exception: the agent 
 
 import asyncio
 import logging
-import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
-from typing import Protocol
+from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
-from app.flights.dictionary import airline_name, logo_url
+from app.flights.dictionary import airline_name, city_code, logo_url
+
+if TYPE_CHECKING:
+    from app.flights.fares import FareStore
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +25,8 @@ AVIASALES = "https://www.aviasales.ru"
 CACHE_TTL_S = 6 * 3600
 MAX_PARALLEL = 8
 TICKETS_PER_ROUTE = 30
+
+FareKey = tuple[str, str, str]  # origin city, destination city, "YYYY-MM" or "" for the nearest dates
 
 
 @dataclass(frozen=True)
@@ -126,19 +131,56 @@ def summarize(rows: list[dict]) -> RouteFlights | None:
 
 
 class TravelpayoutsFlights:
-    def __init__(self, token: str, client: httpx.AsyncClient | None = None, timeout_s: float = 8.0):
+    """Looks in memory, then in the fares table, then asks Aviasales, only for what is still missing."""
+
+    def __init__(
+        self,
+        token: str,
+        client: httpx.AsyncClient | None = None,
+        timeout_s: float = 8.0,
+        store: "FareStore | None" = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ):
         self._token = token
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
-        self._cache: dict[tuple, tuple[float, RouteFlights | None]] = {}
+        self._store = store
+        self._clock = clock
+        self._cache: dict[FareKey, tuple[datetime, RouteFlights | None]] = {}
         self._parallel = asyncio.Semaphore(MAX_PARALLEL)
 
     async def route(self, origin: str, destination: str, month: int | None = None) -> RouteFlights | None:
-        if not origin or not destination or origin == destination:
-            return None
-        key = (origin, destination, departure_month(month))
-        cached = self._cache.get(key)
-        if cached and time.monotonic() - cached[0] < CACHE_TTL_S:
-            return cached[1]
+        return (await self.routes(origin, [destination], month))[destination]
+
+    async def routes(
+        self, origin: str, destinations: list[str], month: int | None
+    ) -> dict[str, RouteFlights | None]:
+        when = departure_month(month) or ""
+        keys = {d: (city_code(origin), city_code(d), when) for d in destinations}
+        wanted = {k for k in keys.values() if k[0] and k[1] and k[0] != k[1]}
+        found = await self._lookup(wanted)
+        return {d: found.get(key) for d, key in keys.items()}
+
+    async def _lookup(self, keys: set[FareKey]) -> dict[FareKey, RouteFlights | None]:
+        now = self._clock()
+        found = {k: hit[1] for k in keys if (hit := self._cache.get(k)) and hit[0] > now}
+        missing = keys - found.keys()
+        if missing and self._store:
+            stored = await self._store.load(sorted(missing), now)
+            self._cache.update(stored)
+            found.update({k: result for k, (_, result) in stored.items()})
+            missing -= stored.keys()
+        if not missing:
+            return found
+        order = sorted(missing)
+        answers = await asyncio.gather(*(self._fetch(*k) for k in order))
+        fresh = {k: a for k, a in zip(order, answers, strict=True) if a is not _FAILED}
+        expires = now + timedelta(seconds=CACHE_TTL_S)
+        self._cache.update({k: (expires, a) for k, a in fresh.items()})
+        if fresh and self._store:
+            await self._store.save(fresh, now, expires)
+        return {**found, **dict.fromkeys(missing), **fresh}
+
+    async def _fetch(self, origin: str, destination: str, month: str):
         params = {
             "origin": origin,
             "destination": destination,
@@ -148,21 +190,16 @@ class TravelpayoutsFlights:
             "limit": TICKETS_PER_ROUTE,
             "token": self._token,
         }
-        if key[2]:
-            params["departure_at"] = key[2]
+        if month:
+            params["departure_at"] = month
         try:
             async with self._parallel:
                 response = await self._client.get(PRICES_URL, params=params)
             response.raise_for_status()
-            result = summarize(response.json().get("data") or [])
+            return summarize(response.json().get("data") or [])
         except (httpx.HTTPError, ValueError, KeyError):
             log.warning("Travelpayouts failed for %s>%s", origin, destination, exc_info=True)
-            return None  # not cached: the next search tries again
-        self._cache[key] = (time.monotonic(), result)
-        return result
+            return _FAILED  # not cached: the next search tries again
 
-    async def routes(
-        self, origin: str, destinations: list[str], month: int | None
-    ) -> dict[str, RouteFlights | None]:
-        found = await asyncio.gather(*(self.route(origin, d, month) for d in destinations))
-        return dict(zip(destinations, found, strict=True))
+
+_FAILED = object()

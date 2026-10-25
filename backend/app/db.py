@@ -66,6 +66,24 @@ Index(
 )
 
 
+# Cached Aviasales prices per city pair and month (app/flights/fares.py), so they survive a restart.
+# price_rub NULL means Aviasales had no tickets: also worth remembering, until it expires.
+fares = Table(
+    "fares",
+    metadata,
+    Column("origin", Text, primary_key=True),  # city code: MOW, never SVO
+    Column("destination", Text, primary_key=True),
+    Column("month", Text, primary_key=True),  # "2026-11", or "" for the nearest dates
+    Column("price_rub", Integer),
+    Column("direct_price_rub", Integer),
+    Column("duration_min", Integer),
+    Column("tickets", JSON, nullable=False),  # {"cheapest": {...}, "direct": {...} | null, "fastest": {...}}
+    Column("source", Text, nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False, index=True),
+)
+
+
 # The knowledge base the agent keeps growing with web search (docs/09-living-knowledge-base.md).
 # The integer id is what the agent cites («kb:42») and also the rowid of the full-text index below.
 kb_entries = Table(

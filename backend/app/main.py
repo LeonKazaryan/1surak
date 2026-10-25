@@ -10,6 +10,7 @@ from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
 from app.flights import NoFlights, TravelpayoutsFlights
+from app.flights.fares import FareStore
 from app.flights.router import router as places_router
 from app.kb.page import page_tools_for
 from app.kb.seed import load_kb_seed
@@ -48,7 +49,7 @@ def create_app(
         if settings.seed_catalog:
             await _load_seed(app.state.sessionmaker)
         flights = (
-            TravelpayoutsFlights(settings.travelpayouts_token)
+            TravelpayoutsFlights(settings.travelpayouts_token, store=FareStore(app.state.sessionmaker))
             if settings.travelpayouts_token
             else NoFlights()
         )
