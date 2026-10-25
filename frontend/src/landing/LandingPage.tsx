@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CardNav, type CardNavItem } from '@/components/CardNav'
+import { fetchChats } from '@/api/client'
+import { getMyChats } from '@/chat/chatStorage'
+import type { ChatMeta } from '@/types/api'
+import { CardNav } from '@/components/CardNav'
 import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { Footer } from '@/components/Footer'
 import { HeroBackground } from '@/components/HeroBackground'
@@ -12,32 +15,34 @@ import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
 import { HERO_HIGHLIGHTS, HERO_PHRASES, HERO_TITLE, HERO_VIDEO_SRC } from './content'
 import { TripPrompt } from './TripPrompt'
 import { TripRoute } from './TripRoute'
+import { TripsMenu } from './TripsMenu'
 
-const NAV_ITEMS: CardNavItem[] = [
-  {
-    label: 'Агент',
-    bgColor: 'var(--accent)',
-    textColor: 'var(--foreground)',
-    links: [
-      { label: 'Новый чат', href: '/chat' },
-      { label: 'Как это работает', href: '#how' },
-    ],
-  },
-]
+const MENU_TRIPS = 3
 
 export default function LandingPage() {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
+  const [tripIds] = useState(() => getMyChats().slice(0, MENU_TRIPS))
+  const [trips, setTrips] = useState<ChatMeta[]>([])
+
+  useEffect(() => {
+    if (!tripIds.length) return
+    fetchChats(tripIds)
+      .then(({ items }) => setTrips(tripIds.flatMap((id) => items.filter((trip) => trip.id === id))))
+      .catch(() => setTrips([]))
+  }, [tripIds])
   useSmoothScroll()
 
   const startChat = (query: string) => {
     const trimmed = query.trim()
-    if (trimmed) navigate('/chat', { state: { query: trimmed } })
+    if (trimmed) navigate('/chat', { state: { query: trimmed }, viewTransition: true })
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <CardNav items={NAV_ITEMS} action={<DepartureCityPicker />} />
+      <CardNav action={<DepartureCityPicker />}>
+        <TripsMenu hasTrips={tripIds.length > 0} trips={trips} />
+      </CardNav>
 
       <section id="hero" className="relative isolate flex min-h-svh flex-col overflow-hidden">
         <HeroBackground videoSrc={HERO_VIDEO_SRC} />

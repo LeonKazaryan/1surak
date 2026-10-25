@@ -23,7 +23,8 @@ from app.catalog.catalog import (
 from app.facts.resolve import Resolution
 from app.facts.service import Resolved, resolve_entities
 from app.flights import City, Flights, RouteFlights
-from app.flights.dictionary import rub
+from app.money import current_currency, money
+from app.plan.guide import place_photo
 
 MONTHS = [
     "январь",
@@ -83,8 +84,8 @@ class SearchQuery(BaseModel):
         None, gt=0, le=20, description="Longest acceptable flight from Moscow, h."
     )
     direct_only: bool = Field(False, description="Only places with direct flights from the user's city.")
-    max_ticket_rub: int | None = Field(
-        None, gt=0, description="Most a one-way ticket per person may cost, RUB (real Aviasales prices)."
+    max_ticket: int | None = Field(
+        None, gt=0, description="Most a one-way ticket per person may cost, in the user's currency."
     )
     without_flight: bool = Field(False, description="Only places reachable by train from Moscow.")
     visa: Literal["any", "no_visa", "easy"] = Field(
@@ -271,9 +272,10 @@ def failures(s: Snapshot, q: SearchQuery, origin: str = "из вашего го�
                 misses.append(Miss(reason, "flight", (s.flight_min / 60 - q.max_flight_hours) / 2))
         if q.direct_only and not s.direct:
             misses.append(Miss(f"нет прямых рейсов {origin}", "direct", 1.0))
-        if q.max_ticket_rub is not None and s.ticket_rub is not None and s.ticket_rub > q.max_ticket_rub:
-            reason = f"билет от {rub(s.ticket_rub)}, нужно до {rub(q.max_ticket_rub)}"
-            misses.append(Miss(reason, "ticket", (s.ticket_rub - q.max_ticket_rub) / q.max_ticket_rub * 2))
+        cap = current_currency.get().to_rub(q.max_ticket) if q.max_ticket else None
+        if cap is not None and s.ticket_rub is not None and s.ticket_rub > cap:
+            reason = f"билет от {money(s.ticket_rub)}, нужно до {money(cap)}"
+            misses.append(Miss(reason, "ticket", (s.ticket_rub - cap) / cap * 2))
 
     allowed = {"no_visa": NO_VISA, "easy": EASY_VISA}.get(q.visa)
     if allowed is not None and s.visa_rule not in allowed:
@@ -404,6 +406,7 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "climate": _card_climate(climate, month) if climate else None,
         "highlights": list(place.highlights),
         "watch_out": list(place.watch_out),
+        "photo": place_photo(place.id),
     }
 
 

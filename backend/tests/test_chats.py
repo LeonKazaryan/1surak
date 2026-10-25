@@ -1,6 +1,8 @@
 import json
 from uuid import uuid4
 
+from app.chats import repository
+
 
 def create_chat(client, query: str) -> str:
     response = client.post("/api/chat/stream", json={"query": query})
@@ -44,3 +46,36 @@ def test_should_delete_chat_with_its_messages(client):
 
 def test_should_return_404_when_deleting_unknown_chat(client):
     assert client.delete(f"/api/chats/{uuid4()}").status_code == 404
+
+
+def test_should_describe_each_trip_in_the_list(client):
+    chat_id = create_chat(client, "Казань на выходные")
+    brief = {"destination": "Казань", "month": 1, "nights_min": 2, "priced_from": "NQZ"}
+    client.portal.call(_save_brief, client.app.state.sessionmaker, chat_id, brief)
+
+    [item] = client.get(f"/api/chats?ids={chat_id}").json()["items"]
+
+    assert item["summary"][:2] == ["Казань", "Январь · 2 ночи"]
+    assert item["departure"] == "из Астаны"
+    assert item["priced_at"] is None and item["stale"] is False and item["dates_passed"] is False
+
+
+def test_should_send_the_trip_status_with_the_finished_reply(client):
+    response = client.post("/api/chat/stream", json={"query": "Хочу к морю"})
+    done = json.loads(response.text.strip().splitlines()[-1])
+
+    assert done["summary"] == [] and done["stale"] is False
+
+
+def test_should_refuse_to_refresh_a_trip_without_cards(client):
+    chat_id = create_chat(client, "Пока без вариантов")
+
+    assert client.post(f"/api/chats/{chat_id}/refresh").status_code == 409
+    assert client.post(f"/api/chats/{uuid4()}/refresh").status_code == 404
+    assert client.post("/api/chats/not-a-uuid/refresh").status_code == 400
+
+
+async def _save_brief(sessionmaker, chat_id: str, brief: dict) -> None:
+    async with sessionmaker() as db:
+        await repository.save_brief(db, chat_id, brief)
+        await db.commit()

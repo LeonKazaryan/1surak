@@ -1,4 +1,5 @@
-import type { BriefAnswers, ChatStreamEvent, TripKind } from '@/types/api'
+import { createContext } from 'react'
+import type { BriefAnswers, ChatStreamEvent, Currency, TripKind } from '@/types/api'
 import type { ChatWidget } from './types'
 
 export const KIND_OPTIONS: { kind: TripKind; label: string }[] = [
@@ -17,13 +18,42 @@ export const NIGHT_OPTIONS: [number, number][] = [
   [15, 20],
 ]
 
-/** Per person, for a week; the same team estimates the server uses to pick a price level. */
+export const RUB: Currency = { code: 'RUB', sign: '₽', glyph: '₽', per_rub: 1 }
+/** Cards set it from their event: older saved messages have none and stay in roubles. */
+export const CurrencyContext = createContext<Currency>(RUB)
+
+const PRICE_GAP = /(\d) (?=\d{3}\b|₽|₸|\$|€|Br\b|сум|сом)/g
+
+/** «72 504 ₸» as the model typed it, with no-break spaces, so a line never ends inside a price. */
+export function keepPricesTogether(text: string): string {
+  return text.replace(PRICE_GAP, '$1\u00a0')
+}
+
+export function formatMoney(rub: number, currency: Currency = RUB): string {
+  return `${Math.round(rub * currency.per_rub).toLocaleString('ru-RU')} ${currency.sign}`
+}
+
+/** 389 329 → 390 000: a converted budget reads like a sum someone would say. */
+function roundSum(value: number): number {
+  const step = 10 ** Math.max(0, Math.floor(Math.log10(value)) - 1)
+  return Math.round(value / step) * step
+}
+
+/** Per person, for a week, in roubles: the same team estimates the server uses to pick a price level. */
 export const BUDGET_OPTIONS = [
-  { level: 1, label: 'Экономно', hint: 'до 70 000 ₽ на человека' },
-  { level: 2, label: 'Средне', hint: '70–150 000 ₽ на человека' },
-  { level: 3, label: 'Комфорт', hint: 'от 150 000 ₽ на человека' },
-  { level: 0, label: 'Не важно', hint: 'покажу разные варианты' },
+  { level: 1, label: 'Экономно', upTo: 70_000 },
+  { level: 2, label: 'Средне', upTo: 150_000 },
+  { level: 3, label: 'Комфорт', from: 150_000 },
+  { level: 0, label: 'Не важно' },
 ]
+
+export function budgetHint(level: number, currency: Currency = RUB): string {
+  const option = BUDGET_OPTIONS.find((o) => o.level === level)
+  const rub = option?.upTo ?? option?.from
+  if (!rub) return 'покажу разные варианты'
+  const sum = `${roundSum(rub * currency.per_rub).toLocaleString('ru-RU')} ${currency.sign}`
+  return `${option?.upTo ? 'до' : 'от'} ${sum} на человека`
+}
 
 export const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 export const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -54,10 +84,6 @@ export function nightsLabel([low, high]: [number, number]): string {
   return `${low === high ? low : `${low}–${high}`} ${plural(high, ['ночь', 'ночи', 'ночей'])}`
 }
 
-export function formatRub(value: number): string {
-  return `${value.toLocaleString('ru-RU')} ₽`
-}
-
 function travelersText(a: BriefAnswers): string | null {
   if (!a.adults) return null
   let text = `${a.adults} ${plural(a.adults, ['взрослый', 'взрослых', 'взрослых'])}`
@@ -75,7 +101,7 @@ function travelersText(a: BriefAnswers): string | null {
 }
 
 /** The answers as the user's own chat message, so the conversation reads naturally and the model sees it. */
-export function describeAnswers(a: BriefAnswers): string {
+export function describeAnswers(a: BriefAnswers, currency: Currency = RUB): string {
   const parts: string[] = []
   if (a.kinds?.length) {
     const labels = a.kinds.map((k) => KIND_OPTIONS.find((o) => o.kind === k)?.label ?? k)
@@ -88,7 +114,7 @@ export function describeAnswers(a: BriefAnswers): string {
   if (when.length) parts.push(when.join(', '))
   const travelers = travelersText(a)
   if (travelers) parts.push(travelers)
-  if (a.budget_total_rub) parts.push(`бюджет до ${formatRub(a.budget_total_rub)} на всех`)
+  if (a.budget_total) parts.push(`бюджет до ${a.budget_total.toLocaleString('ru-RU')} ${currency.sign} на всех`)
   else if (a.budget_level !== undefined) {
     const option = BUDGET_OPTIONS.find((o) => o.level === a.budget_level)
     if (option) parts.push(option.level ? `бюджет: ${option.label.toLowerCase()}` : 'бюджет не важен')
@@ -98,7 +124,7 @@ export function describeAnswers(a: BriefAnswers): string {
 }
 
 export function isWidgetEvent(event: ChatStreamEvent | { type?: unknown }): event is ChatWidget {
-  return event.type === 'clarify' || event.type === 'destinations'
+  return event.type === 'clarify' || event.type === 'destinations' || event.type === 'trip_plan' || event.type === 'booking'
 }
 
 /** The cards of a saved assistant message, rebuilt from its persisted stream events. */

@@ -1,8 +1,11 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings
-from app.llm import OpenAICompatibleLLM, StubLLM, TextDelta, ToolCall, build_llm
+from app.llm import OpenAICompatibleLLM, StubLLM, TextDelta, ToolCall, Usage, build_llm
 
 
 async def collect(stream) -> list[str]:
@@ -116,22 +119,128 @@ def test_should_prefer_llm_api_key_over_openai_api_key(monkeypatch):
     assert Settings(_env_file=None).llm_api_key == "llm"
 
 
-def test_should_report_token_usage_and_share_the_prompt_cache_only_on_openai():
-    from app.llm import Usage
-
+def test_should_report_token_usage_from_chat_completions():
     usage = SimpleNamespace(
         prompt_tokens=1500, completion_tokens=40, prompt_tokens_details=SimpleNamespace(cached_tokens=1024)
     )
-    final = SimpleNamespace(choices=[], usage=usage)
-    completions = FakeCompletions([chunk("Hi"), final])
-    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    llm, completions = llm_with([chunk("Hi"), SimpleNamespace(choices=[], usage=usage)])
 
-    out = asyncio.run(collect(OpenAICompatibleLLM(client=client, model="m", openai=True).stream([])))
+    out = asyncio.run(collect(llm.stream([])))
 
     assert out == [TextDelta("Hi"), Usage(input=1500, output=40, cached=1024)]
     assert completions.kwargs["stream_options"] == {"include_usage": True}
-    assert completions.kwargs["prompt_cache_key"]
+    assert "prompt_cache_key" not in completions.kwargs
 
-    other, other_completions = llm_with([chunk("Hi")])
-    asyncio.run(collect(other.stream([])))
-    assert "prompt_cache_key" not in other_completions.kwargs
+
+def event(type, **fields):
+    return SimpleNamespace(type=type, **fields)
+
+
+def openai_with(events, reasoning_effort=""):
+    responses = FakeCompletions(events)
+    client = SimpleNamespace(responses=responses)
+    return OpenAICompatibleLLM(
+        client, "gpt-6-luna", openai=True, reasoning_effort=reasoning_effort
+    ), responses
+
+
+DONE = event(
+    "response.completed",
+    response=SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=1500, output_tokens=40, input_tokens_details=SimpleNamespace(cached_tokens=1024)
+        )
+    ),
+)
+
+
+def test_should_send_openai_turns_and_tools_through_the_responses_api():
+    llm, responses = openai_with([DONE], reasoning_effort="low")
+    messages = [
+        {"role": "system", "content": "Ты турагент"},
+        {"role": "user", "content": "Море в ноябре"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_a", "type": "function", "function": {"name": "search", "arguments": '{"m": 11}'}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_a", "content": "Анталья"},
+    ]
+    tools = [{"type": "function", "function": {"name": "show", "description": "Показать", "parameters": {}}}]
+
+    asyncio.run(collect(llm.stream(messages, tools, "show")))
+
+    kwargs = responses.kwargs
+    assert kwargs["input"] == [
+        {"role": "system", "content": "Ты турагент"},
+        {"role": "user", "content": "Море в ноябре"},
+        {"type": "function_call", "call_id": "call_a", "name": "search", "arguments": '{"m": 11}'},
+        {"type": "function_call_output", "call_id": "call_a", "output": "Анталья"},
+    ]
+    assert kwargs["tools"] == [
+        {"type": "function", "name": "show", "description": "Показать", "parameters": {}, "strict": False}
+    ]
+    assert kwargs["tool_choice"] == {"type": "function", "name": "show"}
+    assert kwargs["reasoning"] == {"effort": "low"}
+    assert kwargs["store"] is False
+    assert kwargs["stream"] is True
+    assert kwargs["prompt_cache_key"]
+
+
+def test_should_stream_text_then_tool_calls_and_usage_from_openai_events():
+    call = SimpleNamespace(type="function_call", call_id="call_a", name="show", arguments="{}")
+    llm, _ = openai_with(
+        [
+            event("response.output_text.delta", delta="Сейчас "),
+            event("response.output_item.done", item=SimpleNamespace(type="reasoning")),
+            event("response.output_item.done", item=call),
+            event("response.output_text.delta", delta="покажу."),
+            DONE,
+        ]
+    )
+
+    out = asyncio.run(collect(llm.stream([])))
+
+    assert out == [
+        TextDelta("Сейчас "),
+        TextDelta("покажу."),
+        ToolCall(id="call_a", name="show", arguments="{}"),
+        Usage(input=1500, output=40, cached=1024),
+    ]
+
+
+def test_should_leave_the_effort_to_the_model_when_it_is_not_set():
+    llm, responses = openai_with([DONE])
+
+    asyncio.run(collect(llm.stream([{"role": "user", "content": "hi"}])))
+
+    assert "reasoning" not in responses.kwargs
+    assert "tools" not in responses.kwargs
+
+
+def test_should_fail_the_turn_when_openai_reports_a_failed_response():
+    error = SimpleNamespace(code="server_error", message="boom")
+    llm, _ = openai_with([event("response.failed", response=SimpleNamespace(error=error))])
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(collect(llm.stream([])))
+
+
+def test_should_pass_the_configured_effort_to_openai(monkeypatch):
+    responses = FakeCompletions([DONE])
+    monkeypatch.setattr("app.llm.AsyncOpenAI", lambda **_: SimpleNamespace(responses=responses))
+
+    settings = Settings(
+        llm_api_key="k", llm_base_url="", llm_model="gpt-6-luna", llm_reasoning_effort="medium"
+    )
+    llm = build_llm(settings)
+    asyncio.run(collect(llm.stream([])))
+
+    assert responses.kwargs["reasoning"] == {"effort": "medium"}
+
+
+def test_should_reject_an_unknown_effort():
+    with pytest.raises(ValidationError):
+        Settings(llm_reasoning_effort="turbo")

@@ -93,7 +93,7 @@ describe('ChatSidebar', () => {
     renderLayout()
     await sidebar().findByText('Казань')
 
-    await userEvent.click(sidebar().getAllByRole('button', { name: 'Удалить чат' })[0])
+    await userEvent.click(sidebar().getAllByRole('button', { name: 'Удалить поездку' })[0])
     await userEvent.click(await screen.findByRole('button', { name: 'Удалить' }))
 
     await waitFor(() => expect(sidebar().queryByText('Казань')).toBeNull())
@@ -105,11 +105,36 @@ describe('ChatSidebar', () => {
     renderLayout()
     await sidebar().findByText('Казань')
 
-    await userEvent.click(sidebar().getAllByRole('button', { name: 'Удалить чат' })[0])
+    await userEvent.click(sidebar().getAllByRole('button', { name: 'Удалить поездку' })[0])
     await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
 
     expect(sidebar().getByText('Казань')).toBeInTheDocument()
     expect(client.deleteChat).not.toHaveBeenCalled()
+  })
+
+  it('should call the list trips, not chats', async () => {
+    renderLayout()
+
+    expect(sidebar().getByRole('link', { name: 'Новая поездка' })).toBeInTheDocument()
+    expect(await sidebar().findByText('Мои поездки')).toBeInTheDocument()
+  })
+
+  it('should show when the trip is and the departure city under each trip', async () => {
+    vi.mocked(client.fetchChats).mockResolvedValue({
+      items: [{ ...chats[1], summary: ['Казань', 'Январь · 2 ночи', '2 взрослых'], departure: 'из Астаны' }],
+    })
+    renderLayout()
+
+    expect(await sidebar().findByText('Январь · 2 ночи · из Астаны')).toBeInTheDocument()
+  })
+
+  it('should mark a trip whose prices are old', async () => {
+    vi.mocked(client.fetchChats).mockResolvedValue({
+      items: [{ ...chats[1], summary: ['Казань'], stale: true, priced_at: '2026-10-19T12:00:00+00:00' }],
+    })
+    renderLayout()
+
+    expect(await sidebar().findByText('Цены от 19 окт')).toBeInTheDocument()
   })
 
   it('should link back to the landing page', async () => {

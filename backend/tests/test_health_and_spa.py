@@ -53,11 +53,8 @@ def test_should_return_json_404_for_unknown_api_route(client):
     assert response.headers["content-type"].startswith("application/json")
 
 
-def test_should_return_404_on_root_when_ui_is_not_built(tmp_path):
-    settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{tmp_path / 'db.sqlite'}",
-        static_dir=str(tmp_path / "missing"),
-    )
+def test_should_return_404_on_root_when_ui_is_not_built(tmp_path, db_url):
+    settings = Settings(database_url=db_url, static_dir=str(tmp_path / "missing"))
     with TestClient(create_app(settings, llm=FakeLLM())) as test_client:
         assert test_client.get("/").status_code == 404
         assert test_client.get("/health").status_code == 200

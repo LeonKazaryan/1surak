@@ -20,9 +20,9 @@ export function ConfirmDeleteDialog({ chatTitle, open, onCancel, onConfirm }: Co
     <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Удалить чат?</DialogTitle>
+          <DialogTitle>Удалить поездку?</DialogTitle>
           <DialogDescription>
-            {chatTitle ? `«${chatTitle}» будет удалён навсегда.` : 'Этот чат будет удалён навсегда.'}
+            {chatTitle ? `«${chatTitle}» будет удалена навсегда.` : 'Эта поездка будет удалена навсегда.'}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

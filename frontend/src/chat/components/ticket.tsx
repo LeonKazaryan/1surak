@@ -1,5 +1,8 @@
+import { useContext } from 'react'
 import { cn } from '@/components/ui/utils'
-import type { FlightTicket } from '@/types/api'
+import type { FlightTicket, PriceChange } from '@/types/api'
+import { CurrencyContext, formatMoney } from '../widgets'
+import { shortDate } from './ticketFormat'
 
 export function AirlineLogo({ ticket, className }: { ticket: FlightTicket; className?: string }) {
   return (
@@ -12,4 +15,19 @@ export function AirlineLogo({ ticket, className }: { ticket: FlightTicket; class
       onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
     />
   )
+}
+
+/** How the price moved since the trip was last priced: dearer in red, cheaper in green. */
+export function PriceChangeNote({ change, className }: { change: PriceChange; className?: string }) {
+  const currency = useContext(CurrencyContext)
+  const since = `с ${shortDate(change.since)}`
+  const moved = Math.round(change.rub * currency.per_rub)
+  const text =
+    moved > 0
+      ? `дороже на ${formatMoney(change.rub, currency)} ${since}`
+      : moved < 0
+        ? `дешевле на ${formatMoney(-change.rub, currency)} ${since}`
+        : `цена та же ${since}`
+  const tone = moved > 0 ? 'text-danger' : moved < 0 ? 'text-[#4c9a2a]' : 'text-faint'
+  return <span className={cn('text-[11px] font-medium', tone, className)}>{text}</span>
 }

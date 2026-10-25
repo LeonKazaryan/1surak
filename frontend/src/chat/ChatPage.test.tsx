@@ -1,12 +1,13 @@
 import { StrictMode } from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, type InitialEntry } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatLayout from './ChatLayout'
 import ChatPage from './ChatPage'
 import * as client from '@/api/client'
-import type { ChatStreamDone, ChatStreamEvent } from '@/types/api'
+import type { BookingEvent, ChatMeta, ChatStreamDone, ChatStreamEvent, TripStatus } from '@/types/api'
+import { PLAN } from './plan/testPlan'
 
 vi.mock('@/api/client', () => ({
   sendChatStream: vi.fn(),
@@ -14,6 +15,8 @@ vi.mock('@/api/client', () => ({
   fetchChatMeta: vi.fn(),
   fetchChatMessages: vi.fn(),
   deleteChat: vi.fn().mockResolvedValue(undefined),
+  refreshChat: vi.fn(),
+  bookTrip: vi.fn(),
 }))
 
 const sendChatStream = vi.mocked(client.sendChatStream)
@@ -45,7 +48,121 @@ beforeEach(() => {
   sendChatStream.mockReset()
 })
 
+const HURGHADA = {
+  id: 'hurghada',
+  name: 'Хургада',
+  country: 'Египет',
+  country_code: 'EG',
+  kinds: ['sea' as const],
+  visa: 'виза по прибытии',
+  visa_easy: true,
+  price_level: 1,
+  price: 'недорого',
+  kids: 'хорошо с детьми',
+  kids_fit: 'good' as const,
+  climate: null,
+  highlights: [],
+  watch_out: [],
+  why: 'Тёплое море',
+}
+
+function savedTrip(status: Partial<ChatMeta>) {
+  const meta = { id: 'c1', title: 'Море', created_at: '2026-10-19T12:00:00Z', updated_at: '2026-10-19T12:00:00Z' }
+  vi.mocked(client.fetchChatMeta).mockResolvedValue({ ...meta, ...status })
+  vi.mocked(client.fetchChatMessages).mockResolvedValue({
+    messages: [
+      {
+        id: 'm1',
+        chat_id: 'c1',
+        role: 'assistant',
+        content: 'Вот что нашёл',
+        trace: [{ type: 'destinations', summary: [], cards: [HURGHADA] }],
+        created_at: '2026-10-19T12:00:00Z',
+      },
+    ],
+  })
+  return meta
+}
+
 describe('ChatPage', () => {
+  it('should offer to refresh old prices and add the fresh cards', async () => {
+    const meta = savedTrip({ stale: true, priced_at: '2026-10-19T12:00:00+00:00' })
+    vi.mocked(client.refreshChat).mockResolvedValue({
+      message: {
+        id: 'm2',
+        chat_id: 'c1',
+        role: 'assistant',
+        content: 'Обновил цены билетов',
+        trace: [{ type: 'destinations', summary: [], cards: [{ ...HURGHADA, why: 'Всё ещё тепло' }] }],
+        created_at: '2026-10-26T12:00:00Z',
+      },
+      chat: { ...meta, stale: false, priced_at: '2026-10-26T12:00:00+00:00' },
+    })
+    renderChat('/chat/c1')
+
+    expect(await screen.findByText('Цены от 19 окт могли измениться')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Обновить цены' }))
+
+    expect(await screen.findByText('Обновил цены билетов')).toBeInTheDocument()
+    expect(screen.getByText('Всё ещё тепло')).toBeInTheDocument()
+    expect(client.refreshChat).toHaveBeenCalledWith('c1')
+    expect(screen.queryByRole('button', { name: 'Обновить цены' })).not.toBeInTheDocument()
+  })
+
+  it('should keep a late refresh out of the trip opened since', async () => {
+    const meta = savedTrip({ stale: true, priced_at: '2026-10-19T12:00:00+00:00' })
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1', 'c2']))
+    vi.mocked(client.fetchChats).mockResolvedValue({ items: [meta, { ...meta, id: 'c2', title: 'Казань' }] })
+    let finish!: (value: Awaited<ReturnType<typeof client.refreshChat>>) => void
+    vi.mocked(client.refreshChat).mockReturnValue(new Promise((r) => (finish = r)))
+    renderChat('/chat/c1')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Обновить цены' }))
+    vi.mocked(client.fetchChatMeta).mockResolvedValue({ ...meta, id: 'c2', title: 'Казань' })
+    vi.mocked(client.fetchChatMessages).mockResolvedValue({ messages: [] })
+    await userEvent.click(await within(screen.getByTestId('chat-sidebar')).findByRole('link', { name: /Казань/ }))
+    finish({
+      message: { id: 'm2', chat_id: 'c1', role: 'assistant', content: 'Обновил цены билетов', trace: [], created_at: '2026-10-26T12:00:00Z' },
+      chat: { ...meta, stale: false },
+    })
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Куда отправимся?' })).toBeInTheDocument())
+    expect(screen.queryByText('Обновил цены билетов')).toBeNull()
+    vi.mocked(client.fetchChats).mockResolvedValue({ items: [] })
+  })
+
+  it('should say when the trip dates have passed and help pick new ones', async () => {
+    savedTrip({ stale: true, dates_passed: true, priced_at: '2026-10-19T12:00:00+00:00' })
+    renderChat('/chat/c1')
+
+    expect(await screen.findByText('Даты поездки уже прошли')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать новые даты' }))
+
+    expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toHaveValue('Перенеси поездку на ')
+  })
+
+  it('should invite changes once destinations are suggested', async () => {
+    savedTrip({ stale: false, priced_at: '2026-10-25T12:00:00+00:00' })
+    renderChat('/chat/c1')
+
+    expect(await screen.findByText('Вот что нашёл')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toHaveAttribute('placeholder', 'Хотите что-то изменить?')
+  })
+
+  it('should ask to describe the trip in a new chat', () => {
+    renderChat()
+
+    expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toHaveAttribute('placeholder', 'Опишите поездку своими словами…')
+  })
+
+  it('should not offer a refresh while the prices are fresh', async () => {
+    savedTrip({ stale: false, priced_at: '2026-10-25T12:00:00+00:00' })
+    renderChat('/chat/c1')
+
+    expect(await screen.findByText('Вот что нашёл')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Обновить цены' })).not.toBeInTheDocument()
+  })
+
   it('should send the trip description handed over from the landing page exactly once', async () => {
     streamReply([{ type: 'assistant_token', text: 'Предлагаю Казань' }], {
       type: 'done',
@@ -119,6 +236,21 @@ describe('ChatPage', () => {
     const sidebar = screen.getByTestId('chat-sidebar')
     expect(await within(sidebar).findByText('Казань на выходные')).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('1surak.myChats') ?? '[]')).toEqual(['chat-1'])
+  })
+
+  it('should fold the sidebar away once a new chat starts and let the user open it again', async () => {
+    document.cookie = 'sidebar_state=; path=/; max-age=0'
+    streamReply([], { type: 'done', answer: 'Ок', chat_id: 'chat-1', title: 'Казань' })
+    renderChat()
+    const sidebar = () => document.querySelector('[data-slot="sidebar"]')
+    expect(sidebar()).toHaveAttribute('data-state', 'expanded')
+
+    await userEvent.type(screen.getByRole('textbox'), 'Казань{Enter}')
+
+    await waitFor(() => expect(sidebar()).toHaveAttribute('data-state', 'collapsed'))
+    await userEvent.click(screen.getByRole('button', { name: 'Меню' }))
+    expect(sidebar()).toHaveAttribute('data-state', 'expanded')
+    document.cookie = 'sidebar_state=; path=/; max-age=0'
   })
 
   it('should show an error banner when the request fails', async () => {
@@ -265,35 +397,21 @@ describe('ChatPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить')
   })
 
-  it('should resize the trip plan panel with the keyboard and the mouse', async () => {
+  it('should put the intro under the heading and the example trips under the composer', () => {
     renderChat()
-    await userEvent.click(screen.getByRole('button', { name: /План поездки/ }))
-    const separator = screen.getByRole('separator')
-    const panelWidth = () => (separator.nextElementSibling as HTMLElement).style.getPropertyValue('--plan-w')
 
-    fireEvent.keyDown(separator, { key: 'Home' })
-    expect(panelWidth()).toBe('560px')
-
-    fireEvent.keyDown(separator, { key: 'ArrowRight' })
-    expect(panelWidth()).toBe('536px')
-
-    fireEvent.mouseDown(separator, { clientX: 500 })
-    fireEvent.mouseMove(document, { clientX: 600 })
-    fireEvent.mouseUp(document)
-    expect(panelWidth()).toBe('436px')
-    expect(localStorage.getItem('chat.planPanelWidth')).toBe('436')
-
-    fireEvent.doubleClick(separator)
-    expect(panelWidth()).toBe('380px')
+    const heading = screen.getByRole('heading', { level: 1, name: 'Куда отправимся?' })
+    const intro = screen.getByText(/Напишите, куда и как хотите поехать/)
+    const composer = screen.getByRole('textbox', { name: 'Сообщение агенту' })
+    const examples = screen.getByRole('group', { name: 'Примеры поездок' })
+    const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows(heading, intro) && follows(intro, composer) && follows(composer, examples)).toBe(true)
   })
 
-  it('should open and close the trip plan panel', async () => {
+  it('should not offer an empty trip plan panel', () => {
     renderChat()
 
-    await userEvent.click(screen.getByRole('button', { name: /План поездки/ }))
-    expect(screen.getByRole('region', { name: 'План поездки' })).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: /Скрыть план/ }))
+    expect(screen.queryByRole('button', { name: /План поездки/ })).toBeNull()
     expect(screen.queryByRole('region', { name: 'План поездки' })).toBeNull()
   })
 
@@ -309,6 +427,17 @@ describe('ChatPage', () => {
     const loader = await screen.findByRole('status', { name: 'Агент работает' })
     expect(within(loader).getByText('Подбираю направления')).toBeInTheDocument()
     expect(within(loader).getByText('Сверяю климат по месяцам…')).toBeInTheDocument()
+  })
+
+  it('should show the rabbit beside the thinking text while the agent works, not only once it is done', async () => {
+    sendChatStream.mockImplementation(async () => new Promise(() => {}))
+    renderChat()
+
+    await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
+
+    const loader = await screen.findByRole('status', { name: 'Агент работает' })
+    const title = within(loader).getByText('Разбираю запрос')
+    expect(title.parentElement?.querySelector('img[src="/logo.png"]')).not.toBeNull()
   })
 
   it('should move to the next card on a single tap and send the answers in one message', async () => {
@@ -361,6 +490,22 @@ describe('ChatPage', () => {
     )
     expect(await screen.findByText('Уточнили: кто едет, бюджет')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('should open place details in a side panel and close it', async () => {
+    streamReply(
+      [{ type: 'destinations', summary: [], cards: [{ ...HURGHADA, highlights: ['коралловые рифы'], watch_out: ['ветрено'] }] }],
+      { type: 'done', answer: '', chat_id: 'chat-1', title: 'Море' },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Подробнее' }))
+    const panel = await screen.findByRole('region', { name: 'Хургада, подробнее' })
+    expect(within(panel).getByText('коралловые рифы')).toBeInTheDocument()
+
+    await userEvent.click(within(panel).getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Хургада, подробнее' })).toBeNull())
   })
 
   it('should show destination cards and send the picked one', async () => {
@@ -484,10 +629,23 @@ describe('ChatPage', () => {
     const card = screen.getByRole('heading', { name: 'Ереван' }).closest('article')!
     expect(card).toHaveClass('sm:col-span-2')
     expect(within(card).getByText('Два города и горы за одну поездку')).toBeInTheDocument()
-    expect(within(card).getByRole('link', { name: 'Астана → Тбилиси, Air Astana' })).toHaveAttribute('href', 'https://www.aviasales.ru/KC')
-    expect(within(card).getByText(/по земле ~4 ч, 175 км/)).toBeInTheDocument()
     expect(within(card).getByText(/58\s000\s₽/)).toBeInTheDocument()
     expect(within(card).getByText('Даты состыкованы: 12 окт → 12 окт')).toBeInTheDocument()
+    expect(within(card).queryByRole('link', { name: 'Астана → Тбилиси, Air Astana' })).toBeNull()
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Подробнее' }))
+    const panel = await screen.findByRole('region', { name: 'Тбилиси → Ереван, подробнее' })
+    expect(within(panel).getByRole('link', { name: 'Астана → Тбилиси, Air Astana' })).toHaveAttribute('href', 'https://www.aviasales.ru/KC')
+    expect(within(panel).getByText(/по земле ~4 ч, 175 км/)).toBeInTheDocument()
+    expect([...within(panel).getByRole('list', { name: 'Маршрут' }).children].map((li) => li.textContent)).toEqual([
+      expect.stringContaining('Астана → Тбилиси'),
+      expect.stringContaining('старый город'),
+      expect.stringContaining('Тбилиси → Ереван'),
+      expect.stringContaining('старый город'),
+      expect.stringContaining('Ереван → Астана'),
+    ])
+    expect(within(panel).getByText('Грузия: без визы')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Закрыть' }))
 
     streamReply([], { type: 'done', answer: 'Отлично', chat_id: 'chat-1', title: 'Кавказ' })
     await userEvent.click(within(card).getByRole('button', { name: 'Выбрать маршрут' }))
@@ -530,5 +688,133 @@ describe('ChatPage', () => {
 
     expect(await screen.findByText('Уточнили: бюджет')).toBeInTheDocument()
     expect(screen.queryByText('Какой бюджет?')).toBeNull()
+  })
+
+  describe('a reply that failed', () => {
+    const FAILED = 'Не получилось получить ответ. Попробуйте ещё раз чуть позже.'
+
+    function failedTurn() {
+      vi.mocked(client.fetchChatMeta).mockResolvedValue({
+        id: 'c1',
+        title: 'Мальдивы',
+        created_at: '2026-10-26T00:16:00Z',
+        updated_at: '2026-10-26T00:16:00Z',
+      })
+      vi.mocked(client.fetchChatMessages).mockResolvedValue({
+        messages: [
+          { id: 'm1', chat_id: 'c1', role: 'user', content: 'Мальдивы', trace: [], created_at: '2026-10-26T00:16:00Z' },
+          { id: 'm2', chat_id: 'c1', role: 'assistant', content: FAILED, trace: [{ type: 'error', message: FAILED }], created_at: '2026-10-26T00:16:01Z' },
+        ],
+      })
+    }
+
+    it('should ask the same question again in place of the failed turn', async () => {
+      failedTurn()
+      streamReply([{ type: 'assistant_token', text: 'Вот Мальдивы' }], { type: 'done', answer: 'Вот Мальдивы', chat_id: 'c1', title: 'Мальдивы' })
+      renderChat('/chat/c1')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Повторить' }))
+
+      expect(sendChatStream).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'Мальдивы', chat_id: 'c1', retry: true }),
+        expect.any(Function),
+        expect.anything(),
+      )
+      expect(await screen.findByText('Вот Мальдивы')).toBeInTheDocument()
+      expect(screen.getAllByText('Мальдивы', { selector: 'div' })).toHaveLength(1)
+      expect(screen.queryByText(FAILED)).toBeNull()
+    })
+
+    it('should keep the agent header over the error without an empty steps panel', async () => {
+      failedTurn()
+      renderChat('/chat/c1')
+
+      expect(await screen.findByText(FAILED)).toBeInTheDocument()
+      expect(screen.getByText('Не получилось ответить')).toBeInTheDocument()
+      expect(screen.queryByText('Что делаю сейчас')).toBeNull()
+      expect(screen.queryByText('развернуть')).toBeNull()
+    })
+  })
+
+  describe('the trip plan', () => {
+    const BOOKING: BookingEvent = {
+      type: 'booking',
+      number: '1S-ABC234',
+      plan_message_id: 'm1',
+      name: 'Анталья',
+      dates: PLAN.dates,
+      holder: 'Анна Смирнова',
+      extras: [],
+      total_rub: PLAN.costs.total,
+      currency: PLAN.currency,
+    }
+
+    function savedPlan(status: Partial<TripStatus> = {}) {
+      vi.mocked(client.fetchChatMeta).mockResolvedValue({
+        id: 'c1',
+        title: 'Анталья',
+        created_at: '2026-10-25T10:00:00Z',
+        updated_at: '2026-10-25T10:00:00Z',
+        ...status,
+      })
+      vi.mocked(client.fetchChatMessages).mockResolvedValue({
+        messages: [
+          { id: 'm1', chat_id: 'c1', role: 'assistant', content: 'Собрал для вас неделю в Анталье.', trace: [PLAN], created_at: '2026-10-25T10:00:00Z' },
+        ],
+      })
+    }
+
+    it('should book the plan and keep the booking in the chat', async () => {
+      savedPlan()
+      vi.mocked(client.bookTrip).mockResolvedValue({
+        id: 'm2',
+        chat_id: 'c1',
+        role: 'assistant',
+        content: 'Поездка оформлена',
+        trace: [BOOKING],
+        created_at: '2026-10-25T10:05:00Z',
+      })
+      renderChat('/chat/c1')
+
+      const plan = await screen.findByRole('article', { name: 'План поездки: Анталья' })
+      await userEvent.click(within(plan).getByRole('button', { name: 'Оформить поездку' }))
+      const sheet = await screen.findByRole('dialog', { name: 'Оформление поездки' })
+      await userEvent.type(within(sheet).getByLabelText('Имя и фамилия'), 'Анна Смирнова')
+      await userEvent.click(within(sheet).getByRole('button', { name: /Оплатить/ }))
+
+      expect(client.bookTrip).toHaveBeenCalledWith('c1', { extras: [], holder: 'Анна Смирнова' })
+      expect(await within(sheet).findByText('1S-ABC234')).toBeInTheDocument()
+      await userEvent.click(within(sheet).getByRole('button', { name: 'Готово' }))
+
+      expect(await screen.findByRole('article', { name: 'Бронь 1S-ABC234' })).toBeInTheDocument()
+      expect(within(plan).getByText(/Оформлено/)).toHaveTextContent('1S-ABC234')
+    })
+
+    it('should not offer to book a plan whose dates have passed', async () => {
+      savedPlan({ dates_passed: true })
+      renderChat('/chat/c1')
+
+      const plan = await screen.findByRole('article', { name: 'План поездки: Анталья' })
+
+      expect(await screen.findByText('Даты поездки уже прошли')).toBeInTheDocument()
+      expect(within(plan).queryByRole('button', { name: 'Оформить поездку' })).toBeNull()
+    })
+
+    it('should ask the agent for the other hotel picked on the plan', async () => {
+      savedPlan()
+      streamReply([], { type: 'done', answer: 'Поменял отель', chat_id: 'c1', title: 'Анталья' })
+      renderChat('/chat/c1')
+
+      const plan = await screen.findByRole('article', { name: 'План поездки: Анталья' })
+      await userEvent.click(within(plan).getByRole('button', { name: 'Выбрать «Дом у маяка»' }))
+
+      await waitFor(() =>
+        expect(sendChatStream).toHaveBeenLastCalledWith(
+          expect.objectContaining({ query: 'Хочу отель «Дом у маяка» вместо «Морской бриз»' }),
+          expect.any(Function),
+          expect.anything(),
+        ),
+      )
+    })
   })
 })

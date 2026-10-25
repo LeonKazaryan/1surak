@@ -5,7 +5,7 @@ import type { Party } from './plan'
 const PARTY_ADULTS: Record<Party, number> = { solo: 1, couple: 2, kids: 2, group: 3, oneAdult: 1, twoAdults: 2 }
 
 /** The answers being picked on the cards. Starts from what the agent already understood. */
-export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
+export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent) {
   const [kinds, setKinds] = useState<TripKind[]>(prefill.kinds)
   const [month, setMonth] = useState<number | null>(prefill.month)
   const [nights, setNights] = useState<[number, number] | null>(prefill.nights)
@@ -44,8 +44,10 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
     }
     if (asked.has('route') && multiCity !== null) answers.multi_city = multiCity
     if (asked.has('budget')) {
-      if (total !== null) answers.budget_total_rub = total
-      else if (level !== null) answers.budget_level = level
+      if (total !== null) {
+        answers.budget_total = total
+        answers.budget_currency = currency?.code ?? 'RUB'
+      } else if (level !== null) answers.budget_level = level
     }
     return answers
   }

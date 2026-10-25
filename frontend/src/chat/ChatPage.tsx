@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
-import { AnimatePresence, MotionConfig } from 'motion/react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { ArrowPathIcon } from '@heroicons/react/20/solid'
 import { LogoMark } from '@/components/LogoMark'
 import { ScrollRow } from '@/components/ScrollRow'
 import { PageHeader, type Crumb } from '@/components/PageHeader'
-import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
+import { useSidebar } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
-import type { BriefAnswers, DestinationsCard } from '@/types/api'
+import type { BookingEvent, BriefAnswers, Currency, DestinationsCard } from '@/types/api'
 import { ClarifyFlow } from './clarify/ClarifyOverlay'
 import { ClarifyPrompt } from './clarify/ClarifyPrompt'
 import { AgentTracePanel } from './components/AgentTracePanel'
@@ -16,35 +18,40 @@ import { Composer } from './components/Composer'
 import { DestinationCards } from './components/DestinationCards'
 import { FlightLoader } from './components/FlightLoader'
 import { MessageContent } from './components/MessageContent'
-import { TripPlanPanel } from './components/TripPlanPanel'
+import { DetailsPanel } from './components/DetailsPanel'
+import { PlaceDetails } from './components/PlaceDetails'
+import { RouteDetails } from './components/RouteDetails'
+import { TripFreshness } from './components/TripFreshness'
 import { useChatSession } from './hooks/useChatSession'
-import { useResizablePanel } from './hooks/useResizablePanel'
-import type { ChatLayoutContext, WorkspaceChatMessage } from './types'
+import { BookingCard } from './plan/BookingCard'
+import type { BookFn } from './plan/CheckoutSheet'
+import { TripPlan } from './plan/TripPlan'
+import { isFailed } from './trace'
+import type { WorkspaceChatMessage } from './types'
 
 // Long enough for the agent's words to finish typing in the chat before the cards fly in.
 const CLARIFY_OPEN_DELAY_MS = 700
+const NEW_DATES_PROMPT = 'Перенеси поездку на '
+const CHANGE_PROMPT = 'Хотите что-то изменить?'
 const EMPTY_STATE_INTRO =
   'Напишите, куда и как хотите поехать. Агент уточнит главное, подберёт варианты и соберёт план поездки.'
+const DETAILS_WIDTH = 380
+// the --ease-glide curve from index.css, so the panel moves like the sidebar
+const DETAILS_TRANSITION = { duration: 0.3, ease: [0.215, 0.61, 0.355, 1] } as const
+const DETAILS_WIDEN = { initial: { width: 0 }, animate: { width: DETAILS_WIDTH }, exit: { width: 0 } }
+const DETAILS_SLIDE = { initial: { x: '100%' }, animate: { x: 0 }, exit: { x: '100%' } }
+
+interface OpenDetails {
+  chatId?: string
+  card: DestinationsCard
+  currency: Currency
+}
 
 function readHandoffQuery(state: unknown): string | null {
   if (state && typeof state === 'object' && 'query' in state && typeof state.query === 'string') {
     return state.query.trim() || null
   }
   return null
-}
-
-interface PlanToggleProps {
-  open: boolean
-  onToggle: () => void
-}
-
-function PlanToggle({ open, onToggle }: PlanToggleProps) {
-  return (
-    <Button variant="outline" size="sm" onClick={onToggle} aria-pressed={open} className="rounded-lg bg-card">
-      <MapIcon className="text-highlight" />
-      <span className="whitespace-nowrap">{open ? 'Скрыть план' : 'План поездки'}</span>
-    </Button>
-  )
 }
 
 interface MessageBubbleProps {
@@ -55,9 +62,18 @@ interface MessageBubbleProps {
   busy: boolean
   onOpenClarify: () => void
   onPick: (card: DestinationsCard) => void
+  detailsId: string | null
+  onDetails: (card: DestinationsCard, currency: Currency) => void
+  /** The trip's latest plan: it can still be booked or changed. */
+  latestPlan: boolean
+  booking?: BookingEvent
+  onAsk: (text: string) => void
+  onBook: BookFn
+  onRetry: () => void
 }
 
-function MessageBubble({ message, isStreaming, isLast, busy, onOpenClarify, onPick }: MessageBubbleProps) {
+function MessageBubble(props: MessageBubbleProps) {
+  const { message, isStreaming, isLast, busy, onOpenClarify, onPick, detailsId, onDetails } = props
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -73,6 +89,12 @@ function MessageBubble({ message, isStreaming, isLast, busy, onOpenClarify, onPi
     <div className="min-w-0">
       {!working && <AgentTracePanel steps={message.traceSteps ?? []} isStreaming={false} />}
       {content && <MessageContent text={content} />}
+      {isLast && !busy && isFailed(message) && (
+        <Button variant="outline" size="sm" onClick={props.onRetry} className="mt-3 rounded-full bg-card">
+          <ArrowPathIcon aria-hidden />
+          Повторить
+        </Button>
+      )}
       <AnimatePresence>
         {working && (
           <div key="loader" className={content ? 'mt-3' : undefined}>
@@ -82,8 +104,12 @@ function MessageBubble({ message, isStreaming, isLast, busy, onOpenClarify, onPi
       </AnimatePresence>
       {widget?.type === 'clarify' && <ClarifyPrompt widget={widget} pending={isLast} onOpen={onOpenClarify} />}
       {widget?.type === 'destinations' && (
-        <DestinationCards widget={widget} canPick={isLast && !busy} onPick={onPick} />
+        <DestinationCards widget={widget} canPick={isLast && !busy} onPick={onPick} detailsId={detailsId} onDetails={onDetails} />
       )}
+      {widget?.type === 'trip_plan' && (
+        <TripPlan plan={widget} canAct={props.latestPlan && !busy} booking={props.booking} onAsk={props.onAsk} onBook={props.onBook} />
+      )}
+      {widget?.type === 'booking' && <BookingCard booking={widget} />}
     </div>
   )
 }
@@ -92,19 +118,38 @@ export default function ChatPage() {
   const { chatId } = useParams<{ chatId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const { planPanelOpen, setPlanPanelOpen } = useOutletContext<ChatLayoutContext>()
-  const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading } = useChatSession(chatId)
+  const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading, trip, refresh, refreshing, book, retry } =
+    useChatSession(chatId)
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastMessageRef = useRef<HTMLDivElement>(null)
-  const busy = isLoading || chatLoading
-  const panel = useResizablePanel({ storageKey: 'chat.planPanelWidth', min: 300, max: 560, initial: 380 })
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const busy = isLoading || chatLoading || refreshing
+  const hasCards = messages.some((m) => m.widget?.type === 'destinations' || m.widget?.type === 'trip_plan')
+  // a booking always buys the latest plan before it
+  const { latestPlanId, bookings } = useMemo(() => {
+    const booked = new Map<string, BookingEvent>()
+    let planId: string | null = null
+    for (const m of messages) {
+      if (m.widget?.type === 'trip_plan') planId = m.id
+      else if (m.widget?.type === 'booking' && planId) booked.set(planId, m.widget)
+    }
+    return { latestPlanId: planId, bookings: booked }
+  }, [messages])
   const last = messages.at(-1)
   const lastWidget = last?.widget
   const pendingClarify = last && lastWidget?.type === 'clarify' && streamingId !== last.id ? lastWidget : null
   const pendingId = pendingClarify ? last!.id : null
   const [clarifyOpenFor, setClarifyOpenFor] = useState<string | null>(null)
   const autoOpened = useRef<string | null>(null)
+  const isMobile = useIsMobile()
+  const { setOpen: setSidebarOpen } = useSidebar()
+  const foldSidebar = useEffectEvent(() => setSidebarOpen(false))
+  const [details, setDetails] = useState<OpenDetails | null>(null)
+  const shownDetails = details?.chatId === chatId ? details : null
+  const closeDetails = useCallback(() => setDetails(null), [])
+  const toggleDetails = (card: DestinationsCard, currency: Currency) =>
+    setDetails((open) => (open && open.chatId === chatId && open.card.id === card.id ? null : { chatId, card, currency }))
 
   useEffect(() => {
     if (!pendingId || busy || autoOpened.current === pendingId) return
@@ -128,6 +173,7 @@ export default function ChatPage() {
     // Deferred so StrictMode's mount-unmount-mount does not abort the run it just started.
     const timer = setTimeout(() => {
       navigate(location.pathname, { replace: true, state: null })
+      foldSidebar()
       send(query)
     }, 0)
     return () => clearTimeout(timer)
@@ -136,15 +182,36 @@ export default function ChatPage() {
   const submit = (text: string = input) => {
     if (!text.trim() || busy) return
     setInput('')
+    // a new trip gets the whole screen; the user can bring the sidebar back
+    if (!messages.length) setSidebarOpen(false)
     send(text)
   }
-  const togglePlan = () => setPlanPanelOpen((v) => !v)
   const breadcrumb: Crumb[] = chatLoading
-    ? [{ label: 'Чаты', href: '/chat' }, { label: 'Загрузка', pending: true }]
+    ? [{ label: 'Поездки', href: '/chat' }, { label: 'Загрузка', pending: true }]
     : messages.length
-      ? [{ label: 'Чаты', href: '/chat' }, { label: chatTitle ?? 'Новый чат' }]
-      : [{ label: 'Новый чат' }]
-  const composer = <Composer value={input} onChange={setInput} onSubmit={() => submit()} disabled={busy} />
+      ? [{ label: 'Поездки', href: '/chat' }, { label: chatTitle ?? 'Новая поездка' }]
+      : [{ label: 'Новая поездка' }]
+  const composer = (
+    <Composer
+      ref={composerRef}
+      value={input}
+      onChange={setInput}
+      onSubmit={() => submit()}
+      disabled={busy}
+      placeholder={hasCards ? CHANGE_PROMPT : undefined}
+    />
+  )
+  const freshness = trip && hasCards && !isLoading && !chatLoading && (
+    <TripFreshness
+      status={trip}
+      refreshing={refreshing}
+      onRefresh={refresh}
+      onNewDates={() => {
+        setInput(NEW_DATES_PROMPT)
+        composerRef.current?.focus()
+      }}
+    />
+  )
   const errorBanner = error && (
     <div
       role="alert"
@@ -158,7 +225,7 @@ export default function ChatPage() {
     <MotionConfig reducedMotion="user">
       <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <PageHeader breadcrumb={breadcrumb} headerRight={<PlanToggle open={planPanelOpen} onToggle={togglePlan} />} />
+          <PageHeader breadcrumb={breadcrumb} />
 
           {chatLoading || messages.length > 0 ? (
             <>
@@ -177,9 +244,16 @@ export default function ChatPage() {
                             message={m}
                             isStreaming={streamingId === m.id}
                             isLast={i === messages.length - 1}
-                          busy={busy}
+                            busy={busy}
                             onOpenClarify={() => setClarifyOpenFor(m.id)}
                             onPick={(card) => send(card.type === 'route' ? `Выбираю маршрут ${card.name}` : `Выбираю ${card.name}`)}
+                            detailsId={shownDetails?.card.id ?? null}
+                            onDetails={toggleDetails}
+                            latestPlan={m.id === latestPlanId && !trip?.dates_passed}
+                            booking={bookings.get(m.id)}
+                            onAsk={submit}
+                            onBook={book}
+                            onRetry={retry}
                           />
                         </div>
                       ))}
@@ -189,7 +263,10 @@ export default function ChatPage() {
                 </div>
               )}
               <div className="shrink-0 px-6 pt-2 pb-5 max-md:px-4">
-                <div className="mx-auto max-w-[720px]">{composer}</div>
+                <div className="mx-auto max-w-[720px]">
+                  {freshness}
+                  {composer}
+                </div>
               </div>
             </>
           ) : (
@@ -200,8 +277,10 @@ export default function ChatPage() {
                   <h1 className="m-0 text-[clamp(26px,3vw,34px)] font-semibold tracking-tight text-foreground">
                     Куда отправимся?
                   </h1>
+                  <p className="m-0 max-w-md text-[15px] leading-relaxed text-balance text-muted-foreground">{EMPTY_STATE_INTRO}</p>
                 </div>
                 {errorBanner}
+                {composer}
                 <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
                   {EXAMPLE_TRIPS.map((trip) => (
                     <button
@@ -216,45 +295,39 @@ export default function ChatPage() {
                     </button>
                   ))}
                 </ScrollRow>
-                {composer}
-                <p className="m-0 text-center text-sm leading-relaxed text-muted-foreground">{EMPTY_STATE_INTRO}</p>
               </div>
             </div>
           )}
         </div>
 
         {pendingClarify && pendingId && (
-        <ClarifyFlow
-          key={pendingId}
-          widget={pendingClarify}
-          intro={last?.content ?? ''}
-          open={clarifyOpenFor === pendingId}
-          busy={busy}
-          onOpenChange={(open) => setClarifyOpenFor(open ? pendingId : null)}
-          onSubmit={(text: string, answers: BriefAnswers) => send(text, answers)}
-        />
-      )}
-
-      {planPanelOpen && (
-          <>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Изменить ширину плана поездки"
-              tabIndex={0}
-              onMouseDown={panel.startResize}
-              onDoubleClick={panel.reset}
-              onKeyDown={panel.onSeparatorKeyDown}
-              className="hidden w-1.5 shrink-0 cursor-col-resize bg-border select-none hover:bg-faintest focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-faint md:block"
-            />
-            <div
-              className={`min-h-0 overflow-hidden max-md:fixed max-md:inset-0 max-md:z-50 md:w-(--plan-w) md:shrink-0 ${panel.isResizing ? '' : 'transition-[width] duration-300 ease-in-out'}`}
-              style={{ '--plan-w': `${panel.width}px` } as CSSProperties}
-            >
-              <TripPlanPanel onClose={() => setPlanPanelOpen(false)} />
-            </div>
-          </>
+          <ClarifyFlow
+            key={pendingId}
+            widget={pendingClarify}
+            intro={last?.content ?? ''}
+            open={clarifyOpenFor === pendingId}
+            busy={busy}
+            onOpenChange={(open) => setClarifyOpenFor(open ? pendingId : null)}
+            onSubmit={(text: string, answers: BriefAnswers) => send(text, answers)}
+          />
         )}
+
+        <AnimatePresence initial={false}>
+          {shownDetails && (
+            <motion.aside
+              key="place-details"
+              {...(isMobile ? DETAILS_SLIDE : DETAILS_WIDEN)}
+              transition={DETAILS_TRANSITION}
+              className="min-h-0 shrink-0 overflow-hidden border-border bg-card max-md:fixed max-md:inset-0 max-md:z-50 md:border-l"
+            >
+              <div className="h-full md:w-[380px]">
+                <DetailsPanel key={shownDetails.card.id} title={shownDetails.card.name} currency={shownDetails.currency} onClose={closeDetails}>
+                  {shownDetails.card.type === 'route' ? <RouteDetails card={shownDetails.card} /> : <PlaceDetails card={shownDetails.card} />}
+                </DetailsPanel>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
       </div>
     </MotionConfig>
   )

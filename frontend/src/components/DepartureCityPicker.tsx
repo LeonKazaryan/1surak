@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Popover } from 'radix-ui'
 import { MagnifyingGlassIcon, MapPinIcon } from '@heroicons/react/24/outline'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import {
   detectCity,
@@ -13,6 +14,26 @@ import {
 } from '@/lib/departureCity'
 
 const SEARCH_DELAY_MS = 250
+const SKELETON_ROWS = ['62%', '74%', '54%']
+const SEARCH_FAILED = 'Не получилось найти город. Проверьте интернет и попробуйте ещё раз'
+
+function CitiesSkeleton() {
+  return (
+    <>
+      <span role="status" className="sr-only">
+        Ищу города
+      </span>
+      <div data-testid="cities-skeleton" aria-hidden className="skeleton-reveal flex flex-col">
+        {SKELETON_ROWS.map((width, i) => (
+          <div key={width} className="flex h-9 items-center justify-between gap-3 px-2.5" style={{ opacity: 1 - i * 0.2 }}>
+            <Skeleton className="h-3.5" style={{ width }} />
+            <Skeleton className="h-3 w-7" />
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
 
 function CityRow({ city, active, note, onPick }: { city: DepartureCity; active: boolean; note?: string; onPick: () => void }) {
   return (
@@ -43,6 +64,8 @@ export function DepartureCityPicker() {
   const [term, setTerm] = useState('')
   const [found, setFound] = useState<DepartureCity[] | null>(null)
   const [nearby, setNearby] = useState<DepartureCity[]>([])
+  const [detecting, setDetecting] = useState(true)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -59,6 +82,7 @@ export function DepartureCityPicker() {
         }
       })
       .catch(() => {}) // offline or blocked: the saved city stays, and search still works
+      .finally(() => !controller.signal.aborted && setDetecting(false))
     return () => controller.abort()
   }, [])
 
@@ -69,7 +93,7 @@ export function DepartureCityPicker() {
     const timer = setTimeout(() => {
       searchCities(query, controller.signal)
         .then(setFound)
-        .catch(() => {})
+        .catch(() => !controller.signal.aborted && setFailed(true))
     }, SEARCH_DELAY_MS)
     return () => {
       clearTimeout(timer)
@@ -111,6 +135,7 @@ export function DepartureCityPicker() {
               onChange={(e) => {
                 setTerm(e.target.value)
                 setFound(null)
+                setFailed(false)
               }}
               placeholder="Откуда летите?"
               aria-label="Поиск города вылета"
@@ -119,13 +144,17 @@ export function DepartureCityPicker() {
           </label>
           <div role="listbox" aria-label="Города вылета" className="mt-1.5 max-h-72 overflow-y-auto">
             {searching ? (
-              found === null ? (
-                <p className="m-0 px-2.5 py-3 text-sm text-muted-foreground">Ищу…</p>
+              failed ? (
+                <p className="m-0 px-2.5 py-3 text-sm text-muted-foreground">{SEARCH_FAILED}</p>
+              ) : found === null ? (
+                <CitiesSkeleton />
               ) : found.length ? (
                 found.map((c) => <CityRow key={c.code} city={c} active={c.code === city.code} onPick={() => choose(c)} />)
               ) : (
                 <p className="m-0 px-2.5 py-3 text-sm text-muted-foreground">Такого города не нашлось</p>
               )
+            ) : detecting ? (
+              <CitiesSkeleton />
             ) : (
               <>
                 {here && <CityRow city={here} active={here.code === city.code} note="рядом с вами" onPick={() => choose(here)} />}

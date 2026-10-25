@@ -1,12 +1,12 @@
-import { useId, type ReactElement } from 'react'
+import { useId, useState, type ReactElement } from 'react'
 import { cn } from '@/components/ui/utils'
-import type { TripKind } from '@/types/api'
+import type { Photo, TripKind } from '@/types/api'
 
 interface TripArtProps {
   kind: TripKind
   /** Varies the scene (sun position, skyline) so neighbouring cards differ. */
   seed?: string
-  image?: string | null
+  photo?: Photo | null
   /** Freezes the waves, clouds and snow: for many scenes on screen at once. */
   still?: boolean
   className?: string
@@ -204,11 +204,23 @@ const SCENES: Record<TripKind, (props: { id: string; r: number }) => ReactElemen
   ski: Ski,
 }
 
-/** Illustration for a kind of trip. Stands in for a destination photo until we have one. */
-export function TripArt({ kind, seed = '', image, still, className }: TripArtProps) {
+/** A real photo when there is one; the illustration for its kind of trip when there is none or it fails to load. */
+export function TripArt({ kind, seed = '', photo, still, className }: TripArtProps) {
   const id = useId().replace(/:/g, '')
-  if (image) {
-    return <img src={image} alt="" draggable={false} className={cn('h-full w-full object-cover', className)} />
+  const [broken, setBroken] = useState<string | null>(null)
+  const image = photo?.url
+  if (image && broken !== image) {
+    return (
+      <img
+        src={image}
+        alt=""
+        title={`Фото: ${photo.author}, ${photo.license}`}
+        draggable={false}
+        loading="lazy"
+        onError={() => setBroken(image)}
+        className={cn('h-full w-full bg-(--skeleton) object-cover', className)}
+      />
+    )
   }
   const Scene = SCENES[kind] ?? Sea
   return (

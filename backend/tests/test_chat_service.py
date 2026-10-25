@@ -28,8 +28,8 @@ async def _reply_closed_after(db_url: str, stop_after: str, llm: FakeLLM | None 
     return messages
 
 
-def test_should_save_the_partial_reply_when_the_client_disconnects(tmp_path):
-    messages = asyncio.run(_reply_closed_after(f"sqlite+aiosqlite:///{tmp_path / 'chat.db'}", "ично"))
+def test_should_save_the_partial_reply_when_the_client_disconnects(db_url):
+    messages = asyncio.run(_reply_closed_after(db_url, "ично"))
 
     assert [(m["role"], m["content"]) for m in messages] == [
         ("user", "Хочу к морю"),
@@ -37,9 +37,8 @@ def test_should_save_the_partial_reply_when_the_client_disconnects(tmp_path):
     ]
 
 
-def test_should_mark_the_reply_interrupted_when_the_client_leaves_before_any_text(tmp_path):
+def test_should_mark_the_reply_interrupted_when_the_client_leaves_before_any_text(db_url):
     llm = FakeLLM(rounds=[[ToolCall(id="c1", name="search", arguments="{}")], ["Нашёл"]])
-    db_url = f"sqlite+aiosqlite:///{tmp_path / 'chat.db'}"
     messages = asyncio.run(_reply_closed_after(db_url, "tool_start", llm))
 
     assert [(m["role"], m["content"]) for m in messages] == [

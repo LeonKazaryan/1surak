@@ -10,6 +10,7 @@ logs:
 	docker compose logs -f app
 
 test:
+	docker compose up -d --wait db
 	cd backend && .venv/bin/pytest -q
 	cd frontend && npm run test:run
 
@@ -19,4 +20,5 @@ lint:
 
 # Runs evals/cases.json through the real model from .env (costs tokens). EVAL_ARGS="--case golden"
 eval:
+	docker compose up -d --wait db
 	cd backend && .venv/bin/python -m evals.run $(EVAL_ARGS)

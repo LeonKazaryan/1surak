@@ -185,6 +185,24 @@ def test_should_drop_text_that_repeats_a_tool_argument():
     assert not any(e["type"] == "assistant_note" for e in events)
 
 
+class IntroArgs(BaseModel):
+    intro: str
+
+
+async def _show(args: IntroArgs) -> ToolReply:
+    return ToolReply(result={"shown": True}, text=args.intro, event={"type": "trip_plan"}, ends_turn=True)
+
+
+def test_should_say_a_long_intro_once_when_the_tool_shows_it_too():
+    intro = "Собрал поездку и всё проверил по билетам и отелю. " * 8
+    show = Tool(name="show", title="Показываю план", description="Show", args=IntroArgs, handler=_show)
+    llm = FakeLLM(rounds=[[intro, call("show", json.dumps({"intro": intro}, ensure_ascii=False))]])
+
+    events = run(llm, ToolRegistry([show]))
+
+    assert text_of(events) == intro
+
+
 def test_should_force_a_final_answer_without_tools_after_the_round_limit():
     looping = [[call("get_weather", '{"city": "Сочи"}', f"c{i}")] for i in range(agent.MAX_TOOL_ROUNDS)]
     llm = FakeLLM(rounds=[*looping, ["Вот что нашёл."]])

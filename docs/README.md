@@ -29,6 +29,7 @@ Prize per track: **250k / 150k / 100k ₽** (after tax).
 7. [07-data-sources.md](./07-data-sources.md): every data source we researched, what to use, licences and links
 8. [08-data-model.md](./08-data-model.md): how the facts join (place → cost → availability → time), quality rules, what we embed
 9. [09-living-knowledge-base.md](./09-living-knowledge-base.md): the knowledge base the agent keeps growing with web search, its flexible entry shape, read and write rules
+10. [10-how-it-works.md](./10-how-it-works.md): **lost? start here.** One page with diagrams: what runs, which tools the agent has, where every piece of data comes from, what is real and what is an estimate
 
 Original texts: [source/](./source/). The Russian copies are verbatim, except that dashes became plain punctuation. Everything outside `source/` is our analysis.
 

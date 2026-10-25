@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { AnimatePresence, motion, type Variants } from 'motion/react'
-import { CheckBadgeIcon, CheckIcon, ChevronDownIcon, IdentificationIcon, MinusIcon, SparklesIcon } from '@heroicons/react/20/solid'
+import { useContext, useState } from 'react'
+import { motion, type Variants } from 'motion/react'
+import { CheckIcon, ChevronRightIcon, MinusIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { RouteCard as Route, RouteLeg, RouteStop, TripKind } from '@/types/api'
-import { flagEmoji, formatRub, plural } from '../widgets'
-import { AirlineLogo } from './ticket'
+import type { RouteCard as Route, RouteLeg } from '@/types/api'
+import { CurrencyContext, flagEmoji, formatMoney, keepPricesTogether, plural } from '../widgets'
+import { AirlineLogo, PriceChangeNote } from './ticket'
+import { sceneKinds } from './routeScenes'
 import { hours, shortDate, stopsText, temp } from './ticketFormat'
 import { TripArt } from './TripArt'
 
@@ -18,19 +19,7 @@ const routeRise: Variants = {
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 220, damping: 24 } },
 }
 
-/** A different scene for neighbouring cities, so two city stops do not look like one long skyline.
- *  Stops with the fewest kinds choose first: Samarkand is only a city, so Almaty shows its mountains. */
-function sceneKinds(stops: RouteStop[]): TripKind[] {
-  const kinds: (TripKind | undefined)[] = stops.map(() => undefined)
-  const order = stops.map((_, i) => i).sort((a, b) => stops[a].kinds.length - stops[b].kinds.length)
-  for (const i of order) {
-    const taken = [kinds[i - 1], kinds[i + 1]]
-    kinds[i] = stops[i].kinds.find((k) => !taken.includes(k)) ?? stops[i].kinds[0] ?? 'city'
-  }
-  return kinds as TripKind[]
-}
-
-function ModeIcon({ mode, className }: { mode: RouteLeg['mode']; className?: string }) {
+export function ModeIcon({ mode, className }: { mode: RouteLeg['mode']; className?: string }) {
   if (mode === 'flight') {
     return (
       <svg viewBox="0 0 24 24" className={cn('rotate-90', className)} aria-hidden>
@@ -51,7 +40,7 @@ function ModeIcon({ mode, className }: { mode: RouteLeg['mode']; className?: str
 /** How well the route covers what the user wants, as a ring that fills in once the card is whole. */
 function MatchRing({ value, on }: { value: number; on: boolean }) {
   return (
-    <span className="flex items-center gap-2 rounded-full bg-white/90 py-1 pr-3 pl-1 shadow-sm backdrop-blur" title="Совпадение с интересами">
+    <span className="flex shrink-0 items-center gap-2 rounded-full bg-white/90 p-1 shadow-sm backdrop-blur sm:pr-3" title="Совпадение с интересами">
       <span className="relative h-8 w-8">
         <svg viewBox="0 0 36 36" className="h-8 w-8 -rotate-90" aria-hidden>
           <circle cx="18" cy="18" r="14" fill="none" stroke="var(--secondary)" strokeWidth="4" />
@@ -66,7 +55,7 @@ function MatchRing({ value, on }: { value: number; on: boolean }) {
           {value}
         </span>
       </span>
-      <span className="text-[12px] leading-tight font-medium text-foreground">
+      <span className="hidden text-[12px] leading-tight font-medium text-foreground sm:block">
         совпадение
         <br />
         <span className="text-muted-foreground">с интересами</span>
@@ -75,7 +64,8 @@ function MatchRing({ value, on }: { value: number; on: boolean }) {
   )
 }
 
-function LegRow({ leg, index }: { leg: RouteLeg; index: number }) {
+export function LegRow({ leg, index }: { leg: RouteLeg; index: number }) {
+  const currency = useContext(CurrencyContext)
   const ticket = leg.ticket
   const body = (
     <>
@@ -112,7 +102,7 @@ function LegRow({ leg, index }: { leg: RouteLeg; index: number }) {
       {ticket && (
         <span className="shrink-0 text-right">
           <span className="block text-[11px] text-faint">{shortDate(ticket.departure)}, от</span>
-          <span className="block text-[14px] font-semibold text-foreground tabular-nums">{formatRub(ticket.price_rub)}</span>
+          <span className="block text-[14px] font-semibold text-foreground tabular-nums">{formatMoney(ticket.price_rub, currency)}</span>
         </span>
       )}
     </>
@@ -141,6 +131,32 @@ function LegRow({ leg, index }: { leg: RouteLeg; index: number }) {
   )
 }
 
+/** What the whole route costs in tickets, and whether the cheapest dates follow one another. */
+export function RouteTotal({ card }: { card: Route }) {
+  const currency = useContext(CurrencyContext)
+  const flightDays = card.legs.flatMap((leg) => (leg.ticket ? [shortDate(leg.ticket.departure)] : []))
+  return (
+    <div className="rounded-2xl bg-inset px-4 py-3">
+      <p className="m-0 text-[12px] text-muted-foreground">Билеты на весь маршрут, на человека</p>
+      <p className="m-0 text-lg font-semibold text-foreground tabular-nums">
+        {card.total_rub ? `от ${formatMoney(card.total_rub, currency)}` : 'цены уточню'}
+        {card.total_rub && !card.total_complete && (
+          <span className="ml-2 text-[12px] font-normal text-muted-foreground">без плеч, где билетов пока нет</span>
+        )}
+      </p>
+      {card.price_change && <PriceChangeNote change={card.price_change} className="block" />}
+      {flightDays.length > 1 && (
+        <p className={cn('m-0 mt-0.5 flex items-center gap-1 text-[12px]', card.dates_chained ? 'text-[#3f7d22]' : 'text-amber-600')}>
+          {card.dates_chained ? <CheckIcon className="h-3.5 w-3.5" aria-hidden /> : <MinusIcon className="h-3.5 w-3.5" aria-hidden />}
+          {card.dates_chained
+            ? `Даты состыкованы: ${flightDays.join(' → ')}`
+            : 'Самые дешёвые даты не стыкуются, соберу точнее при бронировании'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface RouteCardProps {
   card: Route
   best: boolean
@@ -148,17 +164,16 @@ interface RouteCardProps {
   dimmed: boolean
   canPick: boolean
   onPick: () => void
+  detailsOpen: boolean
+  onDetails: () => void
 }
 
 /** A multi-city route across two cells of the grid: its cities arrive as separate cards and merge into one. */
-export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: RouteCardProps) {
+export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails }: RouteCardProps) {
   const [merged, setMerged] = useState(false)
-  const [open, setOpen] = useState(false)
   const between = card.legs.slice(1, -1) // home → first and last → home are not seams of the banner
   const nights = card.stops.reduce((sum, s) => sum + s.nights, 0)
-  const countries = [...new Map(card.stops.map((s) => [s.country, s])).values()]
   const scenes = sceneKinds(card.stops)
-  const flightDays = card.legs.flatMap((leg) => (leg.ticket ? [shortDate(leg.ticket.departure)] : []))
 
   return (
     <motion.article
@@ -170,8 +185,8 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: R
         'relative overflow-hidden rounded-3xl border transition-[border-color,box-shadow,background-color,opacity] duration-500 sm:col-span-2',
         merged ? 'bg-card' : 'border-transparent bg-transparent shadow-none',
         merged && (picked
-          ? 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.7),0_24px_56px_-28px_rgba(84,160,40,0.7)]'
-          : 'border-border shadow-[0_24px_60px_-34px_rgba(15,23,42,0.5)]'),
+          ? 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.7)]'
+          : cn('shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest', detailsOpen ? 'border-faintest' : 'border-border')),
         dimmed && 'opacity-60',
       )}
     >
@@ -183,10 +198,10 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: R
               initial={false}
               animate={merged ? { borderRadius: 0, rotate: 0, scale: 1 } : { borderRadius: 24, rotate: i % 2 ? 1.6 : -1.6, scale: 0.95 }}
               transition={{ ...SPRING, delay: merged ? i * 0.04 : 0 }}
-              className="relative min-w-0 flex-1 overflow-hidden shadow-[0_18px_40px_-26px_rgba(15,23,42,0.6)]"
+              className="relative min-w-0 flex-1 overflow-hidden shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)]"
             >
-              <TripArt kind={scenes[i]} seed={stop.id} still className="absolute inset-0" />
-              <span className="absolute inset-0 bg-linear-to-t from-slate-950/70 via-slate-950/10 to-transparent" />
+              <TripArt kind={scenes[i]} seed={stop.id} photo={stop.photo} still className="absolute inset-0" />
+              <span className="pointer-events-none absolute inset-0 bg-linear-to-t from-slate-950/70 via-slate-950/10 to-transparent" />
               <div className="absolute right-3 bottom-3 left-3 sm:right-4 sm:left-4">
                 <span className="mb-1.5 inline-flex rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-foreground">
                   {stop.nights} {plural(stop.nights, ['ночь', 'ночи', 'ночей'])}
@@ -224,14 +239,13 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: R
           className="absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-2"
         >
           <span className="flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-highlight px-2.5 py-1 text-[11px] font-semibold text-white shadow-md">
+            <span className="inline-flex items-center gap-1 rounded-full bg-highlight px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap text-white shadow-md">
               <ModeIcon mode="flight" className="h-3 w-3" />
-              Маршрут · {card.stops.length} {plural(card.stops.length, ['город', 'города', 'городов'])} · {nights}{' '}
+              <span className="hidden sm:inline">Маршрут ·</span> {card.stops.length} {plural(card.stops.length, ['город', 'города', 'городов'])} · {nights}{' '}
               {plural(nights, ['ночь', 'ночи', 'ночей'])}
             </span>
             {best && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground shadow-md">
-                <SparklesIcon className="h-3.5 w-3.5" aria-hidden />
+              <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap text-primary-foreground shadow-md">
                 Лучшее совпадение
               </span>
             )}
@@ -246,7 +260,7 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: R
         transition={{ ...SPRING, delay: merged ? 0.2 : 0 }}
         className="flex flex-col gap-3 p-4 sm:p-5"
       >
-        <p className="m-0 text-[14px] leading-relaxed text-foreground">{card.why}</p>
+        <p className="m-0 text-[14px] leading-relaxed text-foreground">{keepPricesTogether(card.why)}</p>
 
         <ul className="m-0 flex list-none flex-wrap items-center gap-1.5 p-0" aria-label="Интересы">
           {card.interests.map((it) => (
@@ -263,89 +277,28 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick }: R
           ))}
         </ul>
 
-        <ol className="m-0 -mx-2 flex flex-col p-0" aria-label="Плечи маршрута">
-          {card.legs.map((leg, i) => (
-            <LegRow key={`${i}-${leg.from}-${leg.to}`} leg={leg} index={i} />
-          ))}
-        </ol>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-inset px-4 py-3">
-          <div>
-            <p className="m-0 text-[12px] text-muted-foreground">
-              Билеты на весь маршрут, на человека
-            </p>
-            <p className="m-0 text-lg font-semibold text-foreground tabular-nums">
-              {card.total_rub ? `от ${formatRub(card.total_rub)}` : 'цены уточню'}
-              {card.total_rub && !card.total_complete && (
-                <span className="ml-2 text-[12px] font-normal text-muted-foreground">без плеч, где билетов пока нет</span>
-              )}
-            </p>
-            {flightDays.length > 1 && (
-              <p className={cn('m-0 mt-0.5 flex items-center gap-1 text-[12px]', card.dates_chained ? 'text-[#3f7d22]' : 'text-amber-600')}>
-                {card.dates_chained ? <CheckIcon className="h-3.5 w-3.5" aria-hidden /> : <MinusIcon className="h-3.5 w-3.5" aria-hidden />}
-                {card.dates_chained
-                  ? `Даты состыкованы: ${flightDays.join(' → ')}`
-                  : 'Самые дешёвые даты не стыкуются, соберу точнее при бронировании'}
-              </p>
-            )}
-          </div>
-          <ul className="m-0 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-[12px]">
-            {countries.map((s) => (
-              <li key={s.country} className="flex items-center gap-1 text-foreground">
-                {s.visa_easy ? (
-                  <CheckBadgeIcon className="h-4 w-4 text-[#4c9a2a]" aria-hidden />
-                ) : (
-                  <IdentificationIcon className="h-4 w-4 text-amber-500" aria-hidden />
-                )}
-                {s.country}: {s.visa}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <RouteTotal card={card} />
 
         {card.tradeoff && (
           <p className="m-0 flex items-start gap-2 rounded-xl bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">
             <MinusIcon className="mt-0.5 h-4 w-4 shrink-0 text-faint" aria-hidden />
-            {card.tradeoff}
+            {keepPricesTogether(card.tradeoff)}
           </p>
         )}
-
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-              className="overflow-hidden"
-            >
-              <div className="grid gap-3 pt-1 sm:grid-cols-3">
-                {card.stops.map((s) => (
-                  <div key={s.id}>
-                    <p className="m-0 text-[13px] font-semibold text-foreground">{s.name}</p>
-                    <ul className="m-0 mt-1 flex list-disc flex-col gap-0.5 pl-4 text-[13px] text-muted-foreground">
-                      {s.highlights.map((h) => (
-                        <li key={h}>{h}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <div className="mt-1 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="inline-flex h-10 items-center gap-1 rounded-full px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            onClick={onDetails}
+            aria-expanded={detailsOpen}
+            className={cn(
+              'inline-flex h-10 items-center gap-1 rounded-full px-3 text-[13px] font-medium transition-colors hover:bg-secondary hover:text-foreground',
+              detailsOpen ? 'bg-secondary text-foreground' : 'text-muted-foreground',
+            )}
           >
-            {open ? 'Свернуть' : 'Что посмотреть'}
-            <ChevronDownIcon className={cn('h-4 w-4 transition-transform duration-300', open && 'rotate-180')} aria-hidden />
+            Подробнее
+            <ChevronRightIcon className="h-4 w-4" aria-hidden />
           </button>
-          <span className="hidden text-[12px] text-faint sm:inline">{card.kids}</span>
           <motion.button
             type="button"
             onClick={onPick}

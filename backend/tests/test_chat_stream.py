@@ -128,12 +128,42 @@ def test_should_emit_error_and_done_without_leaking_details_when_llm_fails(setti
     assert "provider secret detail" not in json.dumps(events, ensure_ascii=False)
 
 
+def test_should_replace_a_failed_turn_when_the_user_retries(settings):
+    llm = FakeLLM(chunks=[], error=RuntimeError("no credits"))
+    with TestClient(create_app(settings, llm=llm)) as test_client:
+        chat_id = stream_events(test_client, {"query": "Мальдивы"})[-1]["chat_id"]
+        llm.chunks, llm.error = ["Вот Мальдивы"], None
+        stream_events(test_client, {"query": "Мальдивы", "chat_id": chat_id, "retry": True})
+        messages = test_client.get(f"/api/chats/{chat_id}/messages").json()["messages"]
+
+    assert [(m["role"], m["content"]) for m in messages] == [
+        ("user", "Мальдивы"),
+        ("assistant", "Вот Мальдивы"),
+    ]
+    assert [m["role"] for m in llm.conversations[-1]] == ["system", "user"]
+
+
+def test_should_keep_a_good_answer_when_a_retry_comes_after_it(client):
+    chat_id = stream_events(client, {"query": "Привет"})[-1]["chat_id"]
+
+    stream_events(client, {"query": "Привет", "chat_id": chat_id, "retry": True})
+
+    assert len(client.get(f"/api/chats/{chat_id}/messages").json()["messages"]) == 4
+
+
 def test_should_pass_the_departure_city_in_the_user_turn_not_the_system_prompt(client, fake_llm):
     stream_events(client, {"query": "Хочу к морю", "origin": "  Казань "})
 
     system, *_, last = fake_llm.conversations[0]
     assert last == {"role": "user", "content": "Хочу к морю\n\nГород вылета: Казань"}
     assert "Казань" not in system["content"]
+
+
+def test_should_tell_the_model_the_currency_of_the_departure_city(client, fake_llm):
+    stream_events(client, {"query": "Хочу к морю", "origin": "Астана", "origin_code": "NQZ"})
+
+    system = fake_llm.conversations[0][0]["content"]
+    assert "тенге (₸)" in system
 
 
 def test_should_save_the_message_without_the_departure_city(client):

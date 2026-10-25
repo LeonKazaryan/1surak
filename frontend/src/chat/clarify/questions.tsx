@@ -2,9 +2,9 @@ import { useId, useState, type ComponentType, type ReactNode, type SVGProps } fr
 import { AnimatePresence, motion, type Variants } from 'motion/react'
 import { ArrowRightIcon, CheckIcon, FaceSmileIcon, UserGroupIcon, UserIcon, UsersIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { TripKind } from '@/types/api'
+import type { Currency, TripKind } from '@/types/api'
 import { TripArt } from '../components/TripArt'
-import { BUDGET_OPTIONS, KIND_OPTIONS, NIGHT_OPTIONS, nightsLabel, plural, upcomingMonths } from '../widgets'
+import { BUDGET_OPTIONS, KIND_OPTIONS, NIGHT_OPTIONS, RUB, budgetHint, nightsLabel, plural, upcomingMonths } from '../widgets'
 import type { Party } from './plan'
 
 const VIBE_TAGLINES: Record<TripKind, string> = {
@@ -135,7 +135,6 @@ export function VibeStep({ selected, onPick }: PickProps<TripKind>) {
 export function MonthStep({ selected, onPick }: PickProps<number>) {
   const id = useId()
   const months = upcomingMonths()
-  const thisYear = months[0].year
   return (
     <Options className="grid grid-cols-4 gap-2 sm:grid-cols-6">
       {months.map((m) => (
@@ -147,7 +146,7 @@ export function MonthStep({ selected, onPick }: PickProps<number>) {
           className="flex flex-col items-center px-1 py-2 leading-tight"
         >
           <span className="capitalize">{m.label}</span>
-          {m.year !== thisYear && <span className="block text-[10px] font-normal opacity-60">{m.year}</span>}
+          <span className="block text-[10px] font-normal opacity-60">{m.year}</span>
         </Chip>
       ))}
     </Options>
@@ -248,9 +247,10 @@ interface BudgetStepProps {
   level: number | null
   onLevel: (level: number) => void
   onTotal: (total: number) => void
+  currency?: Currency
 }
 
-export function BudgetStep({ level, onLevel, onTotal }: BudgetStepProps) {
+export function BudgetStep({ level, onLevel, onTotal, currency = RUB }: BudgetStepProps) {
   const [custom, setCustom] = useState(false)
   const [draft, setDraft] = useState<number | null>(null)
   const send = () => draft && onTotal(draft)
@@ -269,23 +269,19 @@ export function BudgetStep({ level, onLevel, onTotal }: BudgetStepProps) {
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.96 }}
               className={cn(
-                'relative flex flex-col items-start gap-1 rounded-2xl border px-4 py-3.5 text-left transition-colors',
+                'relative flex flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition-colors',
                 on ? 'border-highlight bg-highlight/5' : 'border-border bg-white hover:bg-accent/50',
               )}
             >
               <span className="flex gap-0.5 text-base leading-none font-bold" aria-hidden>
-                {o.level ? (
-                  [1, 2, 3].map((n) => (
-                    <span key={n} className={n <= o.level ? 'text-highlight' : 'text-faintest'}>
-                      ₽
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-highlight">✦</span>
-                )}
+                {[1, 2, 3].map((n) => (
+                  <span key={n} className={n <= o.level ? 'text-highlight' : 'text-faintest'}>
+                    {currency.glyph}
+                  </span>
+                ))}
               </span>
               <span className="text-[15px] font-semibold text-foreground">{o.label}</span>
-              <span className="text-xs leading-snug text-muted-foreground">{o.hint}</span>
+              <span className="text-xs leading-snug text-muted-foreground">{budgetHint(o.level, currency)}</span>
               {on && <CheckBadge className="absolute top-3 right-3 h-5 w-5" />}
             </motion.button>
           )
@@ -315,9 +311,9 @@ export function BudgetStep({ level, onLevel, onTotal }: BudgetStepProps) {
               }}
               placeholder="300 000"
               className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold text-foreground outline-none placeholder:font-normal placeholder:text-faint"
-              aria-label="Бюджет на всех, рублей"
+              aria-label={`Бюджет на всех, ${currency.sign}`}
             />
-            <span className="text-sm font-semibold text-foreground">₽</span>
+            <span className="text-sm font-semibold text-foreground">{currency.sign}</span>
             <button
               type="submit"
               disabled={!draft}

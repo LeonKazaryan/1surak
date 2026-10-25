@@ -82,7 +82,7 @@ def test_should_match_ranges_any_of_and_contains():
     assert not score(case, bad).passed
 
 
-def test_should_run_a_two_turn_case_and_record_tool_results(tmp_path):
+def test_should_run_a_two_turn_case_and_record_tool_results(db_url):
     llm = FakeLLM(
         rounds=[
             [ToolCall(id="c1", name="search_destinations", arguments='{"month": 11, "kinds": ["sea"]}')],
@@ -93,7 +93,7 @@ def test_should_run_a_two_turn_case_and_record_tool_results(tmp_path):
     case = {"id": "two", "turns": ["к морю в ноябре", "а почему?"], "origin": "Казань"}
 
     async def go():
-        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'e.db'}")
+        engine = create_async_engine(db_url)
         await init_db(engine)
         try:
             return await run_case(case, llm, async_sessionmaker(engine, expire_on_commit=False))

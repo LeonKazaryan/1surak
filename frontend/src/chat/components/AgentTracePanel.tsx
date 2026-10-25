@@ -66,6 +66,16 @@ function StepRow({ step }: { step: ChatTraceStep }) {
 export function AgentTracePanel({ steps, isStreaming }: AgentTracePanelProps) {
   const [openAfterDone, setOpenAfterDone] = useState(false)
   if (!steps.length) return null
+  // nothing to unfold when only an error is left: the server saves it as the reply text too
+  if (steps.every((s) => s.kind === 'error')) {
+    return (
+      <div className="-mx-2 mb-3 flex items-center gap-2 px-2 py-1">
+        <LogoMark className="h-7 w-7 shrink-0" />
+        <ExclamationCircleIcon className="h-4 w-4 shrink-0 text-danger" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">Не получилось ответить</span>
+      </div>
+    )
+  }
 
   const tools = steps.filter((s) => s.kind === 'tool')
   const running = tools.findLast((t) => t.status === 'running')

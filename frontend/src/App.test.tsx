@@ -48,9 +48,9 @@ describe('AppRoutes', () => {
     localStorage.setItem('1surak.myChats', JSON.stringify(['c1']))
     renderAt('/chat/c1')
 
-    expect(screen.getByRole('button', { name: 'План поездки' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Меню' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Сообщение агенту' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Новый чат' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Новая поездка' })).toBeInTheDocument()
     expect(screen.getByTestId('messages-skeleton')).toBeInTheDocument()
     expect(screen.getByTestId('recent-chats-skeleton')).toBeInTheDocument()
   })

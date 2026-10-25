@@ -4,13 +4,14 @@ The model fills the brief from the user's words; the code alone decides what is 
 asks only what blocks the search, and only once. After that it goes on with stated assumptions.
 """
 
-from datetime import date
-from typing import Literal
+from datetime import date, datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.catalog.catalog import KIND_LABELS, Catalog, Kind, load_catalog
 from app.catalog.search import MONTHS
+from app.money import CURRENCIES, CurrencyCode, current_currency
 
 Slot = Literal["vibe", "when", "travelers", "route", "budget"]
 SLOTS: tuple[Slot, ...] = ("vibe", "when", "travelers", "route", "budget")
@@ -32,6 +33,7 @@ REGION_COUNTRIES = {
 BUDGET_LABELS = {0: "Бюджет не важен", 1: "Экономно", 2: "Средний бюджет", 3: "Комфорт"}
 # Team estimates for a week per person, to turn a sum of money into the catalogue's price level.
 LEVEL_CAPS_PER_PERSON = ((70_000, 1), (150_000, 2))
+MAX_WISHES = 10
 
 
 class BriefPatch(BaseModel):
@@ -52,15 +54,24 @@ class BriefPatch(BaseModel):
     budget_level: int | None = Field(
         None, ge=0, le=3, description="0 does not matter, 1 budget, 2 mid-range, 3 comfort."
     )
-    budget_total_rub: int | None = Field(None, gt=0, description="Budget for the whole trip and party, RUB.")
+    budget_total: int | None = Field(
+        None,
+        gt=0,
+        le=10**10,
+        description="Budget for the whole trip and party, as the amount the user named.",
+    )
+    budget_currency: CurrencyCode | None = Field(
+        None,
+        description="Currency of budget_total if the user named one ('рублей', '$'); omit for their own.",
+    )
     multi_city: bool | None = Field(
         None,
         description="True when the user wants several cities in one trip: 'по Европе', 'Ереван и Тбилиси', "
         "'несколько городов', 'маршрут'. False when they want to stay in one place.",
     )
-    wishes: list[str] | None = Field(
+    wishes: list[Annotated[str, StringConstraints(max_length=80)]] | None = Field(
         None,
-        max_length=10,
+        max_length=MAX_WISHES,
         description="Only wishes the fields above cannot hold, in the user's words: 'без долгих перелётов', "
         "'всё включено', 'с собакой'. Never repeat budget ('недорого'), party ('с ребёнком'), "
         "kind of trip ('тёплое море'), dates or the departure city.",
@@ -70,12 +81,17 @@ class BriefPatch(BaseModel):
 class TripBrief(BriefPatch):
     asked: bool = False  # the clarifying cards were shown, so we never ask twice
     shown: list[str] = Field(default_factory=list)  # destination ids on the last cards
+    priced_from: str | None = None  # IATA of the city the tickets on those cards fly from
+    priced_at: datetime | None = None  # when those tickets were found
+    plan: dict | None = None  # the last trip plan shown, in short, so the next one can say what changed
 
 
 def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:
     updates = patch.model_dump(exclude_none=True)
+    if "budget_total" in updates and "budget_currency" not in updates:
+        updates["budget_currency"] = current_currency.get().code
     if "wishes" in updates:
-        updates["wishes"] = list(dict.fromkeys([*(brief.wishes or []), *updates["wishes"]]))
+        updates["wishes"] = list(dict.fromkeys([*(brief.wishes or []), *updates["wishes"]]))[-MAX_WISHES:]
     if "children_ages" in updates and "children" not in updates:
         updates["children"] = max(brief.children or 0, len(updates["children_ages"]))
     if updates.get("children") == 0:
@@ -85,7 +101,7 @@ def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:
     return brief.model_copy(update=updates)
 
 
-def _nights(b: BriefPatch) -> tuple[int | None, int | None]:
+def night_range(b: BriefPatch) -> tuple[int | None, int | None]:
     if b.nights_min or b.nights_max:
         return b.nights_min or b.nights_max, b.nights_max or b.nights_min
     if b.date_from and b.date_to and b.date_to > b.date_from:
@@ -99,7 +115,7 @@ def route_fits(b: TripBrief) -> bool:
     not for a short or a ski trip, not when the user named one place."""
     if b.multi_city is not None or b.children:
         return False
-    _, high = _nights(b)
+    _, high = night_range(b)
     if high is not None and high < MIN_ROUTE_NIGHTS:
         return False
     if b.kinds and set(b.kinds) <= {"ski"}:
@@ -111,11 +127,11 @@ def missing(b: TripBrief) -> list[Slot]:
     result: list[Slot] = []
     if not b.destination and not b.kinds:
         result.append("vibe")
-    if not (b.month or b.date_from) or _nights(b) == (None, None):
+    if not (b.month or b.date_from) or night_range(b) == (None, None):
         result.append("when")
     if b.adults is None or len(b.children_ages or []) < (b.children or 0):
         result.append("travelers")
-    if b.budget_level is None and b.budget_total_rub is None:
+    if b.budget_level is None and b.budget_total is None:
         result.append("budget")
     # Rides along with other questions only: a request that says everything still gets zero questions.
     if result and route_fits(b):
@@ -132,7 +148,7 @@ def assumptions(b: TripBrief) -> list[str]:
     if "when" in gaps:
         if not (b.month or b.date_from):
             result.append("месяц не выбран, поэтому погоду не учитываю")
-        if _nights(b) == (None, None):
+        if night_range(b) == (None, None):
             result.append("7 ночей")
     if "travelers" in gaps:
         if b.adults is None:
@@ -149,8 +165,9 @@ def assumptions(b: TripBrief) -> list[str]:
 def price_level(b: TripBrief) -> int | None:
     if b.budget_level:
         return b.budget_level
-    if b.budget_total_rub:
-        per_person = b.budget_total_rub / max(1, (b.adults or 2) + (b.children or 0))
+    if b.budget_total:
+        rub = CURRENCIES[b.budget_currency or "RUB"].to_rub(b.budget_total)
+        per_person = rub / max(1, (b.adults or 2) + (b.children or 0))
         return next((level for cap, level in LEVEL_CAPS_PER_PERSON if per_person <= cap), 3)
     return None
 
@@ -174,7 +191,7 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
             hint["countries"] = countries or region
     if b.multi_city:
         hint["multi_city"] = True  # search_routes, not search_destinations
-        _, nights = _nights(b)
+        _, nights = night_range(b)
         if nights:
             hint["nights"] = nights
     return hint
@@ -214,7 +231,7 @@ def chips(b: TripBrief) -> list[str]:
     when = []
     if b.month:
         when.append(MONTHS[b.month - 1].capitalize())
-    low, high = _nights(b)
+    low, high = night_range(b)
     if low:
         span = f"{low}–{high}" if high != low else f"{low}"
         when.append(f"{span} {plural(high or low, ('ночь', 'ночи', 'ночей'))}")
@@ -222,8 +239,8 @@ def chips(b: TripBrief) -> list[str]:
         result.append(" · ".join(when))
     if travelers := _travelers(b):
         result.append(travelers)
-    if b.budget_total_rub:
-        result.append(f"до {b.budget_total_rub:,} ₽".replace(",", " "))
+    if b.budget_total:
+        result.append(f"до {CURRENCIES[b.budget_currency or 'RUB'].amount(b.budget_total)}")
     elif b.budget_level is not None:
         result.append(BUDGET_LABELS[b.budget_level])
     if b.multi_city:
@@ -234,7 +251,7 @@ def chips(b: TripBrief) -> list[str]:
 
 def prefill(b: TripBrief) -> dict:
     """What the question cards start from, so the user only confirms what we already understood."""
-    low, high = _nights(b)
+    low, high = night_range(b)
     return {
         "kinds": list(b.kinds or []),
         "month": b.month,

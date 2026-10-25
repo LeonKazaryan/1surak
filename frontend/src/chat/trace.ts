@@ -1,5 +1,5 @@
 import type { ChatStreamEvent } from '@/types/api'
-import type { ChatTraceStep } from './types'
+import type { ChatTraceStep, WorkspaceChatMessage } from './types'
 
 const RESULT_MAX_CHARS = 220
 
@@ -56,4 +56,9 @@ function isTraceEvent(value: unknown): value is ChatStreamEvent {
 /** Rebuilds the trace of a saved assistant message from its persisted stream events. */
 export function rehydrateTrace(events: unknown[]): ChatTraceStep[] {
   return events.filter(isTraceEvent).reduce(applyTraceEvent, [] as ChatTraceStep[])
+}
+
+/** A reply the agent could not finish: the server saved its error as the reply. */
+export function isFailed(message: WorkspaceChatMessage): boolean {
+  return message.role === 'assistant' && Boolean(message.traceSteps?.some((s) => s.kind === 'error'))
 }

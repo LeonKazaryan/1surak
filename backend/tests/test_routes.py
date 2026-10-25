@@ -127,7 +127,7 @@ def tickets(*days_prices: tuple[str, int]):
             key=lambda t: t.price,
         )
     )
-    return RouteFlights(cheapest=found[0], direct=found[0], fastest=found[0], tickets=found)
+    return RouteFlights(cheapest=found[0], direct=found[0], fastest=found[0], by_day=found)
 
 
 def test_should_pick_tickets_whose_dates_follow_the_nights():
@@ -172,3 +172,21 @@ def test_should_find_the_way_back_in_the_next_month_when_the_trip_crosses_it():
 
     assert plan.dates_chained  # 27 Oct + 9 nights = 5 Nov, found in November
     assert plan.total_rub == 26_000
+
+
+def test_should_leave_on_the_day_the_user_named():
+    from datetime import date
+
+    from app.trip.routes import Leg, chain_dates
+
+    there = Leg(
+        "Астана", "Tbilisi", 2500, "flight", 4, flights=tickets(("2026-10-10", 14000), ("2026-10-20", 19000))
+    )
+    back = Leg(
+        "Tbilisi", "Астана", 2600, "flight", 3, flights=tickets(("2026-10-17", 11000), ("2026-10-27", 12500))
+    )
+
+    chained = chain_dates([there, back], [7], start=date(2026, 10, 20))
+
+    assert chained
+    assert (there.ticket.day.isoformat(), back.ticket.day.isoformat()) == ("2026-10-20", "2026-10-27")

@@ -9,7 +9,7 @@ by distance (bus, train or car), marked as such.
 import asyncio
 import math
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from itertools import combinations, pairwise, permutations
 
 from pydantic import Field
@@ -18,6 +18,9 @@ from app.catalog.catalog import KIDS_LABELS, KIND_LABELS, VISA_LABELS
 from app.catalog.search import EASY_VISA, MONTHS, MONTHS_IN, SearchQuery, Snapshot, failures, in_scope
 from app.flights import City, Flights, RouteFlights, Ticket
 from app.flights.client import merged
+from app.money import money
+from app.plan.guide import place_photo
+from app.trip.brief import TripBrief
 
 MAX_LEG_KM = 1100  # further than this the hop is a separate trip, not a leg of one
 FLIGHT_FROM_KM = 550  # shorter hops go by land even when there is an airport
@@ -217,7 +220,9 @@ def candidate_routes(snapshots: list[Snapshot], q: RouteQuery, home: City | None
     return sorted(plans, key=lambda p: -p.score)
 
 
-async def price_route(plan: RoutePlan, flights: Flights, origin: City | None, month: int | None) -> RoutePlan:
+async def price_route(
+    plan: RoutePlan, flights: Flights, origin: City | None, month: int | None, start: date | None = None
+) -> RoutePlan:
     """Real tickets for every leg: home to the first city, between cities, and back from the last one."""
     points = [(origin.name, origin.code, origin.lat, origin.lon)] if origin else []
     points += [(s.place.name, s.place.airport or "", s.place.lat, s.place.lon) for s in plan.stops]
@@ -240,11 +245,23 @@ async def price_route(plan: RoutePlan, flights: Flights, origin: City | None, mo
     for i, leg in enumerate(flown):
         leg.flights = merged(found[i], next(later)) if i and following else found[i]
     plan.legs = legs
-    plan.dates_chained = chain_dates(legs, plan.nights, start_at_home=origin is not None)
+    plan.dates_chained = chain_dates(legs, plan.nights, start_at_home=origin is not None, start=start)
     return plan
 
 
-def chain_dates(legs: list[Leg], nights: list[int], start_at_home: bool = True) -> bool:
+async def rebuild_route(
+    stops: list[Snapshot], brief: TripBrief, flights: Flights, origin: City | None, nights: int | None = None
+) -> RoutePlan:
+    """A route shown on an earlier turn, rebuilt from the same places in the same order, with fresh tickets."""
+    q = RouteQuery(
+        month=brief.month, kinds=brief.kinds, nights=nights or brief.nights_max or brief.nights_min
+    )
+    return await price_route(plan_of(stops, q), flights, origin, brief.month)
+
+
+def chain_dates(
+    legs: list[Leg], nights: list[int], start_at_home: bool = True, start: date | None = None
+) -> bool:
     """Pick one ticket per flight leg so the dates follow the plan: each leg leaves when the nights before it
     are over (give or take a day). The cheapest such chain wins. When no chain exists, every leg keeps its
     cheapest ticket and the route says its dates do not chain yet."""
@@ -255,16 +272,18 @@ def chain_dates(legs: list[Leg], nights: list[int], start_at_home: bool = True) 
         return False
     best: tuple[int, dict[int, Ticket]] | None = None
     first_j, first = priced[0]
-    for anchor in first.flights.tickets or (first.flights.cheapest,):
-        start = anchor.day - timedelta(days=stays_before[first_j])
+    for anchor in first.flights.by_day or (first.flights.cheapest,):
+        if anchor.day is None or (start and abs((anchor.day - start).days) > DATE_SLACK_DAYS):
+            continue
+        trip_start = anchor.day - timedelta(days=stays_before[first_j])
         picks, total = {first_j: anchor}, anchor.price
         for j, leg in priced[1:]:
-            target = start + timedelta(days=stays_before[j])
-            fits = [t for t in leg.flights.tickets if abs((t.day - target).days) <= DATE_SLACK_DAYS]
+            target = trip_start + timedelta(days=stays_before[j])
+            fits = [t for t in leg.flights.by_day if t.day and abs((t.day - target).days) <= DATE_SLACK_DAYS]
             if not fits:
                 break
-            picks[j] = fits[0]  # tickets come cheapest first
-            total += fits[0].price
+            picks[j] = min(fits, key=lambda t: t.price)
+            total += picks[j].price
         else:
             if best is None or total < best[0]:
                 best = (total, picks)
@@ -322,7 +341,7 @@ def route_for_model(plan: RoutePlan, month: int | None) -> dict:
             for s, n in zip(plan.stops, plan.nights, strict=True)
         ],
         "legs": [leg.view() for leg in plan.legs],
-        "tickets_total_rub": plan.total_rub or None,
+        "tickets_total": money(plan.total_rub) if plan.total_rub else None,
         "all_flights_priced": plan.priced,
         "dates_chained": plan.dates_chained,
         "interests": {i["label"]: i["covered"] for i in plan.interests},
@@ -347,6 +366,7 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
                 "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
                 "visa_easy": s.visa_rule in EASY_VISA,
                 "highlights": list(s.place.highlights[:2]),
+                "photo": place_photo(s.place.id),
             }
         )
     kids = min((s.place.kids for s in plan.stops), key=["poor", "ok", "good"].index)

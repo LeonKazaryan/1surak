@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone
 
 from app.llm import LLM, TextDelta, ToolCall, Usage
+from app.money import RUB, Currency, current_currency
 from app.tools import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -30,18 +31,19 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 
 Сегодня {today}, {weekday} (время московское).
 
+Валюта пользователя: {currency}. Цены называй в ней, как в полях price и tickets_total: они уже \
+пересчитаны. Сам не пересчитывай и рубли не пиши, если пользователь сам не спросил про рубли.
+
 Что ты делаешь: помогаешь спланировать поездку, от идеи до покупки. На просьбы не о путешествиях \
 (код, домашние задания, другие темы) вежливо откажись одной фразой и предложи помощь с поездкой.
 
 Откуда брать факты:
 - Цены, расписания, наличие мест, погоду и условия отелей бери только из результатов инструментов. \
 Если инструмента для этого нет или он вернул ошибку, честно скажи об этом и не придумывай цифры.
-- Если пользователь называет конкретное место, открой его карточку (get_destination). \
+- Если пользователь спрашивает о конкретном месте, открой его карточку (get_destination). \
 Если места нет в каталоге, так и скажи, назови главную известную причину, почему туда сложно \
 (например, для Франции и других стран Шенгена россиянам нужна шенгенская виза, прямых рейсов из России нет), \
 без цифр и сроков, которых нет в инструментах, и предложи похожие места из каталога.
-- Время перелёта в каталоге считается из Москвы. Если пользователь летит из другого города, \
-предупреди об этом одной фразой.
 - Правила въезда и документы проверяй через research, даже если в карточке есть виза: \
 в карточке только оценка команды. Через research же ищи события на даты, советы на месте \
 (что делать, где поесть, какой район), транспорт (работает ли аэропорт, животные в поезде), безопасность \
@@ -63,8 +65,21 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 вызови search_routes с теми же фильтрами и покажи 2-3 маршрута через show_destinations (поле route), \
 одиночное место из search_destinations добавляй, только если маршрутов меньше двух. \
 Семьям с маленькими детьми маршрут сам не предлагай.
-4. Отели пока не подбираем. Если пользователь выбрал направление или маршрут, коротко подтверди выбор \
-и предложи следующий шаг без вопроса: «Следующим шагом подберу отели.»
+   Если update_trip_brief вернул named_place (пользователь сам назвал место из каталога) и спрашивать \
+нечего (missing пуст или уточнения уже были), не ищи и не показывай карточки: сразу собирай поездку \
+по шагу 4 с этим id.
+4. Когда пользователь выбрал направление или маршрут («Выбираю …») или назвал место, сразу вызови build_trip \
+с id из named_place или shown_before (у маршрута id вида «tbilisi+yerevan»), затем show_trip. \
+Не отвечай текстом вместо плана. Билеты на даты, отель под состав, \
+трансферы, стыковки, программу по дням и бюджет собирает код, ты объясняешь результат.
+   В intro пиши как живой турагент, который всё уже собрал: от первого лица, тепло и по делу, 3-5 предложений, \
+без списков и заголовков. Назови даты и рейс, почему этот отель подходит именно им, главное из проверок \
+(warn), и чего из пожеланий найти не удалось (unmet, wishes_not_checked): прямо скажи «не нашёл» \
+и предложи замену. Одной фразой скажи, что отели демонстрационные.
+5. Если план уже есть (current_plan) и пользователь меняет условие («на два дня позже», «бюджет меньше», \
+«с нами собака», «другой отель»), не начинай поиск заново: обнови бриф через update_trip_brief, \
+вызови build_trip с тем же id (другой отель: hotels с id из alternatives) и show_trip. \
+В intro начни с того, что изменилось (changes).
 - Перед вызовом инструментов текст не пиши: слова для пользователя передавай в intro."""
 
 # Rules the model drops in long answers work when repeated right before it writes (like the language note).
@@ -74,7 +89,8 @@ REPLY_CHECKLIST = (
     "2) если использовал research или read_page, в конце блок «Источники:» со ссылками; "
     "3) даты, состав и бюджет уточняй только карточками ask_user и только один раз: если уточнение уже было, "
     "не спрашивай снова, а назови допущения; "
-    "4) найденные через search_destinations места показывай вызовом show_destinations, не списком в тексте."
+    "4) найденные через search_destinations места показывай вызовом show_destinations, не списком в тексте; "
+    "5) выбранное место или маршрут собирай через build_trip и показывай через show_trip."
 )
 ENGLISH_NOTE = (
     "The user writes in English. Write the whole answer in English, including place names and the facts "
@@ -90,8 +106,12 @@ def now_msk() -> datetime:
     return datetime.now(MSK)
 
 
-def system_prompt(now: datetime) -> str:
-    return SYSTEM_PROMPT.format(today=now.date().isoformat(), weekday=WEEKDAYS_RU[now.weekday()])
+def system_prompt(now: datetime, currency: Currency = RUB) -> str:
+    return SYSTEM_PROMPT.format(
+        today=now.date().isoformat(),
+        weekday=WEEKDAYS_RU[now.weekday()],
+        currency=f"{currency.name} ({currency.sign})",
+    )
 
 
 # The city comes from the client, so it goes in the user turn: the system prompt must stay ours alone.
@@ -125,11 +145,15 @@ def _tokens(chunks: list[str], after_text: bool) -> list[dict]:
     return separator + [{"type": "assistant_token", "text": chunk} for chunk in chunks]
 
 
+def _words(text: str) -> str:
+    return " ".join(text.split())
+
+
 def _repeats_an_argument(text: str, calls: list[ToolCall]) -> bool:
     """The model often says aloud the very intro it passes to a tool; the tool shows it anyway."""
-    said = " ".join(text.split())
+    said = _words(text)
     return any(
-        isinstance(value, str) and " ".join(value.split()) == said
+        isinstance(value, str) and _words(value) == said
         for call in calls
         for value in _display_args(call.arguments).values()
     )
@@ -197,7 +221,8 @@ async def _run(
 ) -> AsyncIterator[dict]:
     tools = tools or ToolRegistry()
     specs = tools.specs() or None
-    messages: list[dict] = [{"role": "system", "content": system_prompt(now())}, *_with_origin(turns, origin)]
+    prompt = system_prompt(now(), current_currency.get())
+    messages: list[dict] = [{"role": "system", "content": prompt}, *_with_origin(turns, origin)]
     language = _language_note(turns)
     checklist = [{"role": "system", "content": REPLY_CHECKLIST}]
     said_something = False
@@ -270,7 +295,8 @@ async def _run(
                 owed = None
             if result.ok and tool and tool.then and tools.get(tool.then):
                 owed = tool.then
-            if result.text:
+            # a long intro streams before the call that carries it; saying it again would double the reply
+            if result.text and not (streaming and _words(result.text) == _words(text)):
                 separator = "\n\n" if said_something else ""
                 yield {"type": "assistant_token", "text": separator + result.text}
                 said_something = True

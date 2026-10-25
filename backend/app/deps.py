@@ -25,6 +25,10 @@ def get_flights(request: Request) -> Flights:
     return request.app.state.flights
 
 
+def rate_limited(request: Request) -> None:
+    request.app.state.rate_limit.hit(request.client.host if request.client else "unknown")
+
+
 SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_sessionmaker)]
 Llm = Annotated[LLM, Depends(get_llm)]
 Tools = Annotated[ToolRegistry, Depends(get_tools)]

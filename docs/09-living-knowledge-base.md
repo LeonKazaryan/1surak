@@ -135,7 +135,7 @@ An example `kb_write` entry as the agent sends it:
   - everything the agent researched while we developed and tested;
 
   so the agent is useful offline from the first query.
-- **Live growth goes to the Docker volume** (`app-data`), never into git.
+- **Live growth goes to the Postgres volume** (`pgdata`), never into git.
 - **No internet or no search key:** the agent answers from the KB and says how old the facts are («данные на 25.10»). It never invents a fresh one.
 - **Search key in `.env`** (`SEARCH_API_KEY`, `SEARCH_PROVIDER`). The provider is still to pick. Candidates are Tavily, Brave Search API, Exa, and Yandex Search API (best for Russian results). Before choosing, check the price, the free tier and **whether the terms allow storing results**, since storing them is the whole point.
 
@@ -149,8 +149,10 @@ An example `kb_write` entry as the agent sends it:
 ## What's built (25 Oct)
 
 - **One tool, `research(question, topic, place?, country?, fresh?)`,** instead of separate `kb_search` / `web_search` / `kb_write`. It searches the KB, falls back to Tavily when there's no good fresh answer, and writes every web result back with its source. One tool keeps the model's job simple; separate `kb_write` for distilled one-claim facts is the next step.
-- **Storage:** `kb_entries` in the same SQLite plus an FTS5 index. Russian word forms are handled by cutting endings and searching by prefix (`визы` → `виз*`), no stemming library.
-- **A stored entry answers the question** when it covers half of the question's terms or at least three of them. Soft topics (tip, guide, food, hotel) need one such entry, time-sensitive ones two.
+- **Storage:** `kb_entries` in PostgreSQL, with a full-text column and a pgvector column (384 numbers per entry).
+- **Hybrid search.** Word search cuts Russian endings and searches by prefix (`визы` → `виз:*`), which is good for names and codes like TDAC. Meaning search uses a local multilingual model (`paraphrase-multilingual-MiniLM-L12-v2` through fastembed), so «с ребёнком» finds «для семей с детьми» and a Russian question finds an English passage. The two rankings are merged by reciprocal rank fusion. A passage below 0.3 similarity doesn't count as found by meaning.
+- **When the model is missing** (no download, no memory), search runs on words only and nothing breaks. Entries saved without a vector get one at the next start.
+- **A stored entry answers the question** when it covers half of the question's terms or at least three of them, or when it is close in meaning (similarity 0.45 or more, place names removed from the question first). Soft topics (tip, guide, food, hotel) need one such entry, time-sensitive ones two.
 - **`fresh: true`** re-checks the web, but entries checked within the last day are still used.
 - **Each passage returns `published` (when the page says) and `checked` (when we read it)**, so the agent doesn't pass our fetch date off as the publication date.
 - **Seed:** Wikivoyage passages for every catalogue place (`backend/app/kb/seed/`, built by `python -m scripts.build_kb_seed`), loaded on first start.
@@ -196,4 +198,5 @@ An example `kb_write` entry as the agent sends it:
 
 ### Still open
 
-- How well SQLite full-text search handles Russian word endings («отели» vs «отель»), and whether we need stemming, trigrams or vectors. The research on this didn't finish; pick it up before building `kb_search`.
+- **Measured on the seed (25 Oct):** passages that answer score 0.47–0.52 by meaning, unrelated ones 0.19–0.39. One false match is known: «тихие места на природе» in Sochi scores 0.49 against a food passage. The agent reads the passage and, per the tool description, asks again with `fresh=true`.
+- The model reads only the first 128 tokens of a passage (median passage: 158 words). Cutting passages into windows was tried and lifted unrelated passages too, so it isn't used. A bigger model (512 tokens) is the next option if evals show misses.

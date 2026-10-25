@@ -21,7 +21,12 @@ def _chat_row(row) -> dict:
         "title": row.title,
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
+        "brief": row.brief,
     }
+
+
+def _with_brief():
+    return select(chats, trip_briefs.c.brief).outerjoin(trip_briefs, trip_briefs.c.chat_id == chats.c.id)
 
 
 def _message_row(row) -> dict:
@@ -45,12 +50,12 @@ async def ensure_chat(db: AsyncSession, chat_id: str, title: str) -> str:
 
 
 async def get_chat(db: AsyncSession, chat_id: str) -> dict | None:
-    row = (await db.execute(select(chats).where(chats.c.id == chat_id))).first()
+    row = (await db.execute(_with_brief().where(chats.c.id == chat_id))).first()
     return _chat_row(row) if row else None
 
 
 async def list_chats(db: AsyncSession, chat_ids: list[str]) -> list[dict]:
-    query = select(chats).where(chats.c.id.in_(chat_ids)).order_by(chats.c.updated_at.desc())
+    query = _with_brief().where(chats.c.id.in_(chat_ids)).order_by(chats.c.updated_at.desc())
     return [_chat_row(row) for row in (await db.execute(query)).all()]
 
 
@@ -74,14 +79,31 @@ async def recent_turns(db: AsyncSession, chat_id: str, limit: int) -> list[dict]
 
 async def add_message(
     db: AsyncSession, chat_id: str, role: str, content: str, trace: list[dict] | None = None
-) -> None:
+) -> dict:
     now = _now()
-    await db.execute(
-        insert(chat_messages).values(
-            id=str(uuid4()), chat_id=chat_id, role=role, content=content, trace=trace or [], created_at=now
-        )
-    )
+    row = {"id": str(uuid4()), "chat_id": chat_id, "role": role, "content": content, "trace": trace or []}
+    await db.execute(insert(chat_messages).values(**row, created_at=now))
     await db.execute(update(chats).where(chats.c.id == chat_id).values(updated_at=now))
+    return {**row, "created_at": _iso(now)}
+
+
+async def drop_failed_turn(db: AsyncSession, chat_id: str) -> bool:
+    """Deletes the last question and its reply when the reply is an agent error, so a retry takes their place."""
+    query = (
+        select(chat_messages.c.id, chat_messages.c.role, chat_messages.c.trace)
+        .where(chat_messages.c.chat_id == chat_id)
+        .order_by(chat_messages.c.created_at.desc())
+        .limit(2)
+    )
+    rows = (await db.execute(query)).all()
+    if len(rows) < 2:
+        return False
+    reply, question = rows
+    failed = reply.role == "assistant" and any(e.get("type") == "error" for e in reply.trace or [])
+    if not failed or question.role != "user":
+        return False
+    await db.execute(delete(chat_messages).where(chat_messages.c.id.in_([reply.id, question.id])))
+    return True
 
 
 async def get_brief(db: AsyncSession, chat_id: str) -> dict | None:

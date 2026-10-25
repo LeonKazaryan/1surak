@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { CheckIcon } from '@heroicons/react/16/solid'
+import { LogoMark } from '@/components/LogoMark'
 import type { ChatTraceStep } from '../types'
+import { LAND_PATH } from './landPath'
 
 /** What each tool really does, shown in turn under the step title while it runs. */
 const TOOL_LINES: Record<string, string[]> = {
@@ -28,26 +30,68 @@ function Plane() {
   )
 }
 
-function Continents() {
+const LAND_BANDS: [number, string][] = [
+  [0.07, '#eef5fb'],
+  [0.17, '#4f9a4a'],
+  [0.26, '#6fb65a'],
+  [0.36, '#d9c287'],
+  [0.43, '#a9b866'],
+  [0.5, '#3d9446'],
+  [0.6, '#b3b36a'],
+  [0.65, '#cfb27a'],
+  [0.73, '#74b85c'],
+]
+
+function Land() {
+  const id = useId().replace(/:/g, '')
   return (
-    <svg viewBox="0 0 72 36" className="h-full w-1/2 shrink-0" aria-hidden>
-      <path d="M6 10c4-4 12-4 14 1s-3 6-1 10-6 6-9 2-8-9-4-13z" fill="#adef81" />
-      <path d="M28 6c5-2 9 1 8 5s4 4 2 8-8 2-9-2-5-9-1-11z" fill="#adef81" />
-      <path d="M46 14c4-3 12-2 16 2s0 9-5 8-6 4-10 1 -5-8-1-11z" fill="#adef81" />
-      <path d="M33 26c3-1 6 1 5 4s-6 2-6-1z" fill="#adef81" />
+    <svg viewBox="0 0 144 72" className="h-full w-1/2 shrink-0" aria-hidden>
+      <defs>
+        <linearGradient id={id} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="72">
+          {LAND_BANDS.map(([offset, color]) => (
+            <stop key={offset} offset={offset} stopColor={color} />
+          ))}
+        </linearGradient>
+      </defs>
+      <path d={LAND_PATH} fill={`url(#${id})`} />
     </svg>
+  )
+}
+
+function Clouds() {
+  return (
+    <svg viewBox="0 0 144 72" className="h-full w-1/2 shrink-0" aria-hidden>
+      <g fill="#fff">
+        <ellipse cx="18" cy="22" rx="14" ry="2.5" />
+        <ellipse cx="58" cy="44" rx="11" ry="2" />
+        <ellipse cx="92" cy="16" rx="16" ry="2.5" />
+        <ellipse cx="124" cy="36" rx="12" ry="2" />
+        <ellipse cx="40" cy="58" rx="13" ry="2" />
+      </g>
+    </svg>
+  )
+}
+
+function Earth() {
+  return (
+    <div className="absolute inset-[13px] overflow-hidden rounded-full bg-[radial-gradient(circle_at_35%_30%,#5aa6ff,#1a5fe0_45%,#0a36a0)] shadow-[0_0_0_1px_rgba(120,180,255,0.35),0_0_8px_1px_rgba(70,140,255,0.45)]">
+      <div className="animate-globe-spin flex h-full w-[400%]">
+        <Land />
+        <Land />
+      </div>
+      <div className="animate-globe-spin absolute inset-0 flex w-[400%] opacity-45 blur-[0.4px] [animation-duration:26s]">
+        <Clouds />
+        <Clouds />
+      </div>
+      <span className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.45),transparent_40%),radial-gradient(circle_at_40%_35%,transparent_50%,rgba(3,16,60,0.6))] shadow-[inset_0_0_3px_rgba(180,220,255,0.6)]" />
+    </div>
   )
 }
 
 function PlaneOrbit() {
   return (
     <div className="relative h-16 w-16 shrink-0" aria-hidden>
-      <div className="absolute inset-[15px] overflow-hidden rounded-full bg-linear-to-b from-[#dff3ff] to-[#9fd4ff] shadow-[inset_-4px_-5px_8px_rgba(10,64,209,0.18)]">
-        <div className="animate-globe-spin flex h-full w-[200%]">
-          <Continents />
-          <Continents />
-        </div>
-      </div>
+      <Earth />
       <svg viewBox="0 0 64 64" className="absolute inset-0">
         <circle cx="32" cy="32" r="27" fill="none" stroke="var(--highlight)" strokeOpacity="0.16" strokeWidth="1.5" strokeDasharray="0.5 4.5" strokeLinecap="round" />
       </svg>
@@ -115,18 +159,21 @@ export function FlightLoader({ steps }: FlightLoaderProps) {
         <PlaneOrbit />
       </div>
       <div className="relative min-w-0 flex-1">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.p
-            key={title}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.25 }}
-            className="text-shimmer m-0 truncate text-[15px] font-semibold tracking-tight"
-          >
-            {title}
-          </motion.p>
-        </AnimatePresence>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <LogoMark className="animate-logo-pulse h-6 w-6 shrink-0" />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={title}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+              className="text-shimmer m-0 min-w-0 truncate text-[15px] font-semibold tracking-tight"
+            >
+              {title}
+            </motion.p>
+          </AnimatePresence>
+        </div>
         <RotatingLine key={toolName} lines={TOOL_LINES[toolName] ?? START_LINES} />
         {done.length > 0 && (
           <ul className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0">

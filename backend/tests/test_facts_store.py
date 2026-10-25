@@ -1,6 +1,5 @@
 import asyncio
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 from sqlalchemy import insert
@@ -40,30 +39,30 @@ async def _with_db(db_url: str, work):
         await engine.dispose()
 
 
-def test_should_keep_one_value_per_source_and_replace_it_on_refetch(tmp_path):
+def test_should_keep_one_value_per_source_and_replace_it_on_refetch(db_url):
     async def work(db):
         await repository.save_facts(db, [fact(25.0, source="a"), fact(24.0, source="b")])
         await repository.save_facts(db, [fact(26.0, source="a", fetched_at=NOW)])
         await db.commit()
         return await repository.list_facts(db, "place", "Q1")
 
-    stored = asyncio.run(_with_db(f"sqlite+aiosqlite:///{tmp_path / 'f.db'}", work))
+    stored = asyncio.run(_with_db(db_url, work))
 
     assert sorted((f.source, f.value) for f in stored) == [("a", 26.0), ("b", 24.0)]
 
 
-def test_should_store_facts_in_canonical_units(tmp_path):
+def test_should_store_facts_in_canonical_units(db_url):
     async def work(db):
         await repository.save_facts(db, [fact(77.0, unit="°F")])
         await db.commit()
         return await repository.list_facts(db, "place", "Q1")
 
-    stored = asyncio.run(_with_db(f"sqlite+aiosqlite:///{tmp_path / 'f.db'}", work))
+    stored = asyncio.run(_with_db(db_url, work))
 
     assert [(f.value, f.unit) for f in stored] == [(25.0, "°C")]
 
 
-def test_should_resolve_each_attribute_and_period_of_a_place_separately(tmp_path):
+def test_should_resolve_each_attribute_and_period_of_a_place_separately(db_url):
     async def work(db):
         await repository.save_facts(
             db,
@@ -78,7 +77,7 @@ def test_should_resolve_each_attribute_and_period_of_a_place_separately(tmp_path
         await db.commit()
         return await service.resolve_entity(db, "place", "Q1", NOW)
 
-    resolved = asyncio.run(_with_db(f"sqlite+aiosqlite:///{tmp_path / 'f.db'}", work))
+    resolved = asyncio.run(_with_db(db_url, work))
 
     assert {key: r.chosen.value for key, r in resolved.items()} == {
         ("sea_temp", "m11"): 26.0,
@@ -89,7 +88,7 @@ def test_should_resolve_each_attribute_and_period_of_a_place_separately(tmp_path
     assert not resolved[("sea_temp", "m12")].conflict
 
 
-def test_should_read_back_the_same_moment_that_was_saved_with_an_offset(tmp_path: Path):
+def test_should_read_back_the_same_moment_that_was_saved_with_an_offset(db_url):
     moscow_noon = datetime(2026, 10, 25, 12, tzinfo=timezone(timedelta(hours=3)))
 
     async def work(db):
@@ -97,12 +96,12 @@ def test_should_read_back_the_same_moment_that_was_saved_with_an_offset(tmp_path
         await db.commit()
         return await repository.list_facts(db, "place", "Q1")
 
-    [stored] = asyncio.run(_with_db(f"sqlite+aiosqlite:///{tmp_path / 'f.db'}", work))
+    [stored] = asyncio.run(_with_db(db_url, work))
 
     assert (stored.fetched_at, stored.valid_until) == (moscow_noon, moscow_noon)
 
 
-def test_should_refuse_a_second_row_for_the_same_source_and_fact(tmp_path: Path):
+def test_should_refuse_a_second_row_for_the_same_source_and_fact(db_url):
     row = {
         "entity_type": "place",
         "entity_id": "Q1",
@@ -120,4 +119,4 @@ def test_should_refuse_a_second_row_for_the_same_source_and_fact(tmp_path: Path)
         await db.execute(insert(facts), [row])
 
     with pytest.raises(IntegrityError):
-        asyncio.run(_with_db(f"sqlite+aiosqlite:///{tmp_path / 'f.db'}", work))
+        asyncio.run(_with_db(db_url, work))

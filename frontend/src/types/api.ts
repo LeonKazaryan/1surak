@@ -5,6 +5,8 @@ export interface ChatRequest {
   /** IATA code of the departure city: the agent searches real tickets from it. */
   origin_code?: string
   answers?: BriefAnswers
+  /** Ask again in place of the last turn, when that turn failed. */
+  retry?: boolean
 }
 
 export type TripKind = 'sea' | 'mountains' | 'city' | 'nature' | 'ski'
@@ -20,8 +22,19 @@ export interface BriefAnswers {
   children?: number
   children_ages?: number[]
   budget_level?: number
-  budget_total_rub?: number
+  /** In budget_currency, the user's own unless they named another. */
+  budget_total?: number
+  budget_currency?: string
   multi_city?: boolean
+}
+
+/** The user's currency, picked by the server from the departure city. Prices stay in roubles until shown. */
+export interface Currency {
+  code: string
+  sign: string
+  /** Repeated for a price level (₸₸₸). */
+  glyph: string
+  per_rub: number
 }
 
 export interface ClarifyQuestion {
@@ -45,6 +58,7 @@ export interface ClarifyEvent {
   type: 'clarify'
   questions: ClarifyQuestion[]
   prefill: ClarifyPrefill
+  currency?: Currency
 }
 
 export interface DestinationClimate {
@@ -68,6 +82,10 @@ export interface FlightTicket {
   hours: number
   departure: string
   link: string
+  /** Formatted in the user's currency by the server. */
+  price?: string
+  from_airport?: string
+  to_airport?: string
 }
 
 export interface RouteFlight extends FlightTicket {
@@ -97,7 +115,8 @@ export interface DestinationCard {
   watch_out: string[]
   why: string
   tradeoff?: string | null
-  image?: string | null
+  photo?: Photo | null
+  price_change?: PriceChange
 }
 
 export interface RouteStop {
@@ -112,6 +131,7 @@ export interface RouteStop {
   visa: string
   visa_easy: boolean
   highlights: string[]
+  photo?: Photo | null
 }
 
 /** One leg of a route: a real ticket when it flies, an estimate by distance when it goes by land. */
@@ -150,6 +170,7 @@ export interface RouteCard {
   kids: string
   why: string
   tradeoff?: string | null
+  price_change?: PriceChange
 }
 
 export type DestinationsCard = DestinationCard | RouteCard
@@ -158,9 +179,200 @@ export interface DestinationsEvent {
   type: 'destinations'
   summary: string[]
   cards: DestinationsCard[]
+  currency?: Currency
 }
 
-export interface ChatStreamDone {
+/** A real photo from Wikimedia Commons: shown with its author and licence. */
+export interface Photo {
+  url: string
+  width: number
+  height: number
+  author: string
+  license: string
+  file_url: string
+}
+
+/** A sight or a food place from Wikivoyage. */
+export interface PlanSpot {
+  id: string
+  type: string
+  name: string
+  alt: string | null
+  summary: string
+  hours: string | null
+  price: string | null
+  photo: Photo | null
+  lat: number | null
+  lon: number | null
+  source_url: string | null
+}
+
+export type PlanItemKind = 'sight' | 'trip' | 'food' | 'beach' | 'walk' | 'free' | 'flight' | 'transfer' | 'hotel' | 'move'
+
+export interface PlanItem {
+  kind: PlanItemKind
+  title: string
+  /** Local time «14:15»; null while the flights are not on the plan's dates yet. */
+  time: string | null
+  note: string | null
+  spot: PlanSpot | null
+}
+
+export interface PlanDay {
+  date: string
+  title: string
+  place_id: string
+  items: PlanItem[]
+}
+
+/** A demo hotel, shaped like an Ostrovok offer: prices in roubles for all rooms of the party. */
+export interface PlanHotel {
+  id: string
+  name: string
+  stars: number
+  rating: number
+  reviews: number
+  area: string
+  beach_m: number | null
+  meal: string
+  meal_label: string
+  /** Free cancellation until this many days before arrival; null: no refund. */
+  free_cancel_days: number | null
+  pay_at_hotel: boolean
+  rooms: number
+  nights: number
+  night_rub: number
+  total_rub: number
+  check_in: string
+  check_out: string
+  reasons: string[]
+  misses: string[]
+  demo: boolean
+}
+
+export interface PlanTransfer {
+  mode: 'car' | 'boat'
+  km: number
+  minutes: number
+  price_rub: number
+}
+
+export interface PlanStop {
+  place_id: string
+  name: string
+  country: string
+  country_code: string
+  kinds: TripKind[]
+  check_in: string
+  check_out: string
+  nights: number
+  photo: Photo | null
+  source_url: string | null
+  hotel: PlanHotel
+  alternatives: PlanHotel[]
+  excluded: { name: string; stars: number; reason: string }[]
+  transfer_in: PlanTransfer | null
+  transfer_out: PlanTransfer | null
+  food_intro: string | null
+  dishes: { name: string; note: string }[]
+}
+
+export interface PlanLeg extends RouteLeg {
+  /** Local times «2026-11-06T09:40»; null when the tickets do not follow the plan's dates. */
+  departs: string | null
+  arrives: string | null
+  /** A ground hop per person, an estimate. */
+  ground_rub: number | null
+}
+
+/** Something the user can add to fix a timing problem, like an early check-in. */
+export interface PlanFix {
+  /** «early_check_in:antalya-h3»: one per hotel, so each stop of a route has its own. */
+  id: string
+  type: 'early_check_in' | 'late_check_out'
+  label: string
+  price_rub: number
+}
+
+export interface PlanCheck {
+  level: 'ok' | 'info' | 'warn'
+  title: string
+  text: string
+  fix: PlanFix | null
+  /** What was checked: the times where the pieces meet, the tickets, a hop by land, the budget. */
+  kind: 'timing' | 'tickets' | 'move' | 'budget'
+}
+
+/** All in roubles, for the whole party. */
+export interface PlanCosts {
+  flights: number
+  hotels: number
+  transfers: number
+  ground: number
+  total: number
+  per_person: number
+  guests: number
+  flights_complete: boolean
+  budget: number | null
+  over_by: number | null
+}
+
+/** The whole trip the agent assembled: tickets, hotels, rides, checks, days and the bill. */
+export interface TripPlanEvent {
+  type: 'trip_plan'
+  id: string
+  name: string
+  dates: { from: string; to: string; nights: number }
+  /** The tickets follow the plan's dates; otherwise dates are ours and the flight times unknown. */
+  dates_fixed: boolean
+  party: { adults: number; children_ages: number[] }
+  stops: PlanStop[]
+  legs: PlanLeg[]
+  checks: PlanCheck[]
+  days: PlanDay[]
+  costs: PlanCosts
+  unmet: string[]
+  changes: string[]
+  summary: string[]
+  currency?: Currency
+}
+
+/** A simulated purchase of the latest plan. */
+export interface BookingEvent {
+  type: 'booking'
+  number: string
+  plan_message_id: string
+  name: string
+  dates: { from: string; to: string; nights: number }
+  holder: string
+  extras: PlanFix[]
+  total_rub: number
+  currency?: Currency | null
+}
+
+export interface BookingRequest {
+  extras: PlanFix['id'][]
+  holder: string
+}
+
+/** What a saved trip looks like now: its brief, where the tickets fly from, and whether they still hold. */
+export interface TripStatus {
+  summary: string[]
+  /** «из Астаны» */
+  departure: string | null
+  priced_at: string | null
+  /** The tickets were found more than a day ago. */
+  stale: boolean
+  dates_passed: boolean
+}
+
+/** How a card's price moved since the last check: positive got dearer. */
+export interface PriceChange {
+  rub: number
+  since: string
+}
+
+export interface ChatStreamDone extends Partial<TripStatus> {
   type: 'done'
   answer: string
   chat_id: string
@@ -176,13 +388,20 @@ export type ChatStreamEvent =
   | { type: 'error'; message: string }
   | ClarifyEvent
   | DestinationsEvent
+  | TripPlanEvent
+  | BookingEvent
   | ChatStreamDone
 
-export interface ChatMeta {
+export interface ChatMeta extends Partial<TripStatus> {
   id: string
   title: string | null
   created_at: string
   updated_at: string
+}
+
+export interface RefreshResponse {
+  message: ChatMessageOut
+  chat: ChatMeta
 }
 
 export interface ChatMessageOut {

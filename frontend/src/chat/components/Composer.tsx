@@ -1,20 +1,24 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { ArrowUpIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 
 export const MAX_CHAT_INPUT_CHARS = 12_000
 const MAX_TEXTAREA_PX = 220
 const SHOW_COUNTER_FROM = 10_000
+const DESCRIBE_TRIP = 'Опишите поездку своими словами…'
 
 interface ComposerProps {
   value: string
   onChange: (value: string) => void
   onSubmit: () => void
   disabled: boolean
+  placeholder?: string
+  ref?: Ref<HTMLTextAreaElement>
 }
 
-export function Composer({ value, onChange, onSubmit, disabled }: ComposerProps) {
+export function Composer({ value, onChange, onSubmit, disabled, placeholder = DESCRIBE_TRIP, ref }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  useImperativeHandle(ref, () => textareaRef.current!, [])
   const [multiline, setMultiline] = useState(false)
 
   useLayoutEffect(() => {
@@ -44,7 +48,7 @@ export function Composer({ value, onChange, onSubmit, disabled }: ComposerProps)
               onSubmit()
             }
           }}
-          placeholder="Опишите поездку своими словами…"
+          placeholder={placeholder}
           aria-label="Сообщение агенту"
           rows={1}
           maxLength={MAX_CHAT_INPUT_CHARS}
@@ -60,15 +64,11 @@ export function Composer({ value, onChange, onSubmit, disabled }: ComposerProps)
           <ArrowUpIcon className="h-4 w-4" />
         </button>
       </div>
-      <p className="m-0 text-center text-[11px] text-faint">
-        Прототип · бронирование и оплата имитируются
-        {value.length > SHOW_COUNTER_FROM && (
-          <span className="tabular-nums">
-            {' '}
-            · {value.length.toLocaleString('ru-RU')} / {MAX_CHAT_INPUT_CHARS.toLocaleString('ru-RU')}
-          </span>
-        )}
-      </p>
+      {value.length > SHOW_COUNTER_FROM && (
+        <p className="m-0 text-center text-[11px] text-faint tabular-nums">
+          {value.length.toLocaleString('ru-RU')} / {MAX_CHAT_INPUT_CHARS.toLocaleString('ru-RU')}
+        </p>
+      )}
     </div>
   )
 }

@@ -16,7 +16,7 @@ export function Wordmark({ className }: LogoProps) {
 
 export function Logo({ className }: LogoProps) {
   return (
-    <Link to="/" aria-label="1surak" className={cn('flex shrink-0 items-center gap-2.5', className)}>
+    <Link to="/" viewTransition aria-label="1surak" className={cn('flex shrink-0 items-center gap-2.5', className)}>
       <LogoMark className="h-9 w-9 shrink-0" />
       <Wordmark className="max-[370px]:hidden" />
     </Link>

@@ -19,15 +19,17 @@ from datetime import datetime
 from pathlib import Path
 
 import anyio
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import agent
 from app.catalog.seed import load_catalog_facts
 from app.catalog.tools import catalog_tools
 from app.config import Settings
-from app.db import init_db
+from app.db import ensure_database, init_db, reset_database
+from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
-from app.kb.seed import load_kb_seed
+from app.kb.seed import backfill_embeddings, load_kb_seed
 from app.kb.tools import read_page_tool, research_tool
 from app.kb.web import web_search_for
 from app.llm import StubLLM, build_llm
@@ -54,9 +56,13 @@ class RecordingRegistry(ToolRegistry):
         return result
 
 
-async def run_case(case: dict, llm, sessionmaker, web=None, pages=None) -> Transcript:
-    extra = [read_page_tool(sessionmaker, pages)] if pages else []
-    tools = RecordingRegistry([*catalog_tools(sessionmaker), research_tool(sessionmaker, web), *extra])
+async def run_case(
+    case: dict, llm, sessionmaker, web=None, pages=None, embedder: Embedder | None = None
+) -> Transcript:
+    extra = [read_page_tool(sessionmaker, pages, embedder=embedder)] if pages else []
+    tools = RecordingRegistry(
+        [*catalog_tools(sessionmaker), research_tool(sessionmaker, web, embedder=embedder), *extra]
+    )
     transcript = Transcript()
     history: list[dict] = []
     started = time.monotonic()
@@ -163,14 +169,19 @@ async def main(args: argparse.Namespace) -> int:
         cases = [c for c in cases if c["id"] in args.case]
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    db_path = WORK_DIR / "eval.db"
-    if not args.keep_db:  # a fresh base each run, so web results from a previous run don't help
-        db_path.unlink(missing_ok=True)
-    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    main_db = make_url(settings.database_url)
+    db_url = main_db.set(database=f"{main_db.database}_eval").render_as_string(hide_password=False)
+    if args.keep_db:
+        await ensure_database(db_url)
+    else:  # a fresh base each run, so web results from a previous run don't help
+        await reset_database(db_url)
+    engine = create_async_engine(db_url)
     await init_db(engine)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
     await load_catalog_facts(sessionmaker)
     await load_kb_seed(sessionmaker)
+    embedder = FastEmbedder() if settings.embeddings else None
+    await backfill_embeddings(sessionmaker, embedder)
     web = web_search_for(settings, llm)
     pages = page_tools_for(settings, llm)
 
@@ -180,7 +191,7 @@ async def main(args: argparse.Namespace) -> int:
 
     async def one(case: dict) -> tuple[Score, Transcript]:
         async with limit:
-            transcript = await run_case(case, llm, sessionmaker, web, pages)
+            transcript = await run_case(case, llm, sessionmaker, web, pages, embedder)
         result = score(case, transcript)
         mark = "PASS" if result.passed else "FAIL"
         print(

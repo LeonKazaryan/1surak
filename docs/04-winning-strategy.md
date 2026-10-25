@@ -31,7 +31,7 @@ That one idea covers the brief's main demand («агент, который де�
 - Hotel fit and exclusions (F), the eval harness plus a metrics table (G), provenance badges (H).
 - A responsive layout, which counts as the "mobile version" extra at almost no cost.
 - Post-purchase basics: "can I check in early?" and "add a transfer to my booking", reusing the same tools on the confirmed booking.
-- Memory: a profile saved per user (SQLite) and reused next session («в прошлый раз вы ездили с ребёнком 5 лет. Снова так?»).
+- Memory: a profile saved per user (Postgres) and reused next session («в прошлый раз вы ездили с ребёнком 5 лет. Снова так?»).
 
 **Could (only if Must and Should are solid by 28 Oct midday):**
 - A Telegram bot over the same agent API.
@@ -59,7 +59,7 @@ That one idea covers the brief's main demand («агент, который де�
 │         · transfers · compare · validate_itinerary · cart   │
 │         · checkout(mock) · post_purchase                    │
 │  Validator (pure code): timeline + rules checks             │
-│  Data: seed snapshot (JSON/SQLite, committed) + live APIs   │
+│  Data: seed snapshot (JSON, committed) + live APIs          │
 │        where keyless, always with a snapshot fallback       │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +67,7 @@ That one idea covers the brief's main demand («агент, который де�
 Principles:
 1. **The LLM decides, the code computes.** Prices, times, distances and connection checks never come from the model.
 2. **It works offline except for the LLM.** The seed data is committed, so a juror gets the same results we tested against.
-3. **One app container plus SQLite.** Fewer services means fewer failure points on someone else's laptop. Add Postgres only if a real need shows up.
+3. **One app container plus Postgres with pgvector.** We started on SQLite; the real need showed up on 25 Oct: searching the knowledge base by meaning («с ребёнком» must find «для семей с детьми»), which wants vectors next to the text. Compose still starts both with one command, and the app waits for the database to be healthy.
 4. **A plain tool-calling loop.** It's about 150 lines, easy to debug and stream. Reach for an agent framework only if the team already knows one well.
 5. **The model is configured by env:** `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, plus an optional fallback model.
 

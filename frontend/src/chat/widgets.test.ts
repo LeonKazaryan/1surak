@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { describeAnswers, flagEmoji, plural, upcomingMonths, widgetFromTrace } from './widgets'
+import { budgetHint, describeAnswers, flagEmoji, formatMoney, plural, upcomingMonths, widgetFromTrace } from './widgets'
+
+const KZT = { code: 'KZT', sign: '₸', glyph: '₸', per_rub: 5.561828 }
 
 describe('widgets', () => {
   it('should pick Russian plural forms', () => {
@@ -23,6 +25,24 @@ describe('widgets', () => {
     expect(months[3]).toEqual({ month: 1, label: 'янв', year: 2027 })
   })
 
+  it('should show roubles in the user currency', () => {
+    expect(formatMoney(7707).replace(/\s/g, ' ')).toBe('7 707 ₽')
+    expect(formatMoney(7707, KZT).replace(/\s/g, ' ')).toBe('42 865 ₸')
+  })
+
+  it('should give the budget levels as round sums in the user currency', () => {
+    expect(budgetHint(1).replace(/\s/g, ' ')).toBe('до 70 000 ₽ на человека')
+    expect(budgetHint(1, KZT).replace(/\s/g, ' ')).toBe('до 390 000 ₸ на человека')
+    expect(budgetHint(3, KZT).replace(/\s/g, ' ')).toBe('от 830 000 ₸ на человека')
+    expect(budgetHint(0, KZT)).toBe('покажу разные варианты')
+  })
+
+  it('should write a budget in tenge into the user message', () => {
+    expect(describeAnswers({ budget_total: 500000, budget_currency: 'KZT' }, KZT).replace(/\s/g, ' ')).toBe(
+      'бюджет до 500 000 ₸ на всех',
+    )
+  })
+
   it('should turn card answers into a natural message', () => {
     expect(
       describeAnswers({
@@ -33,7 +53,8 @@ describe('widgets', () => {
         adults: 2,
         children: 2,
         children_ages: [3, 7],
-        budget_total_rub: 300000,
+        budget_total: 300000,
+        budget_currency: 'RUB',
       }).replace(/\s/g, ' '), // thousands are split by a no-break space
     ).toBe('Море и пляж, горы · ноябрь, 5–7 ночей · 2 взрослых + 2 ребёнка (3 и 7 лет) · бюджет до 300 000 ₽ на всех')
     expect(describeAnswers({ budget_level: 0 })).toBe('бюджет не важен')

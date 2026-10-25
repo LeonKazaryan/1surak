@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.db import init_db
 from app.kb import repository
@@ -35,8 +36,8 @@ def entry(text: str, topic="visa", url="https://example.com/a", **kw) -> Entry:
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'kb.db'}")
+def db(db_url):
+    engine = create_async_engine(db_url, poolclass=NullPool)
     asyncio.run(init_db(engine))
     yield async_sessionmaker(engine, expire_on_commit=False)
     asyncio.run(engine.dispose())

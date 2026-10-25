@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import Catalog, load_catalog
 from app.kb import repository
+from app.kb.embeddings import Embedder, embed_or_none
 from app.kb.model import Entry, Topic, source_tier
 from app.kb.page import PageError, PageTools
 from app.kb.research import DATA_NOTE, ResearchArgs, _resolve, research_preview, research_tool_handler
@@ -42,13 +43,14 @@ def research_tool(
     sessionmaker: async_sessionmaker[AsyncSession],
     web: WebSearch | None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    embedder: Embedder | None = None,
 ) -> Tool:
     return Tool(
         name="research",
         title="Ищу информацию",
         description=RESEARCH_DESCRIPTION,
         args=ResearchArgs,
-        handler=research_tool_handler(sessionmaker, load_catalog(), web, now),
+        handler=research_tool_handler(sessionmaker, load_catalog(), web, now, embedder),
         preview=research_preview,
     )
 
@@ -68,6 +70,7 @@ def read_page_handler(
     catalog: Catalog,
     pages: PageTools,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    embedder: Embedder | None = None,
 ):
     async def read_page(args: ReadPageArgs) -> dict:
         try:
@@ -114,8 +117,9 @@ def read_page_handler(
             except ValueError:
                 continue
         if entries:
+            vectors = await embed_or_none(embedder, [e.text for e in entries])
             async with sessionmaker() as db:
-                await repository.add_entries(db, entries)
+                await repository.add_entries(db, entries, vectors)
                 await db.commit()
         result = {**head, "published": found.published, "facts": found.facts, "note": DATA_NOTE}
         if found.dropped:
@@ -140,13 +144,14 @@ def read_page_tool(
     sessionmaker: async_sessionmaker[AsyncSession],
     pages: PageTools,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    embedder: Embedder | None = None,
 ) -> Tool:
     return Tool(
         name="read_page",
         title="Читаю страницу",
         description=READ_PAGE_DESCRIPTION,
         args=ReadPageArgs,
-        handler=read_page_handler(sessionmaker, load_catalog(), pages, now),
+        handler=read_page_handler(sessionmaker, load_catalog(), pages, now, embedder),
         preview=read_page_preview,
         timeout_s=45.0,  # download, maybe Jina Reader, then one model call
     )

@@ -94,8 +94,8 @@ The code is in `backend/app/facts/` (model, resolve, repository, service, adapte
 4. **Routes are estimated for any airport pair** from coordinates. The curated table only corrects the estimate, and live data overrides both.
 5. **Embeddings record their model** (`embedding_model`, `embedded_at`). The model can change, and old vectors get re-embedded gradually.
 6. **Storage stays behind the repository layer.**
-   - SQLite in WAL mode for the demo.
-   - Postgres with pgvector on the same schema once we pass about a million vectors or many writers at once.
+   - Postgres with pgvector from the start (moved from SQLite on 25 Oct, for meaning search).
+   - Past about a million vectors, add an HNSW index on `kb_entries.embedding`; until then an exact scan is fast enough.
 7. **The most-used facts are re-checked first.** The background job counts how often each fact is read and refreshes the popular ones before they expire. User corrections flag facts as wrong.
 
 ## Quality rules
@@ -199,7 +199,7 @@ data/
     texts.py        Wikivoyage dumps → chunk (+ embeddings)
     calendar.py     curated official calendar → calendar_day
   curated/        hand-made tables, a source on every row: routes, visa rules, calendar, vibe lines
-  seed.sqlite     the committed result, loaded by the app at start
+  seed/*.json     the committed result, loaded into Postgres by the app at start
   ATTRIBUTION.md  every source, its licence and its credit line
 ```
 

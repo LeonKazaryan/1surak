@@ -1,13 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterProvider, createBrowserRouter } from 'react-router-dom'
 import './index.css'
-import { AppRoutes } from './App.tsx'
+import { routes } from './routes'
+
+// route objects, not <Routes>: only data routes pass the viewTransition flag on to the router
+const router = createBrowserRouter(routes)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 )

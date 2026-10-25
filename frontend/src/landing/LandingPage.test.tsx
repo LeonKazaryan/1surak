@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -69,6 +69,71 @@ describe('LandingPage', () => {
     )
   })
 
+  const trip = (id: string, title: string) => ({ id, title, created_at: '2026-10-19T12:00:00Z', updated_at: '2026-10-19T12:00:00Z' })
+
+  const openMenuButtons = async (firstTrip: string) => {
+    await userEvent.click(await screen.findByRole('button', { name: 'Открыть меню' }))
+    const menu = screen.getByRole('navigation', { name: 'Разделы' })
+    await within(menu).findByRole('button', { name: firstTrip })
+    return { menu, names: within(menu).getAllByRole('button').map((b) => b.textContent) }
+  }
+
+  it('should put the shortest of the last three trips beside the plan card and the rest below', async () => {
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1', 'c2', 'c3', 'c4']))
+    vi.mocked(client.fetchChats).mockResolvedValueOnce({
+      items: [trip('c3', 'Таити'), trip('c2', 'Казань'), trip('c1', 'Хочу к тёплому морю в ноябре, недорого')],
+    })
+    renderApp()
+
+    const { menu, names } = await openMenuButtons('Таити')
+    expect(client.fetchChats).toHaveBeenCalledWith(['c1', 'c2', 'c3'])
+    expect(names).toEqual(['Новая поездка', 'Все поездки', 'Таити', 'Хочу к тёплому морю в ноябре, недорого', 'Казань'])
+
+    await userEvent.click(within(menu).getByRole('button', { name: 'Таити' }))
+    await waitFor(() => expect(client.fetchChatMeta).toHaveBeenCalledWith('c3'))
+  })
+
+  it('should put the second trip below and all trips beside the title when there are two', async () => {
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1', 'c2']))
+    vi.mocked(client.fetchChats).mockResolvedValueOnce({ items: [trip('c1', 'Таити'), trip('c2', 'Казань')] })
+    renderApp()
+
+    const { names } = await openMenuButtons('Таити')
+    expect(names).toEqual(['Новая поездка', 'Все поездки', 'Таити', 'Казань'])
+  })
+
+  it('should put all trips in the bottom row when there is one trip', async () => {
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1']))
+    vi.mocked(client.fetchChats).mockResolvedValueOnce({ items: [trip('c1', 'Таити')] })
+    renderApp()
+
+    const { names } = await openMenuButtons('Таити')
+    expect(names).toEqual(['Новая поездка', 'Таити', 'Все поездки'])
+  })
+
+  it('should list all trips first and then the latest two on a phone', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    localStorage.setItem('1surak.myChats', JSON.stringify(['c1', 'c2', 'c3']))
+    vi.mocked(client.fetchChats).mockResolvedValueOnce({
+      items: [trip('c1', 'Таити'), trip('c2', 'Казань'), trip('c3', 'Хочу к тёплому морю в ноябре, недорого')],
+    })
+    renderApp()
+
+    const { names } = await openMenuButtons('Таити')
+    expect(names).toEqual(['Новая поездка', 'Все поездки', 'Таити', 'Казань'])
+    vi.unstubAllGlobals()
+  })
+
+  it('should keep my trips out of the menu before the first trip', async () => {
+    renderApp()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Открыть меню' }))
+    const menu = screen.getByRole('navigation', { name: 'Разделы' })
+    expect(within(menu).getByRole('button', { name: 'Новая поездка' })).toBeInTheDocument()
+    expect(within(menu).queryByText('Мои поездки')).toBeNull()
+    expect(within(menu).queryByText('Агент')).toBeNull()
+  })
+
   it('should stay on the landing page when the description is blank', async () => {
     renderApp()
 
@@ -79,11 +144,11 @@ describe('LandingPage', () => {
     expect(sendChatStream).not.toHaveBeenCalled()
   })
 
-  it('should open a new chat from the navigation menu', async () => {
+  it('should start a new trip from the navigation menu', async () => {
     renderApp()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Открыть меню' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Новая поездка' }))
 
     expect(await screen.findByRole('heading', { name: 'Куда отправимся?' })).toBeInTheDocument()
     expect(sendChatStream).not.toHaveBeenCalled()

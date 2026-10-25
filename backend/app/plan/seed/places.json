@@ -1,0 +1,420 @@
+{
+ "about": "Airport coordinates from OurAirports (public domain); time zones by the 1surak team.",
+ "places": {
+  "sochi": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "AER",
+    "lat": 43.4499,
+    "lon": 39.9566
+   }
+  },
+  "anapa": {
+   "tz": "Europe/Moscow"
+  },
+  "kaliningrad": {
+   "tz": "Europe/Kaliningrad",
+   "airport": {
+    "code": "KGD",
+    "lat": 54.8916,
+    "lon": 20.5986
+   }
+  },
+  "kazan": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "KZN",
+    "lat": 55.6062,
+    "lon": 49.2787
+   }
+  },
+  "spb": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "LED",
+    "lat": 59.8003,
+    "lon": 30.2625
+   }
+  },
+  "nizhny": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "GOJ",
+    "lat": 56.2274,
+    "lon": 43.7852
+   }
+  },
+  "suzdal": {
+   "tz": "Europe/Moscow"
+  },
+  "altai": {
+   "tz": "Asia/Barnaul",
+   "airport": {
+    "code": "RGK",
+    "lat": 51.9692,
+    "lon": 85.8365
+   }
+  },
+  "baikal": {
+   "tz": "Asia/Irkutsk",
+   "airport": {
+    "code": "IKT",
+    "lat": 52.2667,
+    "lon": 104.3956
+   }
+  },
+  "dagestan": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "MCX",
+    "lat": 42.8168,
+    "lon": 47.6523
+   }
+  },
+  "kamchatka": {
+   "tz": "Asia/Kamchatka",
+   "airport": {
+    "code": "PKC",
+    "lat": 53.1687,
+    "lon": 158.4511
+   }
+  },
+  "murmansk": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "MMK",
+    "lat": 68.7817,
+    "lon": 32.7508
+   }
+  },
+  "karelia": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "PES",
+    "lat": 61.8852,
+    "lon": 34.1547
+   }
+  },
+  "kislovodsk": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "MRV",
+    "lat": 44.2251,
+    "lon": 43.0819
+   }
+  },
+  "elbrus": {
+   "tz": "Europe/Moscow",
+   "airport": {
+    "code": "NAL",
+    "lat": 43.5129,
+    "lon": 43.6366
+   }
+  },
+  "sheregesh": {
+   "tz": "Asia/Novokuznetsk",
+   "airport": {
+    "code": "NOZ",
+    "lat": 53.8114,
+    "lon": 86.8772
+   }
+  },
+  "vladivostok": {
+   "tz": "Asia/Vladivostok",
+   "airport": {
+    "code": "VVO",
+    "lat": 43.3963,
+    "lon": 132.1482
+   }
+  },
+  "antalya": {
+   "tz": "Europe/Istanbul",
+   "airport": {
+    "code": "AYT",
+    "lat": 36.8987,
+    "lon": 30.8005
+   }
+  },
+  "alanya": {
+   "tz": "Europe/Istanbul",
+   "airport": {
+    "code": "AYT",
+    "lat": 36.8987,
+    "lon": 30.8005
+   }
+  },
+  "bodrum": {
+   "tz": "Europe/Istanbul",
+   "airport": {
+    "code": "BJV",
+    "lat": 37.2493,
+    "lon": 27.664
+   }
+  },
+  "istanbul": {
+   "tz": "Europe/Istanbul",
+   "airport": {
+    "code": "IST",
+    "lat": 41.2749,
+    "lon": 28.7321
+   }
+  },
+  "hurghada": {
+   "tz": "Africa/Cairo",
+   "airport": {
+    "code": "HRG",
+    "lat": 27.1768,
+    "lon": 33.7967
+   }
+  },
+  "sharm": {
+   "tz": "Africa/Cairo",
+   "airport": {
+    "code": "SSH",
+    "lat": 27.9773,
+    "lon": 34.3947
+   }
+  },
+  "dubai": {
+   "tz": "Asia/Dubai",
+   "airport": {
+    "code": "DXB",
+    "lat": 25.2498,
+    "lon": 55.371
+   }
+  },
+  "abu_dhabi": {
+   "tz": "Asia/Dubai",
+   "airport": {
+    "code": "AUH",
+    "lat": 24.441,
+    "lon": 54.6492
+   }
+  },
+  "ras_al_khaimah": {
+   "tz": "Asia/Dubai",
+   "airport": {
+    "code": "DXB",
+    "lat": 25.2498,
+    "lon": 55.371
+   }
+  },
+  "phuket": {
+   "tz": "Asia/Bangkok",
+   "airport": {
+    "code": "HKT",
+    "lat": 8.1133,
+    "lon": 98.3174
+   }
+  },
+  "pattaya": {
+   "tz": "Asia/Bangkok",
+   "airport": {
+    "code": "BKK",
+    "lat": 13.6811,
+    "lon": 100.747
+   }
+  },
+  "bangkok": {
+   "tz": "Asia/Bangkok",
+   "airport": {
+    "code": "BKK",
+    "lat": 13.6811,
+    "lon": 100.747
+   }
+  },
+  "nha_trang": {
+   "tz": "Asia/Ho_Chi_Minh",
+   "airport": {
+    "code": "CXR",
+    "lat": 11.9982,
+    "lon": 109.219
+   }
+  },
+  "phu_quoc": {
+   "tz": "Asia/Ho_Chi_Minh",
+   "airport": {
+    "code": "PQC",
+    "lat": 10.1698,
+    "lon": 103.9935
+   }
+  },
+  "sri_lanka": {
+   "tz": "Asia/Colombo",
+   "airport": {
+    "code": "CMB",
+    "lat": 7.1808,
+    "lon": 79.8841
+   }
+  },
+  "maldives": {
+   "tz": "Indian/Maldives",
+   "airport": {
+    "code": "MLE",
+    "lat": 4.1918,
+    "lon": 73.5291
+   },
+   "transfer": "boat"
+  },
+  "bali": {
+   "tz": "Asia/Makassar",
+   "airport": {
+    "code": "DPS",
+    "lat": -8.7484,
+    "lon": 115.1671
+   }
+  },
+  "sanya": {
+   "tz": "Asia/Shanghai",
+   "airport": {
+    "code": "SYX",
+    "lat": 18.3029,
+    "lon": 109.412
+   }
+  },
+  "beijing": {
+   "tz": "Asia/Shanghai",
+   "airport": {
+    "code": "PEK",
+    "lat": 40.0773,
+    "lon": 116.5967
+   }
+  },
+  "tbilisi": {
+   "tz": "Asia/Tbilisi",
+   "airport": {
+    "code": "TBS",
+    "lat": 41.6692,
+    "lon": 44.9547
+   }
+  },
+  "batumi": {
+   "tz": "Asia/Tbilisi",
+   "airport": {
+    "code": "BUS",
+    "lat": 41.6094,
+    "lon": 41.6003
+   }
+  },
+  "yerevan": {
+   "tz": "Asia/Yerevan",
+   "airport": {
+    "code": "EVN",
+    "lat": 40.1489,
+    "lon": 44.3979
+   }
+  },
+  "baku": {
+   "tz": "Asia/Baku",
+   "airport": {
+    "code": "GYD",
+    "lat": 40.4728,
+    "lon": 50.0509
+   }
+  },
+  "samarkand": {
+   "tz": "Asia/Samarkand",
+   "airport": {
+    "code": "SKD",
+    "lat": 39.7018,
+    "lon": 66.9815
+   }
+  },
+  "almaty": {
+   "tz": "Asia/Almaty",
+   "airport": {
+    "code": "ALA",
+    "lat": 43.3543,
+    "lon": 77.0428
+   }
+  },
+  "issyk_kul": {
+   "tz": "Asia/Bishkek",
+   "airport": {
+    "code": "FRU",
+    "lat": 43.0613,
+    "lon": 74.4776
+   }
+  },
+  "minsk": {
+   "tz": "Europe/Minsk",
+   "airport": {
+    "code": "MSQ",
+    "lat": 53.8881,
+    "lon": 28.04
+   }
+  },
+  "varadero": {
+   "tz": "America/Havana",
+   "airport": {
+    "code": "VRA",
+    "lat": 23.0344,
+    "lon": -81.4353
+   }
+  },
+  "monastir": {
+   "tz": "Africa/Tunis",
+   "airport": {
+    "code": "MIR",
+    "lat": 35.7581,
+    "lon": 10.7547
+   }
+  },
+  "seychelles": {
+   "tz": "Indian/Mahe",
+   "airport": {
+    "code": "SEZ",
+    "lat": -4.6743,
+    "lon": 55.5218
+   }
+  },
+  "mauritius": {
+   "tz": "Indian/Mauritius",
+   "airport": {
+    "code": "MRU",
+    "lat": -20.4302,
+    "lon": 57.6836
+   }
+  },
+  "zanzibar": {
+   "tz": "Africa/Dar_es_Salaam",
+   "airport": {
+    "code": "ZNZ",
+    "lat": -6.222,
+    "lon": 39.2249
+   }
+  },
+  "muscat": {
+   "tz": "Asia/Muscat",
+   "airport": {
+    "code": "MCT",
+    "lat": 23.6002,
+    "lon": 58.2853
+   }
+  },
+  "goa": {
+   "tz": "Asia/Kolkata",
+   "airport": {
+    "code": "GOI",
+    "lat": 15.3801,
+    "lon": 73.8333
+   }
+  },
+  "belgrade": {
+   "tz": "Europe/Belgrade",
+   "airport": {
+    "code": "BEG",
+    "lat": 44.8184,
+    "lon": 20.3091
+   }
+  },
+  "budva": {
+   "tz": "Europe/Podgorica",
+   "airport": {
+    "code": "TIV",
+    "lat": 42.4047,
+    "lon": 18.7233
+   }
+  }
+ }
+}

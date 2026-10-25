@@ -5,10 +5,11 @@ interface ScrollRowProps {
   label: string
   children: ReactNode
   className?: string
+  rowClassName?: string
 }
 
 /** A row of chips that scrolls sideways when it does not fit, fading only the side with more to see. */
-export function ScrollRow({ label, children, className }: ScrollRowProps) {
+export function ScrollRow({ label, children, className, rowClassName }: ScrollRowProps) {
   const row = useRef<HTMLDivElement>(null)
   const [edges, setEdges] = useState({ start: false, end: false })
 
@@ -36,7 +37,7 @@ export function ScrollRow({ label, children, className }: ScrollRowProps) {
       data-fade-end={edges.end || undefined}
       className={cn('scroll-row overflow-x-auto', className)}
     >
-      <div className="mx-auto flex w-max gap-2 px-4 py-1 whitespace-nowrap">{children}</div>
+      <div className={cn('mx-auto flex w-max gap-2 px-4 py-1 whitespace-nowrap', rowClassName)}>{children}</div>
     </div>
   )
 }

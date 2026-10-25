@@ -18,12 +18,12 @@ const PEEKING_CARDS = 2
 const BACKDROP =
   'radial-gradient(42rem 30rem at 0% 0%, rgba(173,239,129,0.42), transparent 62%), radial-gradient(46rem 34rem at 100% 100%, rgba(10,64,209,0.11), transparent 60%)'
 
-/** The flight from the departure city to the picks, in a 520×84 box; measured by arc length. */
+/** The flight from the departure city to the picks, in a 520×64 box; measured by arc length. */
 const ROUTE = buildRoute([
-  { x: 26, y: 58 },
-  { x: 170, y: 22 },
-  { x: 330, y: 60 },
-  { x: 492, y: 26 },
+  { x: 26, y: 46 },
+  { x: 170, y: 18 },
+  { x: 330, y: 48 },
+  { x: 492, y: 22 },
 ])
 const START = ROUTE.at(0)
 const END = ROUTE.at(1)
@@ -55,8 +55,8 @@ function FlightRoute({ progress, stops, remaining, arriving }: FlightRouteProps)
       : `Ещё ${remaining} ${plural(remaining, ['вопрос', 'вопроса', 'вопросов'])}`
 
   return (
-    <div className="rounded-3xl border border-white/70 bg-white/60 px-4 pt-2 pb-3 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.5)]">
-      <svg viewBox="0 0 520 84" className="block w-full overflow-visible" aria-hidden>
+    <div className="rounded-3xl border border-white/70 bg-white/60 px-4 pt-1.5 pb-2.5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.5)]">
+      <svg viewBox="0 0 520 64" className="block w-full overflow-visible" aria-hidden>
         <path d={ROUTE.d} fill="none" stroke="var(--highlight)" strokeOpacity="0.2" strokeWidth="3" strokeDasharray="1 10" strokeLinecap="round" />
         <motion.path d={ROUTE.d} fill="none" stroke="var(--primary)" strokeWidth="5" strokeLinecap="round" style={{ pathLength: flown }} />
         {ticks.map((t) => {
@@ -153,7 +153,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
   const finish = (skip = false) => {
     if (arriving) return
     const collected = answers.collect()
-    const text = describeAnswers(collected)
+    const text = describeAnswers(collected, widget.currency)
     setArriving(true)
     timer.current = setTimeout(
       () => onDone(skip ? (text ? `${text}. Остальное не важно, подбирай` : 'Подбирай без уточнений') : text, collected),
@@ -215,7 +215,12 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
     age: () => <AgeStep selected={answers.ages[child] ?? null} onPick={(a) => pick(() => answers.setAge(child, a))} />,
     route: () => <RouteStep selected={answers.multiCity} onPick={(v) => pick(() => answers.setMultiCity(v))} />,
     budget: () => (
-      <BudgetStep level={answers.level} onLevel={(l) => pick(() => answers.setLevel(l))} onTotal={(t) => pick(() => answers.setTotal(t))} />
+      <BudgetStep
+        level={answers.level}
+        currency={widget.currency}
+        onLevel={(l) => pick(() => answers.setLevel(l))}
+        onTotal={(t) => pick(() => answers.setTotal(t))}
+      />
     ),
   }
 
@@ -241,8 +246,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
         <XMarkIcon className="h-5 w-5" />
       </button>
 
-      {/* pinned to the top, not centred: cards differ in height, and the route must not jump between them */}
-      <div className="relative mx-auto flex w-full max-w-[580px] flex-col gap-4 px-4 pt-16 pb-10 sm:pt-[9vh]">
+      <div className="relative mx-auto flex min-h-full w-full max-w-[580px] flex-col gap-3 px-4 pt-16 pb-4 sm:pt-6">
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -274,59 +278,64 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
           />
         </motion.div>
 
-        <div className="relative isolate">
-          {/* the rest of the deck peeking out from under the current card */}
-          {Array.from({ length: Math.min(PEEKING_CARDS, steps.length - current - 1) }, (_, i) => i + 1).map((depth) => (
-            <motion.div
-              key={depth}
-              aria-hidden
-              initial={false}
-              animate={arriving ? { opacity: 0 } : { opacity: 1 - depth * 0.3, y: depth * 12, scale: 1 - depth * 0.04 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-              className="absolute inset-0 rounded-[28px] border border-border bg-card"
-              style={{ zIndex: -depth }}
-            />
-          ))}
-          <AnimatePresence mode="popLayout" custom={direction} initial>
-            <motion.section
-              key={step.key}
-              custom={direction}
-              variants={card}
-              initial="enter"
-              animate={arriving ? 'takeoff' : 'center'}
-              exit="exit"
-              className="relative rounded-[28px] border border-border bg-card p-5 shadow-[0_30px_60px_-36px_rgba(15,23,42,0.5)] sm:p-7"
-            >
-              <div className="flex min-h-9 items-center gap-2">
-                {current > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => go(current - 1)}
-                    aria-label="Назад"
-                    className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                  >
-                    <ArrowLeftIcon className="h-4 w-4" />
-                  </button>
-                )}
-                <span className="text-xs font-semibold tracking-wider text-faint uppercase">
-                  {plans.find((p) => p.slot === step.slot)?.label}
-                </span>
-              </div>
-              <h2 className="m-0 mt-1 text-[24px] leading-tight font-semibold tracking-tight text-foreground sm:text-[26px]">{step.title}</h2>
-              {step.hint && <p className="m-0 mt-1 text-sm leading-snug text-muted-foreground">{step.hint}</p>}
-              <div className={cn('mt-5', picked !== null && 'pointer-events-none')}>{body[step.kind]()}</div>
-            </motion.section>
-          </AnimatePresence>
-        </div>
+        <div className="flex flex-1 flex-col justify-center">
+          <motion.div layout="position">
 
-        <button
-          type="button"
-          onClick={() => finish(true)}
-          disabled={busy || arriving}
-          className="mx-auto mt-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Пропустить вопросы, подбирай как есть
-        </button>
+            <div className="relative isolate">
+              {/* the rest of the deck peeking out from under the current card */}
+              {Array.from({ length: Math.min(PEEKING_CARDS, steps.length - current - 1) }, (_, i) => i + 1).map((depth) => (
+                <motion.div
+                  key={depth}
+                  aria-hidden
+                  initial={false}
+                  animate={arriving ? { opacity: 0 } : { opacity: 1 - depth * 0.3, y: depth * 12, scale: 1 - depth * 0.04 }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+                  className="absolute inset-0 rounded-[28px] border border-border bg-card"
+                  style={{ zIndex: -depth }}
+                />
+              ))}
+              <AnimatePresence mode="popLayout" custom={direction} initial>
+                <motion.section
+                  key={step.key}
+                  custom={direction}
+                  variants={card}
+                  initial="enter"
+                  animate={arriving ? 'takeoff' : 'center'}
+                  exit="exit"
+                  className="relative rounded-[28px] border border-border bg-card p-4 shadow-[0_30px_60px_-36px_rgba(15,23,42,0.5)] sm:px-7 sm:py-5"
+                >
+                  <div className="flex min-h-9 items-center gap-2">
+                    {current > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => go(current - 1)}
+                        aria-label="Назад"
+                        className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                      >
+                        <ArrowLeftIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                    <span className="text-xs font-semibold tracking-wider text-faint uppercase">
+                      {plans.find((p) => p.slot === step.slot)?.label}
+                    </span>
+                  </div>
+                  <h2 className="m-0 mt-1 text-[24px] leading-tight font-semibold tracking-tight text-foreground sm:text-[26px]">{step.title}</h2>
+                  {step.hint && <p className="m-0 mt-1 text-sm leading-snug text-muted-foreground">{step.hint}</p>}
+                  <div className={cn('mt-4', picked !== null && 'pointer-events-none')}>{body[step.kind]()}</div>
+                </motion.section>
+              </AnimatePresence>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => finish(true)}
+              disabled={busy || arriving}
+              className="mx-auto mt-10 block rounded-full px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-card/70 hover:text-foreground disabled:opacity-50"
+            >
+              Пропустить вопросы, подбирай как есть
+            </button>
+          </motion.div>
+        </div>
       </div>
     </motion.div>
   )

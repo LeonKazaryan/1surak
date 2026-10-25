@@ -36,6 +36,7 @@ export function PageHeader({ breadcrumb, headerRight }: PageHeaderProps) {
       {parent ? (
         <Link
           to={parent.href!}
+          viewTransition
           className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground md:hidden"
         >
           <ChevronLeftIcon className="h-4 w-4 shrink-0" />
@@ -65,7 +66,9 @@ export function PageHeader({ breadcrumb, headerRight }: PageHeaderProps) {
                     <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink asChild>
-                      <Link to={crumb.href}>{crumb.label}</Link>
+                      <Link to={crumb.href} viewTransition>
+                        {crumb.label}
+                      </Link>
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>

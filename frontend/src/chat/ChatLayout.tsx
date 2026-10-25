@@ -22,7 +22,6 @@ export default function ChatLayout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [chatMessages, setMessages] = useState<WorkspaceChatMessage[]>([])
-  const [planPanelOpen, setPlanPanelOpen] = useState(false)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [recentChats, setRecentChats] = useState<ChatMeta[]>([])
   const [recentLoading, setRecentLoading] = useState(() => getMyChats().length > 0)
@@ -61,8 +60,6 @@ export default function ChatLayout() {
   const ctx: ChatLayoutContext = {
     chatMessages,
     setMessages,
-    planPanelOpen,
-    setPlanPanelOpen,
     activeChatId,
     setActiveChatId,
     setRecentChats,

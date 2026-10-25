@@ -61,10 +61,11 @@ class StubLLM:
 
 
 class OpenAICompatibleLLM:
-    def __init__(self, client: Any, model: str, openai: bool = False):
+    def __init__(self, client: Any, model: str, openai: bool = False, reasoning_effort: str = ""):
         self._client = client
         self._model = model
         self._openai = openai  # the real OpenAI API, not another provider behind the same SDK
+        self._reasoning_effort = reasoning_effort
 
     @property
     def client(self) -> Any:
@@ -74,8 +75,59 @@ class OpenAICompatibleLLM:
     def model(self) -> str:
         return self._model
 
-    async def stream(
+    def stream(
         self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
+    ) -> AsyncIterator[LLMEvent]:
+        # OpenAI's newer models call tools on Chat Completions only with reasoning off
+        if self._openai:
+            return self._stream_responses(messages, tools, tool_choice)
+        return self._stream_chat(messages, tools, tool_choice)
+
+    async def _stream_responses(
+        self, messages: list[dict], tools: list[dict] | None, tool_choice: str | None
+    ) -> AsyncIterator[LLMEvent]:
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "input": _responses_input(messages),
+            "stream": True,
+            "store": False,
+            "prompt_cache_key": PROMPT_CACHE_KEY,
+        }
+        if self._reasoning_effort:
+            kwargs["reasoning"] = {"effort": self._reasoning_effort}
+        if tools:
+            kwargs["tools"] = [_responses_tool(spec["function"]) for spec in tools]
+            if tool_choice:
+                kwargs["tool_choice"] = {"type": "function", "name": tool_choice}
+        # shortcut: reasoning items are not sent back between tool rounds, so each round thinks afresh;
+        # pass them with include=["reasoning.encrypted_content"] if quality or cost asks for it
+        response = await self._client.responses.create(**kwargs)
+
+        calls: list[ToolCall] = []
+        usage: Usage | None = None
+        async for event in response:
+            if event.type == "response.output_text.delta":
+                yield TextDelta(event.delta)
+            elif event.type == "response.output_item.done" and event.item.type == "function_call":
+                calls.append(
+                    ToolCall(id=event.item.call_id, name=event.item.name, arguments=event.item.arguments)
+                )
+            elif event.type in ("response.completed", "response.incomplete") and event.response.usage:
+                raw = event.response.usage
+                cached = getattr(raw.input_tokens_details, "cached_tokens", 0) or 0
+                usage = Usage(input=raw.input_tokens, output=raw.output_tokens, cached=cached)
+            elif event.type == "response.failed":
+                raise RuntimeError(f"OpenAI response failed: {event.response.error}")
+            elif event.type == "error":
+                raise RuntimeError(f"OpenAI stream error: {event.code}: {event.message}")
+
+        for call in calls:
+            yield call
+        if usage:
+            yield usage
+
+    async def _stream_chat(
+        self, messages: list[dict], tools: list[dict] | None, tool_choice: str | None
     ) -> AsyncIterator[LLMEvent]:
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -83,8 +135,6 @@ class OpenAICompatibleLLM:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if self._openai:
-            kwargs["prompt_cache_key"] = PROMPT_CACHE_KEY
         if tools:  # some providers reject an empty tools list
             kwargs["tools"] = tools
             if tool_choice:
@@ -118,6 +168,45 @@ class OpenAICompatibleLLM:
             yield usage
 
 
+def _responses_input(messages: list[dict]) -> list[dict]:
+    """Chat Completions turns as Responses API input items: tool calls and their results become their own items."""
+    items: list[dict] = []
+    for message in messages:
+        if message["role"] == "tool":
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": message["tool_call_id"],
+                    "output": message["content"],
+                }
+            )
+            continue
+        if message.get("content"):
+            items.append({"role": message["role"], "content": message["content"]})
+        for call in message.get("tool_calls") or []:
+            function = call["function"]
+            items.append(
+                {
+                    "type": "function_call",
+                    "call_id": call["id"],
+                    "name": function["name"],
+                    "arguments": function["arguments"],
+                }
+            )
+    return items
+
+
+def _responses_tool(function: dict) -> dict:
+    # not strict: our schemas have optional fields, which strict mode rejects
+    return {
+        "type": "function",
+        "name": function["name"],
+        "description": function.get("description"),
+        "parameters": function.get("parameters"),
+        "strict": False,
+    }
+
+
 def _usage(raw: Any) -> Usage:
     details = getattr(raw, "prompt_tokens_details", None)
     return Usage(
@@ -135,4 +224,9 @@ def build_llm(settings: Settings) -> LLM:
         base_url=settings.llm_base_url or None,
         timeout=settings.llm_timeout_s,
     )
-    return OpenAICompatibleLLM(client=client, model=settings.llm_model, openai=not settings.llm_base_url)
+    return OpenAICompatibleLLM(
+        client=client,
+        model=settings.llm_model,
+        openai=not settings.llm_base_url,
+        reasoning_effort=settings.llm_reasoning_effort,
+    )

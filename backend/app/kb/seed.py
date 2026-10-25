@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.facts import repository as facts_repository
 from app.facts.model import Fact
 from app.kb import repository
+from app.kb.embeddings import Embedder, embed_or_none
 from app.kb.model import Entry
 
 log = logging.getLogger(__name__)
@@ -60,3 +61,21 @@ async def load_kb_seed(sessionmaker: async_sessionmaker[AsyncSession], path: Pat
         await db.commit()
     log.info("Loaded knowledge base seed %s: %d entries", version, len(entries))
     return True
+
+
+async def backfill_embeddings(
+    sessionmaker: async_sessionmaker[AsyncSession], embedder: Embedder | None
+) -> int:
+    """Embeds every stored entry that has no vector from the current model yet (the seed, web finds saved
+    while the model was down, or vectors from an older model). Returns how many; 0 when the model is down."""
+    async with sessionmaker() as db:
+        missing = await repository.without_vectors(db)
+        vectors = await embed_or_none(embedder, [text for _, text in missing])
+        if not vectors:
+            return 0
+        await repository.set_vectors(
+            db, {entry_id: v for (entry_id, _), v in zip(missing, vectors, strict=True)}
+        )
+        await db.commit()
+    log.info("Embedded %d knowledge base entries", len(missing))
+    return len(missing)

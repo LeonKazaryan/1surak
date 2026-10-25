@@ -82,6 +82,7 @@ class Entry:
     valid_until: datetime | None = None
     id: int | None = None
     status: str = "active"
+    similarity: float | None = None  # how close in meaning to the last search query; set by search only
 
     def __post_init__(self):
         if not self.source_url.startswith(("https://", "http://")):

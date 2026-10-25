@@ -1,9 +1,13 @@
+import asyncio
+import os
 from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
 
 from app.config import Settings
+from app.db import reset_database
 from app.flights import RouteFlights, Ticket
 from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
@@ -45,6 +49,26 @@ class FakeLLM:
             raise self.error
 
 
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL", "postgresql+asyncpg://onesurak:onesurak@127.0.0.1:5433/onesurak_test"
+)
+
+
+def fresh_database(suffix: str = "") -> str:
+    """An emptied test database; module-scoped fixtures pass a suffix so per-test cleanup can't touch theirs."""
+    url = make_url(TEST_DATABASE_URL)
+    if suffix:
+        url = url.set(database=f"{url.database}_{suffix}")
+    rendered = url.render_as_string(hide_password=False)
+    asyncio.run(reset_database(rendered))
+    return rendered
+
+
+@pytest.fixture
+def db_url() -> str:
+    return fresh_database()
+
+
 def route(minutes: int, direct: bool = True, price: int = 20_000, airline: str = "SU") -> RouteFlights:
     """Real-looking tickets for one route: a direct flight, or one with a transfer."""
     ticket = Ticket(
@@ -79,12 +103,13 @@ def static_dir(tmp_path):
 
 
 @pytest.fixture
-def settings(tmp_path, static_dir):
+def settings(db_url, static_dir):
     return Settings(
-        database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        database_url=db_url,
         static_dir=str(static_dir),
         llm_api_key="",
         seed_catalog=False,
+        embeddings=False,
     )
 
 

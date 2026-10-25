@@ -1,4 +1,12 @@
-import type { ChatMessageOut, ChatMeta, ChatRequest, ChatStreamDone, ChatStreamEvent } from '../types/api'
+import type {
+  BookingRequest,
+  ChatMessageOut,
+  ChatMeta,
+  ChatRequest,
+  ChatStreamDone,
+  ChatStreamEvent,
+  RefreshResponse,
+} from '../types/api'
 
 const BASE = '/api'
 
@@ -72,6 +80,20 @@ export function fetchChatMeta(chatId: string): Promise<ChatMeta> {
 
 export function fetchChatMessages(chatId: string): Promise<{ messages: ChatMessageOut[] }> {
   return request<{ messages: ChatMessageOut[] }>(`${BASE}/chats/${encodeURIComponent(chatId)}/messages`)
+}
+
+/** The trip's last cards again with fresh tickets, saved as a new message. No model call. */
+export function refreshChat(chatId: string): Promise<RefreshResponse> {
+  return request<RefreshResponse>(`${BASE}/chats/${encodeURIComponent(chatId)}/refresh`, { method: 'POST' })
+}
+
+/** A simulated purchase of the trip's latest plan, saved as a new message. Nothing is paid. */
+export function bookTrip(chatId: string, body: BookingRequest): Promise<ChatMessageOut> {
+  return request<ChatMessageOut>(`${BASE}/chats/${encodeURIComponent(chatId)}/booking`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 export async function deleteChat(chatId: string): Promise<void> {

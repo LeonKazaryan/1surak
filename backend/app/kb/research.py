@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import Catalog, Place
 from app.kb import repository
+from app.kb.embeddings import SEMANTIC_MATCH, Embedder, embed_or_none
 from app.kb.model import TIME_SENSITIVE, Entry, Topic
-from app.kb.text import coverage, excerpt, terms
+from app.kb.text import WORD, coverage, excerpt, stem, terms
 from app.kb.web import WebSearch
 
 log = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ def _strong(question: str, entry: Entry, ignore: set[str]) -> bool:
     wanted = len([t for t in terms(question) if t not in ignore])
     if not wanted:
         return False  # the question is only a place name: nothing specific to match
+    if entry.similarity is not None and entry.similarity >= SEMANTIC_MATCH:
+        return True  # close in meaning: «с ребёнком» answers «для семей с детьми» with no word in common
     needed = min(STRONG_COVERAGE, STRONG_TERMS / wanted)
     return coverage(question, entry.text, ignore) >= needed
 
@@ -86,6 +89,11 @@ def _name_terms(catalog: Catalog, place: Place | None, country: str | None) -> s
     if country:
         names += [catalog.countries[country].name, catalog.countries[country].name_en]
     return {t for name in names for t in terms(name)}
+
+
+def _without_names(question: str, ignore: set[str]) -> str:
+    """Every passage about Hurghada names it, so the name would make all of them look close in meaning."""
+    return " ".join(w for w in WORD.findall(question) if not any(stem(w).startswith(t) for t in ignore))
 
 
 def _good(question: str, topic: str, hits: list[Entry], ignore: set[str]) -> list[Entry]:
@@ -106,16 +114,29 @@ def research_tool_handler(
     catalog: Catalog,
     web: WebSearch | None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    embedder: Embedder | None = None,
 ):
+    async def _question_vector(question: str, ignore: set[str]) -> list[float] | None:
+        vectors = await embed_or_none(embedder, [_without_names(question, ignore) or question])
+        return vectors[0] if vectors else None
+
     async def research(args: ResearchArgs) -> dict:
         place, country = _resolve(catalog, args.place, args.country)
         topics = SOFT_TOPICS if args.topic in SOFT_TOPICS else [args.topic]
         moment = now()
+        ignore = _name_terms(catalog, place, country)
+        vector = await _question_vector(args.question, ignore)
         async with sessionmaker() as db:
             hits = await repository.search(
-                db, args.question, moment, place.id if place else None, country, topics, fresh_only=True
+                db,
+                args.question,
+                moment,
+                place.id if place else None,
+                country,
+                topics,
+                fresh_only=True,
+                query_vector=vector,
             )
-        ignore = _name_terms(catalog, place, country)
         good = _good(args.question, args.topic, hits, ignore)
         if args.fresh:  # «the latest» still trusts what we checked today
             good = [e for e in good if moment - e.fetched_at < RECHECK_AFTER]
@@ -127,7 +148,7 @@ def research_tool_handler(
             }
 
         if web is None:
-            return await _fallback(args, place, country, topics, moment, "веб-поиск выключен")
+            return await _fallback(args, place, country, topics, moment, "веб-поиск выключен", vector)
 
         country_name = catalog.countries[country].name if country else None
         query = _web_query(args.question, place, country_name)
@@ -135,7 +156,9 @@ def research_tool_handler(
             results = await web.search(query)
         except Exception as error:  # noqa: BLE001  (any search failure falls back to the base)
             log.warning("Web search failed for %r: %s", query, error)
-            return await _fallback(args, place, country, topics, moment, "веб-поиск сейчас недоступен")
+            return await _fallback(
+                args, place, country, topics, moment, "веб-поиск сейчас недоступен", vector
+            )
 
         entries = []
         for r in results:
@@ -158,9 +181,12 @@ def research_tool_handler(
             except ValueError:
                 continue
         if not entries:
-            return await _fallback(args, place, country, topics, moment, "в интернете ничего не нашлось")
+            return await _fallback(
+                args, place, country, topics, moment, "в интернете ничего не нашлось", vector
+            )
+        vectors = await embed_or_none(embedder, [e.text for e in entries])
         async with sessionmaker() as db:
-            ids = await repository.add_entries(db, entries)
+            ids = await repository.add_entries(db, entries, vectors)
             await db.commit()
         for entry, entry_id in zip(entries, ids, strict=True):
             entry.id = entry_id
@@ -174,10 +200,17 @@ def research_tool_handler(
             "note": DATA_NOTE,
         }
 
-    async def _fallback(args, place, country, topics, moment, reason: str) -> dict:
+    async def _fallback(args, place, country, topics, moment, reason: str, vector=None) -> dict:
         async with sessionmaker() as db:
             hits = await repository.search(
-                db, args.question, moment, place.id if place else None, country, topics, fresh_only=False
+                db,
+                args.question,
+                moment,
+                place.id if place else None,
+                country,
+                topics,
+                fresh_only=False,
+                query_vector=vector,
             )
         ignore = _name_terms(catalog, place, country)
         relevant = [e for e in hits if _strong(args.question, e, ignore)]

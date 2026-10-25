@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { ChatMeta, ClarifyEvent, DestinationsEvent } from '@/types/api'
+import type { BookingEvent, ChatMeta, ClarifyEvent, DestinationsEvent, TripPlanEvent } from '@/types/api'
 
 /** One visible step of the agent's work: a tool call, a note, or an error. */
 export interface ChatTraceStep {
@@ -13,8 +13,8 @@ export interface ChatTraceStep {
   status: 'running' | 'done'
 }
 
-/** Cards the agent shows under its message: questions to answer or destinations to pick from. */
-export type ChatWidget = ClarifyEvent | DestinationsEvent
+/** What the agent shows under its message: questions, destinations, the trip plan, or a booking. */
+export type ChatWidget = ClarifyEvent | DestinationsEvent | TripPlanEvent | BookingEvent
 
 export interface WorkspaceChatMessage {
   id: string
@@ -30,8 +30,6 @@ export interface WorkspaceChatMessage {
 export interface ChatLayoutContext {
   chatMessages: WorkspaceChatMessage[]
   setMessages: Dispatch<SetStateAction<WorkspaceChatMessage[]>>
-  planPanelOpen: boolean
-  setPlanPanelOpen: Dispatch<SetStateAction<boolean>>
   activeChatId: string | null
   setActiveChatId: Dispatch<SetStateAction<string | null>>
   setRecentChats: Dispatch<SetStateAction<ChatMeta[]>>

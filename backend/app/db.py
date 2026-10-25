@@ -1,8 +1,25 @@
-from pathlib import Path
+import re
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, MetaData, Table, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    JSON,
+    Column,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from app.kb.embeddings import DIMENSIONS
 
 metadata = MetaData()
 
@@ -66,8 +83,26 @@ Index(
 )
 
 
+# Cached Aviasales prices per city pair and month (app/flights/fares.py), so they survive a restart.
+# price_rub NULL means Aviasales had no tickets: also worth remembering, until it expires.
+fares = Table(
+    "fares",
+    metadata,
+    Column("origin", Text, primary_key=True),  # city code: MOW, never SVO
+    Column("destination", Text, primary_key=True),
+    Column("month", Text, primary_key=True),  # "2026-11", or "" for the nearest dates
+    Column("price_rub", Integer),
+    Column("direct_price_rub", Integer),
+    Column("duration_min", Integer),
+    Column("tickets", JSON, nullable=False),  # {"cheapest": {...}, "direct": {...} | null, "fastest": {...}}
+    Column("source", Text, nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False, index=True),
+)
+
+
 # The knowledge base the agent keeps growing with web search (docs/09-living-knowledge-base.md).
-# The integer id is what the agent cites («kb:42») and also the rowid of the full-text index below.
+# The integer id is what the agent cites («kb:42»).
 kb_entries = Table(
     "kb_entries",
     metadata,
@@ -91,18 +126,51 @@ kb_entries = Table(
     Column("created_by", Text, nullable=False),
     Column("status", Text, nullable=False),
     Column("query", Text),
+    # 'simple' keeps every word form; kb.text cuts Russian endings and searches by prefix instead
+    Column(
+        "search", TSVECTOR, Computed("to_tsvector('simple', replace(lower(text), 'ё', 'е'))", persisted=True)
+    ),
+    Column("embedding", Vector(DIMENSIONS)),
+    Column("embedding_model", Text),
 )
+Index("ix_kb_entries_search", kb_entries.c.search, postgresql_using="gin")
 
-KB_FTS_DDL = (
-    "CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(text, tokenize='unicode61 remove_diacritics 2')"
-)
+DISPOSABLE_DATABASE = re.compile(
+    r"[a-z0-9_]+_(test(_[a-z0-9]+)?|eval)"
+)  # fullmatch, so the name is also safe to quote
 
 
 async def init_db(engine: AsyncEngine) -> None:
-    url = make_url(str(engine.url))
-    if url.get_backend_name() == "sqlite" and url.database:
-        Path(url.database).parent.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(metadata.create_all)
-        if url.get_backend_name() == "sqlite":
-            await conn.exec_driver_sql(KB_FTS_DDL)
+
+
+async def ensure_database(url: str) -> None:
+    target = make_url(url)
+    admin = create_async_engine(target.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            found = await conn.scalar(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": target.database}
+            )
+            if not found:
+                await conn.execute(text(f'CREATE DATABASE "{target.database}"'))
+    finally:
+        await admin.dispose()
+
+
+async def reset_database(url: str) -> None:
+    """Creates the database if needed and empties every table. Only for *_test and *_eval databases."""
+    name = make_url(url).database or ""
+    if not DISPOSABLE_DATABASE.fullmatch(name):
+        raise ValueError(f"refusing to empty {name!r}: only *_test and *_eval databases can be reset")
+    await ensure_database(url)
+    engine = create_async_engine(url)
+    try:
+        await init_db(engine)
+        tables = ", ".join(table.name for table in metadata.sorted_tables)
+        async with engine.begin() as conn:
+            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    finally:
+        await engine.dispose()

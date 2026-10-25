@@ -4,7 +4,14 @@ from collections import defaultdict
 
 import pytest
 
-from app.catalog.catalog import CURATED_PATH, KIND_LABELS, _read, curated_facts, load_catalog, seed_facts
+from app.catalog.catalog import (
+    CURATED_PATH,
+    KIND_LABELS,
+    _read,
+    curated_facts,
+    load_catalog,
+    seed_facts,
+)
 from app.facts.model import normalize
 
 # The Open-Meteo marine model doesn't cover the Caspian, which counts as a lake.

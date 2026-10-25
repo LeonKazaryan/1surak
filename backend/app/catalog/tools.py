@@ -36,7 +36,9 @@ DETAILS_DESCRIPTION = (
 
 
 class DestinationArgs(BaseModel):
-    place: str = Field(description="Destination id from search_destinations (e.g. 'hurghada') or its name.")
+    place: str = Field(
+        max_length=80, description="Destination id from search_destinations (e.g. 'hurghada') or its name."
+    )
 
 
 def _search_preview(result: dict) -> str:

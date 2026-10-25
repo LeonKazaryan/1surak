@@ -64,4 +64,46 @@ describe('DepartureCityPicker', () => {
     expect(screen.getByRole('button', { name: 'Город вылета: Казань' })).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('1surak.departureCity')!)).toMatchObject({ code: 'KZN', name: 'Казань' })
   })
+
+  it('should show skeleton rows, not text, while the nearest cities load', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    const user = userEvent.setup()
+    render(<DepartureCityPicker />)
+    await user.click(screen.getByRole('button', { name: /Город вылета/ }))
+
+    expect(screen.getByTestId('cities-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText('Начните вводить город')).toBeNull()
+  })
+
+  it('should show skeleton rows while a city search is on its way', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url.includes('autocomplete') ? new Promise(() => {}) : Promise.resolve({ ok: true, json: async () => (url.includes('whereami') ? WHEREAMI : NEARBY) }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DepartureCityPicker />)
+    await user.click(await screen.findByRole('button', { name: 'Город вылета: Астана' }))
+    await user.type(screen.getByRole('textbox', { name: 'Поиск города вылета' }), 'каз')
+
+    expect(await screen.findByTestId('cities-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText('Ищу…')).toBeNull()
+  })
+
+  it('should say so when the city search fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('autocomplete') ? { ok: false, status: 503 } : { ok: true, json: async () => (url.includes('whereami') ? WHEREAMI : NEARBY) },
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DepartureCityPicker />)
+    await user.click(await screen.findByRole('button', { name: 'Город вылета: Астана' }))
+    await user.type(screen.getByRole('textbox', { name: 'Поиск города вылета' }), 'каз')
+
+    expect(await screen.findByText('Не получилось найти город. Проверьте интернет и попробуйте ещё раз')).toBeInTheDocument()
+    expect(screen.queryByTestId('cities-skeleton')).toBeNull()
+  })
 })

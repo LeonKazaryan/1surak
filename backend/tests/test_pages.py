@@ -9,6 +9,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.catalog.catalog import load_catalog
 from app.config import Settings
@@ -20,6 +21,7 @@ from app.kb.text import excerpt, sections
 from app.kb.tools import ReadPageArgs, read_page_handler, read_page_preview
 from app.kb.web import BraveSearch, FallbackSearch, TavilySearch, WebResult, build_web_search
 from app.tools.registry import Tool, ToolRegistry, compact_schema
+from tests.test_kb_semantic import FakeEmbedder
 
 NOW = datetime(2026, 10, 25, 12, tzinfo=UTC)
 
@@ -29,8 +31,8 @@ def run(coro):
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'kb.db'}")
+def db(db_url):
+    engine = create_async_engine(db_url, poolclass=NullPool)
     asyncio.run(init_db(engine))
     yield async_sessionmaker(engine, expire_on_commit=False)
     asyncio.run(engine.dispose())
@@ -342,6 +344,28 @@ def test_should_save_checked_facts_to_the_base_with_their_source(db):
     saved = run(stored())
     assert saved and saved[0].source_url == PAGE.url and saved[0].kind == "fact"
     assert "Прочитал gov.example: 1 фактов" in read_page_preview(result)
+
+
+def test_should_embed_the_facts_it_saves_so_they_are_found_by_meaning(db):
+    extractor, _ = extractor_answering(
+        {
+            "found": True,
+            "facts": [{"fact": "Детям нужен свой паспорт", "quote": "Children need their own passport."}],
+            "published": None,
+        }
+    )
+    embedder = FakeEmbedder()
+    handler = read_page_handler(
+        db, load_catalog(), PageTools(FakeReader(PAGE), extractor), lambda: NOW, embedder
+    )
+
+    run(handler(ReadPageArgs(url=PAGE.url, question="Нужен ли ребёнку паспорт?", topic="visa")))
+
+    async def without_vectors():
+        async with db() as s:
+            return await repository.without_vectors(s)
+
+    assert embedder.calls and run(without_vectors()) == []
 
 
 def test_should_report_a_page_it_cannot_read_and_fall_back_to_raw_text_without_a_model(db):

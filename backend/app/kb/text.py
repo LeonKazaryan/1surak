@@ -1,7 +1,7 @@
 """Search terms for Russian text without a stemming library.
 
-SQLite's unicode61 tokenizer has no Russian stemming, so «визы» would not find «виза». We cut common
-endings and search by prefix instead: «визы» → виз*, «отели» → отел*, «детьми» → дет*.
+The 'simple' full-text config keeps every word form, so «визы» would not find «виза». We cut common
+endings and search by prefix instead: «визы» → виз:*, «отели» → отел:*, «детьми» → дет:*.
 """
 
 import re
@@ -47,9 +47,9 @@ def terms(query: str) -> list[str]:
 
 
 def fts_query(query: str) -> str | None:
-    """«виза в Таиланд» → '"виз"* OR "таила"*'. None when nothing is left to search for."""
+    """«виза в Таиланд» → "'виз':* | 'таил':*" for to_tsquery. None when nothing is left to search for."""
     found = terms(query)
-    return " OR ".join(f'"{t}"*' for t in found) if found else None
+    return " | ".join(f"'{t}':*" for t in found) if found else None
 
 
 def coverage(query: str, text: str, ignore: set[str] = frozenset()) -> float:

@@ -5,12 +5,13 @@ import json
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.catalog.seed import load_catalog_facts
 from app.db import init_db
 from app.facts.adapters.open_meteo_marine import monthly_sea_temp
 from app.tools import build_registry
-from tests.conftest import FakeFlights, route
+from tests.conftest import FakeFlights, fresh_database, route
 
 # Tickets from Moscow by airport, as Aviasales would return them; places not listed have no flights.
 FLIGHTS = FakeFlights(
@@ -25,11 +26,11 @@ FLIGHTS = FakeFlights(
 
 
 @pytest.fixture(scope="module")
-def registry(tmp_path_factory):
-    db_url = f"sqlite+aiosqlite:///{tmp_path_factory.mktemp('catalog') / 'seed.db'}"
+def registry():
+    db_url = fresh_database("catalog")
 
     async def setup():
-        engine = create_async_engine(db_url)
+        engine = create_async_engine(db_url, poolclass=NullPool)
         await init_db(engine)
         sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
         first = await load_catalog_facts(sessionmaker)
@@ -106,7 +107,7 @@ def test_should_find_tickets_for_a_city_outside_the_catalogue(registry):
 
     assert result["tickets"]["airline_name"] == "Pegasus Airlines"
     assert result["tickets"]["logo"] == "https://pics.avs.io/64/64/PC.png"
-    assert preview == "Москва → Стамбул: от 10\u00a0558 ₽, прямой"
+    assert preview == "Москва → Стамбул: от 10\u00a0558\u00a0₽, прямой"
 
 
 def test_should_say_when_aviasales_has_no_tickets(registry):

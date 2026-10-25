@@ -73,6 +73,19 @@ def test_should_ask_aviasales_once_per_route_and_month():
     assert asked[0]["origin"] == "NQZ" and asked[0]["destination"] == "IST" and asked[0]["one_way"] == "true"
 
 
+def test_should_send_the_token_in_a_header_so_it_never_lands_in_logged_urls():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": ROWS})
+
+    asyncio.run(client_answering(handler).route("NQZ", "IST", 11))
+
+    assert seen[0].headers["x-access-token"] == "token"
+    assert "token" not in seen[0].url.params
+
+
 def test_should_turn_an_api_failure_into_no_data():
     flights = client_answering(lambda request: httpx.Response(500))
 

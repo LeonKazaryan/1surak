@@ -4,7 +4,9 @@ import asyncio
 import json
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.catalog.catalog import load_catalog
 from app.catalog.seed import load_catalog_facts
@@ -12,12 +14,10 @@ from app.db import init_db
 from app.tools import ToolRegistry
 from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
 from app.trip.brief import assumptions, chips, missing, price_level, search_hint
-from tests.conftest import FakeFlights, route
+from tests.conftest import FakeFlights, fresh_database, route
 
 VAGUE = BriefPatch()
-FULL = BriefPatch(
-    destination="Турция", month=11, nights_min=7, adults=2, children=0, budget_total_rub=250_000
-)
+FULL = BriefPatch(destination="Турция", month=11, nights_min=7, adults=2, children=0, budget_total=250_000)
 
 
 def brief(**fields) -> TripBrief:
@@ -56,6 +56,17 @@ def test_should_never_erase_what_was_known_and_collect_wishes():
     assert b.wishes == ["без долгих перелётов", "всё включено"]
 
 
+def test_should_keep_the_wishes_short_and_few():
+    with pytest.raises(ValidationError):
+        BriefPatch(wishes=["я" * 81])
+
+    b = TripBrief()
+    for n in range(15):
+        b = merge(b, BriefPatch(wishes=[f"пожелание {n}"]))
+
+    assert b.wishes == [f"пожелание {n}" for n in range(5, 15)]
+
+
 def test_should_describe_the_brief_in_short_russian_phrases():
     b = brief(kinds=["sea"], month=11, nights_min=6, nights_max=8, adults=2, children=2, children_ages=[3, 7])
 
@@ -68,10 +79,15 @@ def test_should_describe_the_brief_in_short_russian_phrases():
 
 
 def test_should_turn_a_total_budget_into_a_price_level_per_person():
-    assert price_level(brief(adults=2, budget_total_rub=100_000)) == 1
-    assert price_level(brief(adults=2, budget_total_rub=250_000)) == 2
-    assert price_level(brief(adults=1, budget_total_rub=400_000)) == 3
+    assert price_level(brief(adults=2, budget_total=100_000)) == 1
+    assert price_level(brief(adults=2, budget_total=250_000)) == 2
+    assert price_level(brief(adults=1, budget_total=400_000)) == 3
     assert price_level(brief(budget_level=0)) is None
+
+
+def test_should_refuse_a_budget_no_one_could_have():
+    with pytest.raises(ValidationError):
+        BriefPatch(budget_total=10**30)
 
 
 def test_should_hint_search_filters_from_the_brief():
@@ -118,11 +134,11 @@ def test_should_hint_routes_when_the_user_wants_several_cities():
 
 
 @pytest.fixture(scope="module")
-def sessionmaker(tmp_path_factory):
-    db_url = f"sqlite+aiosqlite:///{tmp_path_factory.mktemp('trip') / 'trip.db'}"
+def sessionmaker():
+    db_url = fresh_database("trip")
 
     async def setup():
-        engine = create_async_engine(db_url)
+        engine = create_async_engine(db_url, poolclass=NullPool)
         await init_db(engine)
         maker = async_sessionmaker(engine, expire_on_commit=False)
         await load_catalog_facts(maker)
@@ -204,6 +220,7 @@ def test_should_show_destination_cards_with_facts_for_the_month(sessionmaker):
     assert card["climate"]["month"] == "ноябрь" and card["climate"]["sea"] >= 24
     assert card["country_code"] == "EG" and card["flight_hours"] == 5.5
     assert card["flight"]["price_rub"] == 12_775 and card["flight"]["airline_name"] == "Аэрофлот"
+    assert card["photo"]["url"].startswith("https://upload.wikimedia.org/") and card["photo"]["author"]
     assert result.event["summary"] == ["Море", "Ноябрь"]
     assert json.loads(result.content)["unknown"] == ["atlantis"]
     assert state.brief.shown == ["hurghada"]
@@ -237,6 +254,7 @@ def test_should_find_routes_and_show_one_as_a_wide_card(sessionmaker):
     assert card["type"] == "route" and [s["id"] for s in card["stops"]] == pick
     assert sum(s["nights"] for s in card["stops"]) == 8
     assert card["legs"][0]["from"] == "Москва" and card["match"] > 0 and card["why"] == "Город и горы"
+    assert any(s["photo"] for s in card["stops"])
 
 
 def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):
@@ -245,3 +263,15 @@ def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):
     result = call(registry, "show_destinations", {"intro": "?", "picks": [{"why": "?"}]})
 
     assert not result.ok and result.event is None
+
+
+def test_should_name_the_catalogue_place_the_user_asked_for(sessionmaker):
+    registry = ToolRegistry(trip_tools(TripState(TripBrief()), sessionmaker))
+
+    named = json.loads(call(registry, "update_trip_brief", {"destination": "Анталья"}).content)
+    country = json.loads(
+        call(registry, "update_trip_brief", {"new_trip": True, "destination": "Турция"}).content
+    )
+
+    assert named["named_place"] == "antalya"
+    assert "named_place" not in country

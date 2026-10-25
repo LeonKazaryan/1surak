@@ -127,6 +127,7 @@ function Arrival({ className }: { className?: string }) {
       <h3 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">Поездка готова</h3>
       <Link
         to="/chat"
+        viewTransition
         className="mt-5 inline-flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
       >
         Спланировать поездку

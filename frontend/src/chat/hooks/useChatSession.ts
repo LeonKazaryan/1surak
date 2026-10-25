@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { fetchChatMessages, fetchChatMeta, sendChatStream } from '@/api/client'
-import type { BriefAnswers, ChatMeta, ChatStreamDone } from '@/types/api'
+import { bookTrip, fetchChatMessages, fetchChatMeta, refreshChat, sendChatStream } from '@/api/client'
+import type { BookingEvent, BriefAnswers, ChatMeta, ChatStreamDone, PlanFix, TripStatus } from '@/types/api'
 import { addMyChat } from '@/chat/chatStorage'
 import { createTextPump } from '@/chat/textPump'
-import { applyTraceEvent, rehydrateTrace } from '@/chat/trace'
+import { applyTraceEvent, isFailed, rehydrateTrace } from '@/chat/trace'
 import { isWidgetEvent, widgetFromTrace } from '@/chat/widgets'
 import { getDepartureCity } from '@/lib/departureCity'
 import type { ChatLayoutContext, ChatTraceStep, WorkspaceChatMessage } from '@/chat/types'
 
 const MAX_RECENT_CHATS = 50
 const SEND_ERROR = 'Не удалось получить ответ. Проверьте, что сервер запущен, и попробуйте ещё раз.'
-const LOAD_ERROR = 'Не удалось загрузить этот чат.'
+const LOAD_ERROR = 'Не удалось загрузить эту поездку.'
+const REFRESH_ERROR = 'Не удалось обновить цены. Попробуйте ещё раз чуть позже.'
 
 interface ActiveRun {
   id: string
@@ -23,6 +24,11 @@ function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError'
 }
 
+function tripStatus(source: Partial<TripStatus>): Partial<TripStatus> {
+  const { summary, departure, priced_at, stale, dates_passed } = source
+  return { summary, departure, priced_at, stale, dates_passed }
+}
+
 function upsertRecent(prev: ChatMeta[], done: ChatStreamDone): ChatMeta[] {
   const existing = prev.find((c) => c.id === done.chat_id)
   const now = new Date().toISOString()
@@ -31,6 +37,7 @@ function upsertRecent(prev: ChatMeta[], done: ChatStreamDone): ChatMeta[] {
     title: done.title ?? existing?.title ?? null,
     created_at: existing?.created_at ?? now,
     updated_at: now,
+    ...tripStatus(done),
   }
   return [entry, ...prev.filter((c) => c.id !== done.chat_id)].slice(0, MAX_RECENT_CHATS)
 }
@@ -56,8 +63,15 @@ export function useChatSession(urlChatId: string | undefined) {
   const [error, setError] = useState<string | null>(null)
   const [streamingId, setStreamingId] = useState<string | null>(null)
   const [chatTitle, setChatTitle] = useState<string | null>(null)
+  const [trip, setTrip] = useState<Partial<TripStatus> | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [chatLoading, setChatLoading] = useState(() => Boolean(urlChatId))
   const activeRun = useRef<ActiveRun | null>(null)
+  const openChatId = useRef(urlChatId)
+
+  useEffect(() => {
+    openChatId.current = urlChatId
+  }, [urlChatId])
 
   useEffect(() => () => activeRun.current?.controller.abort(), [])
 
@@ -73,6 +87,7 @@ export function useChatSession(urlChatId: string | undefined) {
       setMessages([])
       setActiveChatId(null)
       setChatTitle(null)
+      setTrip(null)
       setChatLoading(false)
       return
     }
@@ -87,6 +102,7 @@ export function useChatSession(urlChatId: string | undefined) {
       .then(([meta, data]) => {
         if (stale) return
         setChatTitle(meta.title)
+        setTrip(tripStatus(meta))
         setMessages(data.messages.map(toWorkspaceMessage))
       })
       .catch(() => {
@@ -104,13 +120,13 @@ export function useChatSession(urlChatId: string | undefined) {
   }, [urlChatId])
 
   const send = useCallback(
-    (text: string, answers?: BriefAnswers) => {
+    (text: string, answers?: BriefAnswers, retry = false) => {
       const query = text.trim()
       if (!query || isLoading) return
 
       const assistantId = crypto.randomUUID()
       setMessages((prev) => [
-        ...prev,
+        ...(retry ? prev.slice(0, -2) : prev),
         { id: crypto.randomUUID(), role: 'user', content: query, timestamp: new Date() },
         { id: assistantId, role: 'assistant', content: '', traceSteps: [], phase: 'working', timestamp: new Date() },
       ])
@@ -141,7 +157,7 @@ export function useChatSession(urlChatId: string | undefined) {
       const pump = createTextPump((shown) => patch({ content: shown }))
 
       sendChatStream(
-        { query, chat_id: run.chatId, origin: getDepartureCity().name, origin_code: getDepartureCity().code, answers },
+        { query, chat_id: run.chatId, origin: getDepartureCity().name, origin_code: getDepartureCity().code, answers, retry },
         (event) => {
           if (!isCurrent()) return
           if (event.type === 'assistant_token') {
@@ -169,6 +185,7 @@ export function useChatSession(urlChatId: string | undefined) {
           addMyChat(done.chat_id)
           setActiveChatId(done.chat_id)
           if (done.title) setChatTitle(done.title)
+          setTrip(tripStatus(done))
           setRecentChats((prev) => upsertRecent(prev, done))
           if (!urlChatId) navigate(`/chat/${done.chat_id}`, { replace: true })
         })
@@ -193,7 +210,60 @@ export function useChatSession(urlChatId: string | undefined) {
     [isLoading, navigate, setActiveChatId, setMessages, setRecentChats, urlChatId],
   )
 
+  /** Asks the last question again in place of the reply that failed. */
+  const retry = useCallback(() => {
+    const [question, reply] = chatMessages.slice(-2)
+    if (question?.role !== 'user' || !reply || !isFailed(reply)) return
+    send(question.content, undefined, true)
+  }, [chatMessages, send])
+
+  const refresh = useCallback(async () => {
+    if (!urlChatId || isLoading || refreshing) return
+    setRefreshing(true)
+    setError(null)
+    try {
+      const { message, chat } = await refreshChat(urlChatId)
+      setRecentChats((prev) => [chat, ...prev.filter((c) => c.id !== chat.id)])
+      if (openChatId.current !== urlChatId) return
+      setMessages((prev) => [...prev, toWorkspaceMessage(message)])
+      setTrip(tripStatus(chat))
+    } catch {
+      if (openChatId.current === urlChatId) setError(REFRESH_ERROR)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [isLoading, refreshing, setMessages, setRecentChats, urlChatId])
+
+  /** Books the trip's latest plan; the booking comes back as a message, added to the chat it was made in. */
+  const book = useCallback(
+    async (extras: PlanFix['id'][], holder: string): Promise<BookingEvent> => {
+      if (!urlChatId) throw new Error('No trip to book')
+      const message = await bookTrip(urlChatId, { extras, holder })
+      const booking = widgetFromTrace(message.trace)
+      if (booking?.type !== 'booking') throw new Error('The booking reply has no booking')
+      if (openChatId.current === urlChatId) {
+        // a repeat booking returns the message already in the chat, e.g. one booked from another tab
+        setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, toWorkspaceMessage(message)]))
+      }
+      return booking
+    },
+    [setMessages, urlChatId],
+  )
+
   // The URL changes one render before the load effect runs; without this the old chat flashes.
   const switching = Boolean(urlChatId) && urlChatId !== activeChatId
-  return { messages: chatMessages, send, isLoading, error, streamingId, chatTitle, chatLoading: chatLoading || switching }
+  return {
+    messages: chatMessages,
+    send,
+    isLoading,
+    error,
+    streamingId,
+    chatTitle,
+    chatLoading: chatLoading || switching,
+    trip,
+    refresh,
+    refreshing,
+    book,
+    retry,
+  }
 }

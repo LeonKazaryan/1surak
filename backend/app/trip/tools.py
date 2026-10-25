@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
 from app.flights import Flights, NoFlights, city, current_origin
+from app.money import current_currency
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
     SLOTS,
@@ -30,8 +31,7 @@ from app.trip.routes import (
     RoutePlan,
     RouteQuery,
     find_routes,
-    plan_of,
-    price_route,
+    rebuild_route,
     route_card,
     route_for_model,
 )
@@ -55,8 +55,8 @@ UPDATE_DESCRIPTION = (
     "Call first on every user message about the trip. Pass only what the user said or what follows "
     "unambiguously ('с женой' = 2 adults, 'с ребёнком' = 1 child, 'на неделю' = 7 nights). Never guess "
     "ages, budget or party size. Returns the whole brief, `missing` (what still blocks the search), "
-    "`already_asked`, `assumptions` to state if you must go on without answers, and `search_hint` "
-    "with filters for search_destinations."
+    "`already_asked`, `assumptions` to state if you must go on without answers, `search_hint` "
+    "with filters for search_destinations, and `named_place`: the catalogue id of the place the user named."
 )
 ASK_DESCRIPTION = (
     "Show the user cards with the missing questions, all in one go. Only for slots listed in `missing`, "
@@ -76,6 +76,9 @@ ROUTES_DESCRIPTION = (
     "estimate by distance. Pass the same filters as for search_destinations plus `nights`. Do not offer "
     "routes to families with small children unless they asked for one."
 )
+
+
+INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan"}  # kept for the code, not the model
 
 
 @dataclass
@@ -148,15 +151,18 @@ def trip_tools(
         brief = state.brief
         gaps = missing(brief)
         result = {
-            "brief": brief.model_dump(mode="json", exclude_none=True, exclude={"asked", "shown"}),
+            "brief": brief.model_dump(mode="json", exclude_none=True, exclude=INTERNAL),
             "summary": chips(brief),
             "missing": gaps,
             "already_asked": brief.asked,
             "search_hint": search_hint(brief, catalog),
             "shown_before": brief.shown,
+            "current_plan": brief.plan,
         }
         if gaps and brief.asked:
             result["assumptions"] = assumptions(brief)
+        if brief.destination and (place := catalog.find(brief.destination)):
+            result["named_place"] = place.id
         return result
 
     async def ask_user(args: AskArgs) -> dict | ToolReply:
@@ -176,7 +182,12 @@ def trip_tools(
         return ToolReply(
             result={"asked": list(wanted), "note": "The cards are on screen. Your turn is over."},
             text=args.intro,
-            event={"type": "clarify", "questions": questions, "prefill": prefill(brief)},
+            event={
+                "type": "clarify",
+                "questions": questions,
+                "prefill": prefill(brief),
+                "currency": current_currency.get().view(),
+            },
             ends_turn=True,
         )
 
@@ -206,11 +217,9 @@ def trip_tools(
         if any(p is None for p in places) or len({p.id for p in places}) != len(places):
             return None
         plan = state.routes.get("+".join(p.id for p in places))
-        if plan is None:  # shown on a later turn: rebuild it from the same places, in the same order
-            brief = state.brief
-            q = RouteQuery(month=brief.month, kinds=brief.kinds, nights=brief.nights_max or brief.nights_min)
-            plan = plan_of([snapshots[p.id] for p in places], q)
-            await price_route(plan, flights, city(current_origin.get()), brief.month)
+        if plan is None:  # shown on a later turn
+            stops = [snapshots[p.id] for p in places]
+            plan = await rebuild_route(stops, state.brief, flights, city(current_origin.get()))
         return plan
 
     async def show_destinations(args: ShowArgs) -> dict | ToolReply:
@@ -239,11 +248,17 @@ def trip_tools(
                 cards.append({"type": "place", **view, "why": pick.why, "tradeoff": pick.tradeoff})
         if not cards:
             return {"error": f"Unknown ids {unknown}. Use ids from search_destinations or search_routes."}
-        state.brief = state.brief.model_copy(update={"shown": [c["id"] for c in cards]})
+        shown = {"shown": [c["id"] for c in cards], "priced_from": current_origin.get(), "priced_at": now()}
+        state.brief = state.brief.model_copy(update=shown)
         return ToolReply(
             result={"shown": [c["name"] for c in cards], "unknown": unknown, "note": "Cards are on screen."},
             text=args.intro,
-            event={"type": "destinations", "summary": chips(state.brief), "cards": cards},
+            event={
+                "type": "destinations",
+                "summary": chips(state.brief),
+                "cards": cards,
+                "currency": current_currency.get().view(),
+            },
             ends_turn=True,
         )
 
