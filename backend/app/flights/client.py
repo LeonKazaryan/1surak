@@ -8,21 +8,22 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
 from app.flights.dictionary import airline_name, city_code, logo_url
+from app.flights.freshness import STALE_FOR, RateLimit, fare_ttl
 
 if TYPE_CHECKING:
     from app.flights.fares import FareStore
+    from app.flights.network import Network
 
 log = logging.getLogger(__name__)
 
 PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 AVIASALES = "https://www.aviasales.ru"
-CACHE_TTL_S = 6 * 3600
 MAX_PARALLEL = 8
 TICKETS_PER_ROUTE = 30
 
@@ -131,7 +132,11 @@ def summarize(rows: list[dict]) -> RouteFlights | None:
 
 
 class TravelpayoutsFlights:
-    """Looks in memory, then in the fares table, then asks Aviasales, only for what is still missing."""
+    """Memory, then the fares table, then Aviasales, only for what is still missing.
+
+    A price past its expiry is still served for STALE_FOR while a background fetch replaces it.
+    Concurrent lookups of one route share one request, and every request waits for the rate limit.
+    """
 
     def __init__(
         self,
@@ -139,14 +144,31 @@ class TravelpayoutsFlights:
         client: httpx.AsyncClient | None = None,
         timeout_s: float = 8.0,
         store: "FareStore | None" = None,
+        network: "Network | None" = None,
+        per_minute: float = 300.0,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         self._token = token
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
         self._store = store
+        self._network = network
         self._clock = clock
-        self._cache: dict[FareKey, tuple[datetime, RouteFlights | None]] = {}
+        self._cache: dict[FareKey, tuple[datetime, RouteFlights | None]] = {}  # key > (expires, result)
         self._parallel = asyncio.Semaphore(MAX_PARALLEL)
+        self._limit = RateLimit(per_minute)
+        self._inflight: dict[FareKey, asyncio.Task] = {}
+        self._background: set[asyncio.Task] = set()
+
+    async def start(self) -> None:
+        """Teaches the route map what the stored fares already showed."""
+        if self._store and self._network:
+            for origin, destination, airline, at in await self._store.evidence():
+                self._network.observe(origin, destination, airline, at)
+
+    async def settle(self) -> None:
+        """Waits for the background refreshes: for tests and shutdown."""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
 
     async def route(self, origin: str, destination: str, month: int | None = None) -> RouteFlights | None:
         return (await self.routes(origin, [destination], month))[destination]
@@ -162,25 +184,72 @@ class TravelpayoutsFlights:
 
     async def _lookup(self, keys: set[FareKey]) -> dict[FareKey, RouteFlights | None]:
         now = self._clock()
-        found = {k: hit[1] for k in keys if (hit := self._cache.get(k)) and hit[0] > now}
+        found: dict[FareKey, RouteFlights | None] = {}
+        stale: set[FareKey] = set()
+
+        def use(key: FareKey, expires: datetime, result: RouteFlights | None) -> None:
+            found[key] = result
+            if expires <= now:
+                stale.add(key)
+
+        for key in keys:
+            hit = self._cache.get(key)
+            if hit and hit[0] > now - STALE_FOR:
+                use(key, *hit)
         missing = keys - found.keys()
         if missing and self._store:
             stored = await self._store.load(sorted(missing), now)
             self._cache.update(stored)
-            found.update({k: result for k, (_, result) in stored.items()})
+            for key, hit in stored.items():
+                use(key, *hit)
             missing -= stored.keys()
-        if not missing:
-            return found
-        order = sorted(missing)
-        answers = await asyncio.gather(*(self._fetch(*k) for k in order))
-        fresh = {k: a for k, a in zip(order, answers, strict=True) if a is not _FAILED}
-        expires = now + timedelta(seconds=CACHE_TTL_S)
-        self._cache.update({k: (expires, a) for k, a in fresh.items()})
-        if fresh and self._store:
-            await self._store.save(fresh, now, expires)
-        return {**found, **dict.fromkeys(missing), **fresh}
+        if stale:
+            self._refresh_in_background(stale)
+        if missing:
+            found.update(await self._fetch(missing))
+        return found
 
-    async def _fetch(self, origin: str, destination: str, month: str):
+    def _refresh_in_background(self, keys: set[FareKey]) -> None:
+        task = asyncio.create_task(self._fetch(keys))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _fetch(self, keys: set[FareKey]) -> dict[FareKey, RouteFlights | None]:
+        """Asks Aviasales, sharing a request already on its way for the same key. Failed keys are None."""
+        new = sorted(k for k in keys if k not in self._inflight)
+        if new:
+            task = asyncio.create_task(self._fetch_batch(new))
+            for key in new:
+                self._inflight[key] = task
+            task.add_done_callback(lambda done: self._forget(new, done))
+        # shield: a user who leaves must not cancel a request other users are waiting for
+        batches = {self._inflight[k] for k in keys}
+        results: dict[FareKey, RouteFlights | None] = {}
+        for answer in await asyncio.gather(*(asyncio.shield(t) for t in batches)):
+            results.update(answer)
+        return {k: results.get(k) for k in keys}
+
+    def _forget(self, keys: list[FareKey], task: asyncio.Task) -> None:
+        for key in keys:
+            if self._inflight.get(key) is task:
+                del self._inflight[key]
+
+    async def _fetch_batch(self, keys: list[FareKey]) -> dict[FareKey, RouteFlights | None]:
+        answers = await asyncio.gather(*(self._ask(*k) for k in keys))
+        now = self._clock()
+        fresh: dict[FareKey, tuple[RouteFlights | None, datetime]] = {}
+        for key, answer in zip(keys, answers, strict=True):
+            if answer is _FAILED:
+                continue  # not cached: the next lookup tries again
+            fresh[key] = (answer, now + fare_ttl(key[2], now))
+            if answer and self._network:
+                self._network.observe(key[0], key[1], answer.direct.airline if answer.direct else None, now)
+        self._cache.update({key: (expires, answer) for key, (answer, expires) in fresh.items()})
+        if fresh and self._store:
+            await self._store.save(fresh, now)
+        return {key: answer for key, (answer, _) in fresh.items()}
+
+    async def _ask(self, origin: str, destination: str, month: str):
         params = {
             "origin": origin,
             "destination": destination,
@@ -193,13 +262,14 @@ class TravelpayoutsFlights:
         if month:
             params["departure_at"] = month
         try:
+            await self._limit.wait()
             async with self._parallel:
                 response = await self._client.get(PRICES_URL, params=params)
             response.raise_for_status()
             return summarize(response.json().get("data") or [])
         except (httpx.HTTPError, ValueError, KeyError):
             log.warning("Travelpayouts failed for %s>%s", origin, destination, exc_info=True)
-            return _FAILED  # not cached: the next search tries again
+            return _FAILED
 
 
 _FAILED = object()

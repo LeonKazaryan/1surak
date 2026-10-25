@@ -29,3 +29,4 @@ class Settings(BaseSettings):
 
     # Real flight prices (Aviasales Data API). Without a token the agent has no flights and says so.
     travelpayouts_token: str = ""
+    travelpayouts_per_minute: float = 300.0  # our guess at a polite rate; lower it if Aviasales answers 429

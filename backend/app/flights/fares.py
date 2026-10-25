@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import fares
 from app.flights.client import FareKey, RouteFlights, Ticket
+from app.flights.freshness import STALE_FOR
 
 log = logging.getLogger(__name__)
 
@@ -62,16 +63,33 @@ def from_row(row) -> RouteFlights | None:
 async def load_fares(
     db: AsyncSession, keys: list[FareKey], now: datetime
 ) -> dict[FareKey, tuple[datetime, RouteFlights | None]]:
-    """The rows still valid at `now`, with their expiry."""
+    """The rows still usable at `now` with their expiry: valid, or expired less than STALE_FOR ago."""
     if not keys:
         return {}
     query = select(fares).where(
-        tuple_(fares.c.origin, fares.c.destination, fares.c.month).in_(keys), fares.c.expires_at > now
+        tuple_(fares.c.origin, fares.c.destination, fares.c.month).in_(keys),
+        fares.c.expires_at > now - STALE_FOR,
     )
     return {
         (row.origin, row.destination, row.month): (_aware(row.expires_at), from_row(row))
         for row in (await db.execute(query)).all()
     }
+
+
+async def load_evidence(db: AsyncSession) -> list[tuple[str, str, str | None, datetime]]:
+    """(origin, destination, direct airline or None, fetched_at) for every stored fare that had tickets."""
+    query = select(fares.c.origin, fares.c.destination, fares.c.tickets, fares.c.fetched_at).where(
+        fares.c.price_rub.is_not(None)
+    )
+    return [
+        (
+            row.origin,
+            row.destination,
+            ((row.tickets or {}).get("direct") or {}).get("airline"),
+            _aware(row.fetched_at),
+        )
+        for row in (await db.execute(query)).all()
+    ]
 
 
 async def save_fares(db: AsyncSession, rows: list[dict]) -> None:
@@ -104,12 +122,21 @@ class FareStore:
             return {}
 
     async def save(
-        self, found: dict[FareKey, RouteFlights | None], fetched_at: datetime, expires_at: datetime
+        self, found: dict[FareKey, tuple[RouteFlights | None, datetime]], fetched_at: datetime
     ) -> None:
-        rows = [to_row(key, result, fetched_at, expires_at) for key, result in found.items()]
+        """`found` maps each key to its result and expiry."""
+        rows = [to_row(key, result, fetched_at, expires) for key, (result, expires) in found.items()]
         try:
             async with self._sessionmaker() as db:
                 await save_fares(db, rows)
                 await db.commit()
         except Exception:
             log.warning("Could not save %d fares", len(rows), exc_info=True)
+
+    async def evidence(self) -> list[tuple[str, str, str | None, datetime]]:
+        try:
+            async with self._sessionmaker() as db:
+                return await load_evidence(db)
+        except Exception:
+            log.warning("Could not read fares for the route map", exc_info=True)
+            return []

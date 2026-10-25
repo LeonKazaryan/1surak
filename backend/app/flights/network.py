@@ -2,12 +2,19 @@
 
 One node per city (airports folded in, see dictionary.city_code), one directed link per city pair with
 the airlines that fly it. It says what exists, not what it costs: prices live in the fares table.
-The seed is Travelpayouts' route list, which lags reality by months; a ticket we actually see beats it.
+The seed is Travelpayouts' route list, which lags reality by months; a ticket we actually see beats it
+(observe): a direct ticket confirms a link or adds a new one, and a route with tickets but none of them
+direct makes a listed link that never showed a direct ticket «doubtful». Doubtful is weak evidence (we only see the cheapest tickets, and
+routes are seasonal), so it ranks a link lower but never removes it.
 """
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from functools import cache
+from typing import Literal
+
+LinkStatus = Literal["listed", "seen", "doubtful"]
 
 from app.flights.dictionary import SEED, City, cities, city, city_code, distance_km
 
@@ -26,6 +33,7 @@ class Link:
     destination: City
     airlines: tuple[str, ...]
     km: int
+    status: LinkStatus = "listed"  # listed: only the seed says so; seen: a direct ticket proved it
 
     @property
     def minutes(self) -> int:
@@ -38,7 +46,15 @@ class Link:
             "airlines": list(self.airlines),
             "km": self.km,
             "est_hours": round(self.minutes / 60 * 2) / 2,
+            "status": self.status,
         }
+
+
+@dataclass
+class _Evidence:
+    direct_at: datetime | None = None  # last time we saw a direct ticket
+    indirect_at: datetime | None = None  # last time we saw tickets, none of them direct
+    airlines: frozenset[str] = frozenset()
 
 
 class Network:
@@ -49,6 +65,22 @@ class Network:
             for o, ds in routes.items()
             if o in known
         }
+        self._evidence: dict[tuple[str, str], _Evidence] = {}
+
+    def observe(self, origin: str, destination: str, direct_airline: str | None, at: datetime) -> None:
+        """What a fetched fare says about the link: its direct ticket's airline, or None for «only transfers».
+        Call it only when Aviasales had tickets: no tickets at all says nothing about the route."""
+        o, d = city_code(origin), city_code(destination)
+        if o not in self._cities or d not in self._cities or o == d:
+            return
+        seen = self._evidence.setdefault((o, d), _Evidence())
+        if direct_airline is not None:
+            if seen.direct_at is None or at >= seen.direct_at:
+                seen.direct_at = at
+            seen.airlines = seen.airlines | {direct_airline}
+            self._out.setdefault(o, {}).setdefault(d, ())
+        elif seen.indirect_at is None or at >= seen.indirect_at:
+            seen.indirect_at = at
 
     def link(self, origin: str, destination: str) -> Link | None:
         o, d = city_code(origin), city_code(destination)
@@ -81,7 +113,13 @@ class Network:
 
     def _make(self, o: str, d: str, airlines: tuple[str, ...]) -> Link:
         a, b = self._cities[o], self._cities[d]
-        return Link(a, b, airlines, round(distance_km(a, b)))
+        status: LinkStatus = "listed"
+        seen = self._evidence.get((o, d))
+        if seen:
+            airlines = tuple(sorted(set(airlines) | seen.airlines))
+            # a direct ticket is proof; missing from the cheapest tickets is only a hint
+            status = "seen" if seen.direct_at else "doubtful"
+        return Link(a, b, airlines, round(distance_km(a, b)), status)
 
 
 @cache

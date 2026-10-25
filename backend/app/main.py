@@ -9,7 +9,7 @@ from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
-from app.flights import NoFlights, TravelpayoutsFlights
+from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
 from app.kb.page import page_tools_for
@@ -49,12 +49,19 @@ def create_app(
         if settings.seed_catalog:
             await _load_seed(app.state.sessionmaker)
         flights = (
-            TravelpayoutsFlights(settings.travelpayouts_token, store=FareStore(app.state.sessionmaker))
+            TravelpayoutsFlights(
+                settings.travelpayouts_token,
+                store=FareStore(app.state.sessionmaker),
+                network=network(),
+                per_minute=settings.travelpayouts_per_minute,
+            )
             if settings.travelpayouts_token
             else NoFlights()
         )
         if isinstance(flights, NoFlights):
             log.warning("TRAVELPAYOUTS_TOKEN is not set, the agent has no flight prices")
+        else:
+            await flights.start()
         app.state.flights = flights
         if tools is not None:
             app.state.tools = tools
@@ -65,6 +72,8 @@ def create_app(
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield
+        if isinstance(flights, TravelpayoutsFlights):
+            await flights.settle()
         await engine.dispose()
 
     app = FastAPI(title="1surak API", version="0.1.0", lifespan=lifespan)
