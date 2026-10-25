@@ -40,11 +40,9 @@ def test_should_use_known_kinds_and_levels(catalog):
         assert place.highlights and place.watch_out, place.id
 
 
-def test_should_reach_every_place_from_moscow(catalog):
+def test_should_reach_every_place_by_plane_or_train(catalog):
     for place in catalog.places:
-        assert place.flight_min or place.train_min, place.id
-        if place.flight_min:
-            assert place.airport, place.id
+        assert place.airport or place.train_min, place.id
 
 
 def test_should_have_twelve_months_of_climate_for_every_place(catalog, climate):

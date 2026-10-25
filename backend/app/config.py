@@ -26,3 +26,6 @@ class Settings(BaseSettings):
     jina_api_key: str = ""  # optional: Jina Reader works without a key at 20 pages a minute
     extract_model: str = ""  # the model that pulls facts out of a page; LLM_MODEL when empty
     page_timeout_s: float = 12.0
+
+    # Real flight prices (Aviasales Data API). Without a token the agent has no flights and says so.
+    travelpayouts_token: str = ""

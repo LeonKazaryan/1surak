@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     query: Query
     chat_id: UUID | None = None
     origin: Origin | None = None
+    origin_code: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")] | None = None  # IATA of the city
     answers: BriefPatch | None = None  # what the user picked on the question cards
 
 

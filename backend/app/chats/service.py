@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import agent
 from app.chats import repository
+from app.flights import DEFAULT_ORIGIN, Flights, current_origin
 from app.llm import LLM
 from app.tools import ToolRegistry
 from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
@@ -46,6 +47,8 @@ async def stream_reply(
     origin: str | None = None,
     tools: ToolRegistry | None = None,
     answers: BriefPatch | None = None,
+    origin_code: str | None = None,
+    flights: Flights | None = None,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -56,11 +59,13 @@ async def stream_reply(
         await db.commit()
     if answers:
         trip.brief = merge(trip.brief, answers)
-    tools = (tools or ToolRegistry()).extended(trip_tools(trip, sessionmaker))
+    tools = (tools or ToolRegistry()).extended(trip_tools(trip, sessionmaker, flights=flights))
 
     answer_parts: list[str] = []
     trace: list[dict] = []
     failed = finished = False
+    # the tools search flights from this city; reset when the turn ends
+    origin_token = current_origin.set(origin_code or DEFAULT_ORIGIN)
     try:
         turns = [*history, {"role": "user", "content": query}]
         async for event in agent.run(llm, turns, tools, origin=origin):
@@ -77,6 +82,7 @@ async def stream_reply(
         trace.append(error)
         yield error
     finally:
+        current_origin.reset(origin_token)
         answer = _final_answer(answer_parts, failed, finished)
         # Starlette cancels the stream when the client disconnects; the shield lets the reply still be saved.
         with anyio.CancelScope(shield=True):

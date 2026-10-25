@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.flights import RouteFlights, Ticket
 from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
 
@@ -42,6 +43,29 @@ class FakeLLM:
             yield TextDelta(item) if isinstance(item, str) else item
         if self.error:
             raise self.error
+
+
+def route(minutes: int, direct: bool = True, price: int = 20_000, airline: str = "SU") -> RouteFlights:
+    """Real-looking tickets for one route: a direct flight, or one with a transfer."""
+    ticket = Ticket(
+        "XXX", "YYY", airline, "100", "2026-11-13T05:05:00+03:00", price, 0 if direct else 1, minutes, "/s"
+    )
+    return RouteFlights(cheapest=ticket, direct=ticket if direct else None, fastest=ticket)
+
+
+class FakeFlights:
+    """Flights by destination IATA; routes not listed have no tickets."""
+
+    def __init__(self, table: dict[str, RouteFlights] | None = None):
+        self.table = table or {}
+        self.asked: list[tuple[str, str, int | None]] = []
+
+    async def route(self, origin: str, destination: str, month: int | None = None) -> RouteFlights | None:
+        self.asked.append((origin, destination, month))
+        return self.table.get(destination)
+
+    async def routes(self, origin: str, destinations: list[str], month: int | None) -> dict:
+        return {d: await self.route(origin, d, month) for d in destinations}
 
 
 @pytest.fixture

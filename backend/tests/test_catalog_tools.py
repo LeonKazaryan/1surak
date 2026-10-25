@@ -10,6 +10,18 @@ from app.catalog.seed import load_catalog_facts
 from app.db import init_db
 from app.facts.adapters.open_meteo_marine import monthly_sea_temp
 from app.tools import build_registry
+from tests.conftest import FakeFlights, route
+
+# Tickets from Moscow by airport, as Aviasales would return them; places not listed have no flights.
+FLIGHTS = FakeFlights(
+    {
+        "HRG": route(330, price=12_775),
+        "SSH": route(300),
+        "AYT": route(240),
+        "HKT": route(570),
+        "AER": route(150),
+    }
+)
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +37,7 @@ def registry(tmp_path_factory):
         return sessionmaker, engine, (first, second)
 
     sessionmaker, engine, loads = asyncio.run(setup())
-    yield build_registry(sessionmaker), loads
+    yield build_registry(sessionmaker, flights=FLIGHTS), loads
     asyncio.run(engine.dispose())
 
 
@@ -52,6 +64,8 @@ def test_should_answer_the_golden_query_with_real_climate(registry):
     assert why["antalya"].startswith("море в ноябре около")
     assert "phuket" not in matches and "sochi" not in matches
     assert preview.startswith("Подходят: ")
+    assert matches["hurghada"]["flight"]["price_rub"] == 12_775  # the real ticket reaches the model
+    assert result["from"] == "Москва"
 
 
 def test_should_return_a_full_card_by_name(registry):
@@ -83,3 +97,19 @@ def test_should_turn_daily_sea_temperature_into_monthly_means():
 
     assert [(f.period, f.value) for f in facts] == [("m1", 21.0), ("m2", 18.0)]
     assert {f.source for f in facts} == {"open-meteo-marine"}
+
+
+def test_should_find_tickets_for_a_city_outside_the_catalogue(registry):
+    FLIGHTS.table["IST"] = route(345, price=10_558, airline="PC")
+
+    result, preview = call(registry[0], "search_flights", {"destination": "Стамбул", "month": 11})
+
+    assert result["tickets"]["airline_name"] == "Pegasus Airlines"
+    assert result["tickets"]["logo"] == "https://pics.avs.io/64/64/PC.png"
+    assert preview == "Москва → Стамбул: от 10\u00a0558 ₽, прямой"
+
+
+def test_should_say_when_aviasales_has_no_tickets(registry):
+    result, preview = call(registry[0], "search_flights", {"destination": "Магадан"})
+
+    assert "tickets" not in result and preview.endswith("билетов не нашлось")  # empty fields are dropped

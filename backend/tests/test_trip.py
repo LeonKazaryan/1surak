@@ -12,6 +12,7 @@ from app.db import init_db
 from app.tools import ToolRegistry
 from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
 from app.trip.brief import assumptions, chips, missing, price_level, search_hint
+from tests.conftest import FakeFlights, route
 
 VAGUE = BriefPatch()
 FULL = BriefPatch(
@@ -155,7 +156,9 @@ def test_should_start_over_for_a_new_trip(sessionmaker):
 
 def test_should_show_destination_cards_with_facts_for_the_month(sessionmaker):
     state = TripState(brief(kinds=["sea"], month=11))
-    registry = ToolRegistry(trip_tools(state, sessionmaker))
+    registry = ToolRegistry(
+        trip_tools(state, sessionmaker, flights=FakeFlights({"HRG": route(330, price=12_775)}))
+    )
     picks = [
         {"id": "hurghada", "why": "Тёплое море и 5 часов лёту", "tradeoff": "Ветрено"},
         {"id": "atlantis", "why": "Нет такого"},
@@ -168,7 +171,8 @@ def test_should_show_destination_cards_with_facts_for_the_month(sessionmaker):
     [card] = result.event["cards"]
     assert card["id"] == "hurghada" and card["why"] == "Тёплое море и 5 часов лёту"
     assert card["climate"]["month"] == "ноябрь" and card["climate"]["sea"] >= 24
-    assert card["country_code"] == "EG" and card["flight_hours"]
+    assert card["country_code"] == "EG" and card["flight_hours"] == 5.5
+    assert card["flight"]["price_rub"] == 12_775 and card["flight"]["airline_name"] == "Аэрофлот"
     assert result.event["summary"] == ["Море", "Ноябрь"]
     assert json.loads(result.content)["unknown"] == ["atlantis"]
     assert state.brief.shown == ["hurghada"]

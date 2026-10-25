@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.flights import Flights
 from app.llm import LLM
 from app.tools import ToolRegistry
 
@@ -20,9 +21,14 @@ def get_tools(request: Request) -> ToolRegistry:
     return request.app.state.tools
 
 
+def get_flights(request: Request) -> Flights:
+    return request.app.state.flights
+
+
 SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_sessionmaker)]
 Llm = Annotated[LLM, Depends(get_llm)]
 Tools = Annotated[ToolRegistry, Depends(get_tools)]
+FlightPrices = Annotated[Flights, Depends(get_flights)]
 
 
 async def get_db(sessionmaker: SessionFactory) -> AsyncIterator[AsyncSession]:

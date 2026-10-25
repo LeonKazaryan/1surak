@@ -2,6 +2,8 @@ export interface ChatRequest {
   query: string
   chat_id?: string
   origin?: string
+  /** IATA code of the departure city: the agent searches real tickets from it. */
+  origin_code?: string
   answers?: BriefAnswers
 }
 
@@ -53,6 +55,24 @@ export interface DestinationClimate {
   rain_days?: number
 }
 
+/** A real Aviasales ticket: the cheapest one way, one passenger, found in the last days. */
+export interface FlightTicket {
+  price_rub: number
+  airline: string
+  airline_name: string
+  logo: string
+  flight_number: string
+  transfers: number
+  hours: number
+  departure: string
+  link: string
+}
+
+export interface RouteFlight extends FlightTicket {
+  direct_available: boolean
+  direct_option?: FlightTicket
+}
+
 export interface DestinationCard {
   id: string
   name: string
@@ -69,6 +89,7 @@ export interface DestinationCard {
   kids: string
   kids_fit: 'good' | 'ok' | 'poor'
   climate: DestinationClimate | null
+  flight?: RouteFlight | null
   highlights: string[]
   watch_out: string[]
   why: string

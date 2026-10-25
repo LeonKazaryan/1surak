@@ -188,3 +188,25 @@ def test_should_reject_invalid_card_answers(client):
     response = client.post("/api/chat/stream", json={"query": "Море", "answers": {"adults": 0}})
 
     assert response.status_code == 422
+
+
+def test_should_search_from_the_departure_city_of_the_request(settings):
+    from app.flights import current_origin
+
+    seen = []
+
+    async def where(args: EchoArgs) -> dict:
+        seen.append(current_origin.get())
+        return {"text": args.text}
+
+    tools = ToolRegistry([Tool(name="where", title="Где", description="x", args=EchoArgs, handler=where)])
+    llm = FakeLLM(rounds=[[ToolCall(id="c1", name="where", arguments='{"text": "?"}')], ["Ок"]])
+    with TestClient(create_app(settings, llm=llm, tools=tools)) as test_client:
+        stream_events(test_client, {"query": "Хочу к морю", "origin": "Астана", "origin_code": "NQZ"})
+
+    assert seen == ["NQZ"]
+    assert current_origin.get() == "MOW"  # reset after the turn
+
+
+def test_should_reject_an_origin_code_that_is_not_iata(client):
+    assert client.post("/api/chat/stream", json={"query": "Море", "origin_code": "astana"}).status_code == 422

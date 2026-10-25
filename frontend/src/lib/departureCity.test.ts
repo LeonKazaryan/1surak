@@ -17,8 +17,8 @@ describe('departureCity', () => {
     expect(getDepartureCity()).toMatchObject({ code: 'KZN', name: 'Казань' })
   })
 
-  it('should fall back to Moscow when the saved code is unknown', () => {
-    localStorage.setItem('1surak.departureCity', 'XXX')
+  it('should fall back to Moscow when the saved value is broken', () => {
+    localStorage.setItem('1surak.departureCity', '{"code":"astana"}')
 
     expect(getDepartureCity().name).toBe('Москва')
   })

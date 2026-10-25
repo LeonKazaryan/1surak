@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog.catalog import (
     KIDS_LABELS,
     KIND_LABELS,
-    ORIGIN_NAME,
     PRICE_LABELS,
+    RAIL_ORIGIN,
     VISA_LABELS,
     Catalog,
     Kind,
@@ -22,6 +22,8 @@ from app.catalog.catalog import (
 )
 from app.facts.resolve import Resolution
 from app.facts.service import Resolved, resolve_entities
+from app.flights import City, Flights, RouteFlights
+from app.flights.dictionary import rub
 
 MONTHS = [
     "январь",
@@ -59,8 +61,10 @@ MAX_NEAR_MISSES = 6
 SOURCES_NOTE = {
     "климат": "Open-Meteo (ERA5), средние за 2020–2024",
     "море": "Open-Meteo Marine, средние за 2021–2024",
-    "перелёты, визы, цены, дети": "оценка команды 1surak на 25.10.2026, не сверено с официальными источниками",
-    "время в пути": f"из города {ORIGIN_NAME}, типичное, без пересадок",
+    "перелёты": "Aviasales (Travelpayouts): самые дешёвые билеты, найденные за последние дни, в одну сторону "
+    "на человека; не живой поиск, цена может измениться",
+    "поезда": "оценка команды, только из Москвы",
+    "визы, уровень цен, дети": "оценка команды 1surak на 25.10.2026, не сверено с официальными источниками",
 }
 
 
@@ -78,7 +82,10 @@ class SearchQuery(BaseModel):
     max_flight_hours: float | None = Field(
         None, gt=0, le=20, description="Longest acceptable flight from Moscow, h."
     )
-    direct_only: bool = Field(False, description="Only places with direct flights from Moscow.")
+    direct_only: bool = Field(False, description="Only places with direct flights from the user's city.")
+    max_ticket_rub: int | None = Field(
+        None, gt=0, description="Most a one-way ticket per person may cost, RUB (real Aviasales prices)."
+    )
     without_flight: bool = Field(False, description="Only places reachable by train from Moscow.")
     visa: Literal["any", "no_visa", "easy"] = Field(
         "any", description="no_visa: domestic or visa-free; easy: also visa on arrival or e-visa."
@@ -110,13 +117,24 @@ class Snapshot:
 
     place: Place
     climate: dict[int, dict[str, float]] = field(default_factory=dict)
-    flight_min: float | None = None
-    direct: bool | None = None
+    flights: RouteFlights | None = None  # real tickets from the user's city, filled per search
     train_min: float | None = None
     visa_rule: str = "visa_required"
     visa_days: float | None = None
     visa_note: str | None = None
     flags: list[str] = field(default_factory=list)
+
+    @property
+    def flight_min(self) -> int | None:
+        return self.flights.duration_min if self.flights else None
+
+    @property
+    def direct(self) -> bool | None:
+        return None if self.flights is None else self.flights.direct is not None
+
+    @property
+    def ticket_rub(self) -> int | None:
+        return self.flights.cheapest.price if self.flights else None
 
 
 def _note_quality(snapshot: Snapshot, label: str, resolution: Resolution) -> None:
@@ -146,8 +164,6 @@ def build_snapshot(place: Place, place_facts: Resolved, route: Resolved, country
         }
         if values:
             snapshot.climate[month] = values
-    snapshot.flight_min = _value(snapshot, route, "flight_duration", "перелёт")
-    snapshot.direct = _value(snapshot, route, "direct", "прямой рейс")
     snapshot.train_min = _value(snapshot, route, "train_duration", "поезд")
     snapshot.visa_rule = _value(snapshot, country, "visa_rule", "виза") or "visa_required"
     snapshot.visa_days = _value(snapshot, country, "visa_days", "срок без визы")
@@ -158,11 +174,30 @@ def build_snapshot(place: Place, place_facts: Resolved, route: Resolved, country
 async def load_snapshots(db: AsyncSession, catalog: Catalog, now: datetime) -> list[Snapshot]:
     places = catalog.places
     place_facts = await resolve_entities(db, "place", [p.qid for p in places], now)
-    routes = await resolve_entities(db, "route", [p.route_id for p in places], now)
+    routes = await resolve_entities(db, "route", [p.rail_route_id for p in places], now)
     countries = await resolve_entities(db, "country", sorted({p.country.code for p in places}), now)
     return [
-        build_snapshot(p, place_facts[p.qid], routes[p.route_id], countries[p.country.code]) for p in places
+        build_snapshot(p, place_facts[p.qid], routes[p.rail_route_id], countries[p.country.code])
+        for p in places
     ]
+
+
+async def with_flights(
+    snapshots: list[Snapshot],
+    flights: Flights,
+    origin: str,
+    month: int | None,
+    q: "SearchQuery | None" = None,
+) -> list[Snapshot]:
+    """Real tickets from the user's city to every place the query could pick, fetched in parallel.
+    Train times are measured from Moscow, so from anywhere else they are dropped rather than misleading."""
+    wanted = [s for s in snapshots if s.place.airport and (q is None or in_scope(s, q))]
+    found = await flights.routes(origin, sorted({s.place.airport for s in wanted}), month)
+    for s in snapshots:
+        s.flights = found.get(s.place.airport) if s.place.airport else None
+        if origin != RAIL_ORIGIN:
+            s.train_min = None
+    return snapshots
 
 
 def _hours(minutes: float | None) -> float | None:
@@ -213,7 +248,7 @@ def _climate_miss(q: SearchQuery, value: float | None, threshold: float, what: s
     return Miss(reason, kind, (threshold - value) / 3)
 
 
-def failures(s: Snapshot, q: SearchQuery) -> list[Miss]:
+def failures(s: Snapshot, q: SearchQuery, origin: str = "из вашего города") -> list[Miss]:
     """Every adjustable constraint this place misses, in words the agent can pass on."""
     place, misses = s.place, []
     month_climate = s.climate.get(q.month, {}) if q.month else {}
@@ -230,12 +265,15 @@ def failures(s: Snapshot, q: SearchQuery) -> list[Miss]:
     else:
         if q.max_flight_hours is not None:
             if s.flight_min is None:
-                misses.append(Miss(f"нет рейса из города {ORIGIN_NAME}", "flight", 3.0))
+                misses.append(Miss(f"не нашлось билетов {origin}", "flight", 3.0))
             elif s.flight_min / 60 > q.max_flight_hours:
                 reason = f"перелёт около {_hours(s.flight_min):g} ч, нужно до {q.max_flight_hours:g} ч"
                 misses.append(Miss(reason, "flight", (s.flight_min / 60 - q.max_flight_hours) / 2))
         if q.direct_only and not s.direct:
-            misses.append(Miss("нет прямых рейсов", "direct", 1.0))
+            misses.append(Miss(f"нет прямых рейсов {origin}", "direct", 1.0))
+        if q.max_ticket_rub is not None and s.ticket_rub is not None and s.ticket_rub > q.max_ticket_rub:
+            reason = f"билет от {rub(s.ticket_rub)}, нужно до {rub(q.max_ticket_rub)}"
+            misses.append(Miss(reason, "ticket", (s.ticket_rub - q.max_ticket_rub) / q.max_ticket_rub * 2))
 
     allowed = {"no_visa": NO_VISA, "easy": EASY_VISA}.get(q.visa)
     if allowed is not None and s.visa_rule not in allowed:
@@ -317,6 +355,7 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         "kinds": [KIND_LABELS[k] for k in place.kinds],
         "flight_hours": _hours(s.flight_min),
         "direct_flight": s.direct,
+        "flight": s.flights.view() if s.flights else None,
         "train_hours": _hours(s.train_min),
         "airport": place.airport,
         "visa": _visa_text(s),
@@ -354,6 +393,7 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "kinds": list(place.kinds),
         "flight_hours": _hours(s.flight_min),
         "direct": s.direct,
+        "flight": s.flights.view() if s.flights else None,
         "train_hours": _hours(s.train_min),
         "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
         "visa_easy": s.visa_rule in EASY_VISA,
@@ -367,12 +407,13 @@ def card(s: Snapshot, month: int | None = None) -> dict:
     }
 
 
-def search(snapshots: list[Snapshot], q: SearchQuery) -> dict:
+def search(snapshots: list[Snapshot], q: SearchQuery, origin: City | None = None) -> dict:
+    origin_text = origin.from_text if origin else "из вашего города"
     candidates = [s for s in snapshots if in_scope(s, q)]
-    checked = [(s, failures(s, q)) for s in candidates]
+    checked = [(s, failures(s, q, origin_text)) for s in candidates]
     matches = sorted((s for s, why in checked if not why), key=lambda s: _rank(s, q))
     return {
-        "from": ORIGIN_NAME,
+        "from": origin.name if origin else None,
         "month": MONTHS[q.month - 1] if q.month else None,
         "matches": [describe(s, q.month) for s in matches[: q.limit]],
         "more_matches": max(0, len(matches) - q.limit),

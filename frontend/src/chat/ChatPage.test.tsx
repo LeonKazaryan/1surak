@@ -68,13 +68,13 @@ describe('ChatPage', () => {
   })
 
   it('should send the chosen departure city with the request', async () => {
-    localStorage.setItem('1surak.departureCity', 'KZN')
+    localStorage.setItem('1surak.departureCity', JSON.stringify({ code: 'KZN', name: 'Казань' }))
     streamReply([], { type: 'done', answer: 'Ок', chat_id: 'chat-1', title: 'Море' })
     renderChat({ pathname: '/chat', state: { query: 'Хочу к морю' } })
 
     await waitFor(() =>
       expect(sendChatStream).toHaveBeenCalledWith(
-        expect.objectContaining({ query: 'Хочу к морю', origin: 'Казань' }),
+        expect.objectContaining({ query: 'Хочу к морю', origin: 'Казань', origin_code: 'KZN' }),
         expect.any(Function),
         expect.anything(),
       ),
@@ -383,6 +383,18 @@ describe('ChatPage', () => {
       watch_out: ['ветрено'],
       why: `${name} подходит`,
       tradeoff: 'Ветрено вечером',
+      flight: {
+        price_rub: 12775,
+        airline: 'NE',
+        airline_name: 'Nesma Airlines',
+        logo: 'https://pics.avs.io/64/64/NE.png',
+        flight_number: 'NE 609',
+        transfers: 0,
+        hours: 5.5,
+        departure: '2026-11-07 14:30',
+        link: 'https://www.aviasales.ru/search/MOW0711HRG1',
+        direct_available: true,
+      },
     })
     streamReply(
       [
@@ -398,7 +410,11 @@ describe('ChatPage', () => {
     expect(screen.getByText('Шарм-эль-Шейх подходит')).toBeInTheDocument()
     expect(screen.getByText('Лучшее совпадение')).toBeInTheDocument()
     expect(screen.getAllByText('+26°')).toHaveLength(2)
-    expect(screen.getAllByText('4,5 ч · прямой')).toHaveLength(2)
+    const ticket = screen.getAllByRole('link', { name: /Nesma Airlines/ })[0]
+    expect(ticket).toHaveAttribute('href', 'https://www.aviasales.ru/search/MOW0711HRG1')
+    expect(ticket).toHaveTextContent(/прямой · 5,5 ч/)
+    expect(ticket).toHaveTextContent(/7 ноя, от/)
+    expect(ticket).toHaveTextContent(/12\s775\s₽/)
 
     streamReply([], { type: 'done', answer: 'Отличный выбор', chat_id: 'chat-1', title: 'Море' })
     await userEvent.click(screen.getAllByRole('button', { name: 'Выбрать' })[1])

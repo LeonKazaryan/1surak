@@ -19,8 +19,8 @@ CURATED_PATH = ROOT / "curated" / "places.json"
 GEO_PATH = ROOT / "seed" / "places_geo.json"
 SEED_FACTS_PATH = ROOT / "seed" / "facts.json"
 
-ORIGIN = "MOW"
-ORIGIN_NAME = "Москва"
+# Train times are the team's estimates from Moscow; flights come live from the user's city (app.flights).
+RAIL_ORIGIN = "MOW"
 CURATED_SOURCE = "1surak-curated"
 CURATED_ON = datetime(2026, 10, 25, tzinfo=UTC)
 
@@ -70,9 +70,7 @@ class Place:
     kids: KidsFit
     highlights: tuple[str, ...]
     watch_out: tuple[str, ...]
-    # curated route numbers, turned into facts by curated_facts()
-    flight_min: int | None
-    direct: bool
+    # curated train time from Moscow, turned into a fact by curated_facts()
     train_min: int | None
 
     @property
@@ -80,8 +78,8 @@ class Place:
         return self.country.code == "RU"
 
     @property
-    def route_id(self) -> str:
-        return f"{ORIGIN}>{self.qid}"
+    def rail_route_id(self) -> str:
+        return f"{RAIL_ORIGIN}>{self.qid}"
 
 
 @dataclass(frozen=True)
@@ -137,8 +135,6 @@ def parse_catalog(curated: dict, geo: dict) -> Catalog:
                 kids=p["kids"],
                 highlights=tuple(p["highlights"]),
                 watch_out=tuple(p["watch_out"]),
-                flight_min=p["flight_min"],
-                direct=p["direct"],
                 train_min=p["train_min"],
             )
         )
@@ -168,11 +164,8 @@ def curated_facts(catalog: Catalog) -> list[Fact]:
     """Our hand-made numbers as facts: tier 'community', kind 'estimated', so any real source wins."""
     result: list[Fact] = []
     for place in catalog.places:
-        if place.flight_min is not None:
-            result.append(_curated("route", place.route_id, "flight_duration", place.flight_min, "min"))
-            result.append(_curated("route", place.route_id, "direct", place.direct))
         if place.train_min is not None:
-            result.append(_curated("route", place.route_id, "train_duration", place.train_min, "min"))
+            result.append(_curated("route", place.rail_route_id, "train_duration", place.train_min, "min"))
     for country in catalog.countries.values():
         result.append(_curated("country", country.code, "visa_rule", country.visa))
         result.append(_curated("country", country.code, "visa_note", country.visa_note))

@@ -9,6 +9,8 @@ from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
+from app.flights import NoFlights, TravelpayoutsFlights
+from app.flights.router import router as places_router
 from app.kb.page import page_tools_for
 from app.kb.seed import load_kb_seed
 from app.kb.web import web_search_for
@@ -45,12 +47,20 @@ def create_app(
         app.state.llm = llm or build_llm(settings)
         if settings.seed_catalog:
             await _load_seed(app.state.sessionmaker)
+        flights = (
+            TravelpayoutsFlights(settings.travelpayouts_token)
+            if settings.travelpayouts_token
+            else NoFlights()
+        )
+        if isinstance(flights, NoFlights):
+            log.warning("TRAVELPAYOUTS_TOKEN is not set, the agent has no flight prices")
+        app.state.flights = flights
         if tools is not None:
             app.state.tools = tools
         else:
             web = web_search_for(settings, app.state.llm)
             pages = page_tools_for(settings, app.state.llm) if web is not None else None
-            app.state.tools = build_registry(app.state.sessionmaker, web, pages)
+            app.state.tools = build_registry(app.state.sessionmaker, web, pages, flights)
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield
@@ -63,6 +73,7 @@ def create_app(
         return {"status": "ok"}
 
     app.include_router(chats_router)
+    app.include_router(places_router)
     mount_spa(app, Path(settings.static_dir))
     return app
 

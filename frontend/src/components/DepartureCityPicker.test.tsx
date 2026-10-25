@@ -5,11 +5,21 @@ import { DepartureCityPicker } from './DepartureCityPicker'
 
 const WHEREAMI = { iata: 'NQZ', name: 'Астана', country_name: 'Казахстан', coordinates: '71.42:51.14' }
 const KAZAN = [{ code: 'KZN', name: 'Казань', country_name: 'Россия', coordinates: { lat: 55.79, lon: 49.12 } }]
+const NEARBY = {
+  items: [
+    { code: 'NQZ', name: 'Астана', country: 'Казахстан' },
+    { code: 'KGF', name: 'Караганда', country: 'Казахстан' },
+    { code: 'PWQ', name: 'Павлодар', country: 'Казахстан' },
+  ],
+}
 
 function mockApi(whereami: unknown = WHEREAMI) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => ({ ok: true, json: async () => (url.includes('whereami') ? whereami : KAZAN) })),
+    vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => (url.includes('whereami') ? whereami : url.includes('/api/places/nearby') ? NEARBY : KAZAN),
+    })),
   )
 }
 
@@ -27,11 +37,11 @@ describe('DepartureCityPicker', () => {
 
   it('should keep a city the user picked before over the detected one', async () => {
     mockApi()
-    localStorage.setItem('1surak.departureCity', 'LED')
+    localStorage.setItem('1surak.departureCity', JSON.stringify({ code: 'LED', name: 'Санкт-Петербург' }))
     render(<DepartureCityPicker />)
 
     await waitFor(() => expect(fetch).toHaveBeenCalled())
-    expect(screen.getByRole('button', { name: 'Город вылета: Санкт-Петербург' })).toHaveTextContent('Петербург')
+    expect(screen.getByRole('button', { name: 'Город вылета: Санкт-Петербург' })).toBeInTheDocument()
   })
 
   it('should list the nearest cities first and find any city by name', async () => {
@@ -40,11 +50,13 @@ describe('DepartureCityPicker', () => {
     render(<DepartureCityPicker />)
     await user.click(await screen.findByRole('button', { name: 'Город вылета: Астана' }))
 
-    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    const options = await waitFor(() => {
+      const shown = screen.getAllByRole('option').map((o) => o.textContent)
+      expect(shown).toHaveLength(3) // Astana once, as «рядом с вами», then its neighbours
+      return shown
+    })
     expect(options[0]).toContain('рядом с вами')
-    expect(options[1]).toContain('Новосибирск') // the neighbours of Astana come first
-    expect(options.join()).toContain('Алматы')
-    expect(options.join()).not.toContain('Минск') // too far to suggest
+    expect(options[1]).toContain('Караганда')
 
     await user.type(screen.getByRole('textbox', { name: 'Поиск города вылета' }), 'каз')
     await user.click(await screen.findByRole('option', { name: /Казань/ }))

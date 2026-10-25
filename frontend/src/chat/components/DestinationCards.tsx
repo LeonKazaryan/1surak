@@ -14,8 +14,8 @@ import {
   SunIcon,
 } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { DestinationCard, DestinationsEvent } from '@/types/api'
-import { flagEmoji } from '../widgets'
+import type { DestinationCard, DestinationsEvent, FlightTicket, RouteFlight } from '@/types/api'
+import { flagEmoji, formatRub, plural } from '../widgets'
 import { TripArt } from './TripArt'
 
 const grid: Variants = {
@@ -43,6 +43,74 @@ function hours(value: number): string {
 
 function temp(value: number): string {
   return `${value > 0 ? '+' : ''}${value}°`
+}
+
+const MONTHS_GEN = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
+function shortDate(departure: string): string {
+  const [, month, day] = departure.slice(0, 10).split('-').map(Number)
+  return month ? `${day} ${MONTHS_GEN[month - 1]}` : ''
+}
+
+function stopsText(t: FlightTicket): string {
+  return t.transfers === 0 ? 'прямой' : `${t.transfers} ${plural(t.transfers, ['пересадка', 'пересадки', 'пересадок'])}`
+}
+
+function AirlineLogo({ ticket, className }: { ticket: FlightTicket; className?: string }) {
+  return (
+    <img
+      src={ticket.logo}
+      srcSet={`${ticket.logo.replace('/64/64/', '/128/128/')} 2x`}
+      alt=""
+      loading="lazy"
+      className={cn('shrink-0 rounded-md bg-white object-contain ring-1 ring-border', className)}
+      onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+    />
+  )
+}
+
+/** The real ticket as a strip: airline, stops, time in the air, date, price; opens it on Aviasales. */
+function TicketStrip({ flight }: { flight: RouteFlight }) {
+  const direct = flight.direct_option
+  return (
+    <div className="flex flex-col gap-1.5">
+      <a
+        href={flight.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group/ticket flex items-center gap-3 rounded-2xl border border-border bg-inset px-3 py-2.5 transition-colors hover:border-highlight/30 hover:bg-accent/60"
+      >
+        <AirlineLogo ticket={flight} className="h-9 w-9 p-0.5" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-foreground">{flight.airline_name}</span>
+          <span className="block truncate text-[12px] text-muted-foreground">
+            <span className={flight.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(flight)}</span>
+            {flight.hours > 0 && ` · ${hours(flight.hours)}`}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-[11px] text-faint">{shortDate(flight.departure)}, от</span>
+          <span className="block text-[15px] leading-tight font-semibold text-foreground tabular-nums">
+            {formatRub(flight.price_rub)}
+          </span>
+        </span>
+      </a>
+      {direct && (
+        <a
+          href={direct.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <AirlineLogo ticket={direct} className="h-4 w-4" />
+          <span className="truncate">
+            Прямой рейс {direct.airline_name} от {formatRub(direct.price_rub)}
+            {direct.hours > 0 && `, ${hours(direct.hours)}`}
+          </span>
+        </a>
+      )}
+    </div>
+  )
 }
 
 function travelText(card: DestinationCard): string | null {
@@ -152,8 +220,10 @@ function Card({ card, best, picked, dimmed, canPick, onPick }: CardProps) {
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="m-0 text-[14px] leading-relaxed text-foreground">{card.why}</p>
+        {card.flight && <TicketStrip flight={card.flight} />}
         <ul className="m-0 grid list-none grid-cols-2 gap-x-3 gap-y-2 p-0">
-          {travel && <Fact icon={PaperAirplaneIcon}>{travel}</Fact>}
+          {!card.flight && travel && <Fact icon={PaperAirplaneIcon}>{travel}</Fact>}
+          {!card.flight && !travel && <Fact icon={PaperAirplaneIcon} tone="warn">билетов не нашлось</Fact>}
           <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
             {card.visa}
           </Fact>

@@ -141,7 +141,7 @@ export function useChatSession(urlChatId: string | undefined) {
       const pump = createTextPump((shown) => patch({ content: shown }))
 
       sendChatStream(
-        { query, chat_id: run.chatId, origin: getDepartureCity().name, answers },
+        { query, chat_id: run.chatId, origin: getDepartureCity().name, origin_code: getDepartureCity().code, answers },
         (event) => {
           if (!isCurrent()) return
           if (event.type === 'assistant_token') {

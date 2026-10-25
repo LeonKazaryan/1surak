@@ -7,6 +7,7 @@ from app.catalog.catalog import Country, Place
 from app.catalog.search import SearchQuery, Snapshot, build_snapshot, search
 from app.facts.model import Fact
 from app.facts.resolve import resolve
+from tests.conftest import route
 
 NOV = 11
 NOW = datetime(2026, 10, 25, tzinfo=UTC)
@@ -29,8 +30,6 @@ def place(id: str, country: Country = TURKEY, kinds=("sea",), price=2, kids="goo
         kids=kids,
         highlights=(),
         watch_out=(),
-        flight_min=None,
-        direct=True,
         train_min=None,
     )
 
@@ -42,8 +41,7 @@ def snap(p: Place, sea=None, air=None, flight=None, train=None, direct=True) -> 
     return Snapshot(
         place=p,
         climate=climate,
-        flight_min=flight,
-        direct=direct,
+        flights=route(flight, direct) if flight is not None else None,
         train_min=train,
         visa_rule=p.country.visa,
         visa_days=p.country.visa_days,

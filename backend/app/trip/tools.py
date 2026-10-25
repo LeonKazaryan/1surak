@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
-from app.catalog.search import card, load_snapshots
+from app.catalog.search import card, load_snapshots, with_flights
+from app.flights import Flights, NoFlights, current_origin
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
     SLOTS,
@@ -106,8 +107,10 @@ def trip_tools(
     state: TripState,
     sessionmaker: async_sessionmaker[AsyncSession],
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    flights: Flights | None = None,
 ) -> list[Tool]:
     catalog = load_catalog()
+    flights = flights or NoFlights()
 
     async def update_trip_brief(args: UpdateArgs) -> dict:
         base = TripBrief() if args.new_trip else state.brief
@@ -149,7 +152,13 @@ def trip_tools(
 
     async def show_destinations(args: ShowArgs) -> dict | ToolReply:
         async with sessionmaker() as db:
-            snapshots = {s.place.id: s for s in await load_snapshots(db, catalog, now())}
+            loaded = await load_snapshots(db, catalog, now())
+        picked = {p.id for pick in args.picks if (p := catalog.find(pick.id))}
+        # the same tickets the search saw: cached by the flights client, so this costs no requests
+        await with_flights(
+            [s for s in loaded if s.place.id in picked], flights, current_origin.get(), state.brief.month
+        )
+        snapshots = {s.place.id: s for s in loaded}
         cards, unknown = [], []
         for pick in args.picks:
             place = catalog.find(pick.id)

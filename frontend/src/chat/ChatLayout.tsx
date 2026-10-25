@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { deleteChat, fetchChats } from '@/api/client'
+import { detectCity, saveDepartureCity, savedDepartureCity } from '@/lib/departureCity'
 import type { ChatMeta } from '@/types/api'
 import { getMyChats, removeMyChat } from './chatStorage'
 import { ChatSidebar } from './ChatSidebar'
@@ -25,6 +26,16 @@ export default function ChatLayout() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [recentChats, setRecentChats] = useState<ChatMeta[]>([])
   const [recentLoading, setRecentLoading] = useState(() => getMyChats().length > 0)
+
+  useEffect(() => {
+    // Opened straight on /chat, the landing never detected the city: do it here, once.
+    if (savedDepartureCity()) return
+    const controller = new AbortController()
+    detectCity(controller.signal)
+      .then((city) => city && !savedDepartureCity() && saveDepartureCity(city))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     const ids = getMyChats()

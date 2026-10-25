@@ -29,6 +29,7 @@ docker compose up --build
 | `LLM_API_KEY` | пусто | ключ API; без ключа отвечает заглушка |
 | `LLM_MODEL` | пусто | имя модели; без него отвечает заглушка |
 | `LLM_TIMEOUT_S` | `60` | таймаут запроса к модели, секунды |
+| `TRAVELPAYOUTS_TOKEN` | пусто | токен Aviasales Data API: реальные билеты из города пользователя; без него перелётов нет |
 | `OPENAI_API_KEY` | пусто | можно вместо `LLM_API_KEY` |
 | `SEARCH_PROVIDER` | `auto` | веб-поиск для базы знаний: Brave (если есть ключ), затем Tavily, затем поиск OpenAI; `none` выключает |
 | `BRAVE_API_KEY` | пусто | ключ Brave Search API (эндпоинт LLM Context) |
@@ -69,6 +70,7 @@ chats/service     ход диалога: история → агент → со�
 agent             цикл агента: модель вызывает инструменты, код их выполняет и возвращает результат
 tools             реестр инструментов: схема аргументов, проверка, таймаут, ошибки уходят модели
 catalog           справочник направлений и инструменты search_destinations, get_destination
+flights           реальные билеты Aviasales (Travelpayouts) из города пользователя, справочники городов и авиакомпаний, search_flights
 trip              бриф поездки чата и инструменты update_trip_brief, ask_user, show_destinations
 facts             факты с источником и датой; при расхождении источников видны оба значения
 kb                база знаний: поиск (SQLite FTS5), веб-поиск и запись найденного с источником (инструмент research)

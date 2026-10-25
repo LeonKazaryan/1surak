@@ -3,10 +3,9 @@ import { Popover } from 'radix-ui'
 import { MagnifyingGlassIcon, MapPinIcon } from '@heroicons/react/24/outline'
 import { cn } from '@/components/ui/utils'
 import {
-  DEPARTURE_CITIES,
   detectCity,
   getDepartureCity,
-  nearestFirst,
+  nearbyCities,
   saveDepartureCity,
   savedDepartureCity,
   searchCities,
@@ -14,7 +13,6 @@ import {
 } from '@/lib/departureCity'
 
 const SEARCH_DELAY_MS = 250
-const SUGGESTED = 8
 
 function CityRow({ city, active, note, onPick }: { city: DepartureCity; active: boolean; note?: string; onPick: () => void }) {
   return (
@@ -44,19 +42,23 @@ export function DepartureCityPicker() {
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
   const [found, setFound] = useState<DepartureCity[] | null>(null)
+  const [nearby, setNearby] = useState<DepartureCity[]>([])
 
   useEffect(() => {
     const controller = new AbortController()
     detectCity(controller.signal)
-      .then((detected) => {
+      .then(async (detected) => {
         if (!detected) return
         setHere(detected)
         if (!savedDepartureCity()) {
           saveDepartureCity(detected)
           setCity(detected)
         }
+        if (detected.lat !== undefined && detected.lon !== undefined) {
+          setNearby(await nearbyCities(detected.lat, detected.lon, controller.signal))
+        }
       })
-      .catch(() => {}) // offline or blocked: the saved city or Moscow stays
+      .catch(() => {}) // offline or blocked: the saved city stays, and search still works
     return () => controller.abort()
   }, [])
 
@@ -84,8 +86,7 @@ export function DepartureCityPicker() {
   }
 
   const searching = term.trim().length >= 2
-  const nearby = here?.lat !== undefined ? nearestFirst(DEPARTURE_CITIES, { lat: here.lat, lon: here.lon! }) : DEPARTURE_CITIES
-  const suggestions = nearby.filter((c) => c.code !== here?.code).slice(0, SUGGESTED)
+  const suggestions = nearby.filter((c) => c.code !== here?.code)
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -94,7 +95,7 @@ export function DepartureCityPicker() {
         className="inline-flex h-8 items-center gap-1 rounded-full bg-secondary/60 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
       >
         <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-highlight" />
-        {city.short ?? city.name}
+        {city.name}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -128,9 +129,11 @@ export function DepartureCityPicker() {
             ) : (
               <>
                 {here && <CityRow city={here} active={here.code === city.code} note="рядом с вами" onPick={() => choose(here)} />}
-                <p className="m-0 px-2.5 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase">
-                  {here ? 'Ближайшие' : 'Популярные'}
-                </p>
+                {suggestions.length > 0 ? (
+                  <p className="m-0 px-2.5 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase">Ближайшие</p>
+                ) : (
+                  !here && <p className="m-0 px-2.5 py-3 text-sm text-muted-foreground">Начните вводить город</p>
+                )}
                 {suggestions.map((c) => (
                   <CityRow key={c.code} city={c} active={c.code === city.code} onPick={() => choose(c)} />
                 ))}

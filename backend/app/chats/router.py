@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from app.chats import repository, service
 from app.chats.schemas import ChatListResponse, ChatMessagesResponse, ChatMeta, ChatRequest
-from app.deps import Db, Llm, SessionFactory, Tools
+from app.deps import Db, FlightPrices, Llm, SessionFactory, Tools
 
 router = APIRouter(prefix="/api", tags=["Chats"])
 
@@ -35,10 +35,12 @@ async def _ndjson(events: AsyncIterator[dict]) -> AsyncIterator[bytes]:
 
 @router.post("/chat/stream")
 async def chat_stream(
-    body: ChatRequest, sessionmaker: SessionFactory, llm: Llm, tools: Tools
+    body: ChatRequest, sessionmaker: SessionFactory, llm: Llm, tools: Tools, flights: FlightPrices
 ) -> StreamingResponse:
     chat_id = str(body.chat_id or uuid4())
-    events = service.stream_reply(sessionmaker, llm, chat_id, body.query, body.origin, tools, body.answers)
+    events = service.stream_reply(
+        sessionmaker, llm, chat_id, body.query, body.origin, tools, body.answers, body.origin_code, flights
+    )
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 
 
