@@ -12,7 +12,7 @@ describe('departureCity', () => {
   })
 
   it('should read back the saved city', () => {
-    saveDepartureCity('KZN')
+    saveDepartureCity({ code: 'KZN', name: 'Казань' })
 
     expect(getDepartureCity()).toMatchObject({ code: 'KZN', name: 'Казань' })
   })
