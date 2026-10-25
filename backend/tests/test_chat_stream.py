@@ -73,7 +73,7 @@ def test_should_send_previous_turns_to_llm_when_chat_continues(client, fake_llm)
     stream_events(client, {"query": "Первый вопрос", "chat_id": chat_id})
     stream_events(client, {"query": "Второй вопрос", "chat_id": chat_id})
 
-    second_call = fake_llm.calls[1]
+    second_call = fake_llm.conversations[1]
     turns = [(m["role"], m["content"]) for m in second_call if m["role"] != "system"]
     assert turns == [
         ("user", "Первый вопрос"),
@@ -131,7 +131,7 @@ def test_should_emit_error_and_done_without_leaking_details_when_llm_fails(setti
 def test_should_pass_the_departure_city_in_the_user_turn_not_the_system_prompt(client, fake_llm):
     stream_events(client, {"query": "Хочу к морю", "origin": "  Казань "})
 
-    system, *_, last = fake_llm.calls[0]
+    system, *_, last = fake_llm.conversations[0]
     assert last == {"role": "user", "content": "Хочу к морю\n\nГород вылета: Казань"}
     assert "Казань" not in system["content"]
 
@@ -147,7 +147,7 @@ def test_should_save_the_message_without_the_departure_city(client):
 def test_should_send_the_query_unchanged_when_no_city_is_chosen(client, fake_llm):
     stream_events(client, {"query": "Хочу к морю"})
 
-    assert fake_llm.calls[0][-1] == {"role": "user", "content": "Хочу к морю"}
+    assert fake_llm.conversations[0][-1] == {"role": "user", "content": "Хочу к морю"}
 
 
 def test_should_reject_a_too_long_departure_city(client):

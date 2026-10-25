@@ -14,11 +14,20 @@ SEARCH_DESCRIPTION = (
     "Returns the matches with facts (climate for the month, flight hours, visa, price level, highlights, risks) "
     "and near_misses: places that failed exactly one filter, with the reason. Use near_misses to explain "
     "what was excluded and why. Climate comes from Open-Meteo; flights, visas and prices are team estimates "
-    "(see sources), so say so when the user relies on them. Flight times are from Moscow only."
+    "(see sources), so say so when the user relies on them. Flight times are from Moscow only. When the "
+    "user asks where a number comes from, name the source from `sources` (e.g. Open-Meteo for climate).\n"
+    "Turn the user's words into filters: «тёплое море» means min_sea_temp 24 (relax to 22 only if nothing "
+    "matches, and say so); «без долгих перелётов» means max_flight_hours 5 to 6; «недорого» means "
+    "max_price_level 1 or 2; «с ребёнком» means with_kids; «без самолёта» means without_flight. A beach or "
+    "sea holiday in a named month («на море в ноябре», «beach trip in November») means min_sea_temp 22 or more. "
+    "Always pass the month when the user names a time of year.\n"
+    "In the answer, after the picks, name 1 to 3 near_misses the user might have expected, with the reason."
 )
 DETAILS_DESCRIPTION = (
     "Full card of one destination: climate for every month, flight and train time from Moscow, visa, "
-    "price level, kids, highlights and risks. Pass the id from search_destinations, or the place name."
+    "price level, kids, highlights and risks. Pass the id from search_destinations, or the place name. "
+    "The card has no local detail: for which area or beach to choose, where to eat, what to do with kids, "
+    "entry documents or transport, call research as well."
 )
 
 

@@ -53,6 +53,7 @@ class Country:
     visa: VisaRule
     visa_days: int | None
     visa_note: str
+    name_en: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,14 @@ class Catalog:
     places: tuple[Place, ...]
     countries: dict[str, Country]
 
+    def find_country(self, key: str) -> Country | None:
+        """By ISO code, Russian or English name; «ОАЭ», «UAE» and «Эмираты» style aliases are not covered."""
+        needle = key.strip().casefold()
+        for country in self.countries.values():
+            if needle in (country.code.casefold(), country.name.casefold(), country.name_en.casefold()):
+                return country
+        return None
+
     def find(self, key: str) -> Place | None:
         """By our id, QID or name (case-insensitive), since the model may pass any of them."""
         needle = key.strip().casefold()
@@ -106,7 +115,7 @@ def _read(path: Path):
 
 def parse_catalog(curated: dict, geo: dict) -> Catalog:
     countries = {
-        code: Country(code, c["name"], c["visa"], c["visa_days"], c["visa_note"])
+        code: Country(code, c["name"], c["visa"], c["visa_days"], c["visa_note"], c.get("name_en", ""))
         for code, c in curated["countries"].items()
     }
     places = []

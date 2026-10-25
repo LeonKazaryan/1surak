@@ -46,6 +46,14 @@ class OpenAICompatibleLLM:
         self._client = client
         self._model = model
 
+    @property
+    def client(self) -> Any:
+        return self._client
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
         kwargs: dict[str, Any] = {"model": self._model, "messages": messages, "stream": True}
         if tools:  # some providers reject an empty tools list

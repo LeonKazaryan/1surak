@@ -146,6 +146,17 @@ An example `kb_write` entry as the agent sends it:
 - **Stale or conflicting entries** found by the background job.
 - **Wrong facts** caught in our eval set ([06](./06-test-queries.md)): any answer that cites an expired or rejected entry counts as an error.
 
+## What's built (25 Oct)
+
+- **One tool, `research(question, topic, place?, country?, fresh?)`,** instead of separate `kb_search` / `web_search` / `kb_write`. It searches the KB, falls back to Tavily when there's no good fresh answer, and writes every web result back with its source. One tool keeps the model's job simple; separate `kb_write` for distilled one-claim facts is the next step.
+- **Storage:** `kb_entries` in the same SQLite plus an FTS5 index. Russian word forms are handled by cutting endings and searching by prefix (`визы` → `виз*`), no stemming library.
+- **A stored entry answers the question** when it covers half of the question's terms or at least three of them. Soft topics (tip, guide, food, hotel) need one such entry, time-sensitive ones two.
+- **`fresh: true`** re-checks the web, but entries checked within the last day are still used.
+- **Each passage returns `published` (when the page says) and `checked` (when we read it)**, so the agent doesn't pass our fetch date off as the publication date.
+- **Seed:** Wikivoyage passages for every catalogue place (`backend/app/kb/seed/`, built by `python -m scripts.build_kb_seed`), loaded on first start.
+- **Excluded from search:** OTAs and social video sites (Instagram, YouTube, TikTok).
+- **Evals:** 11 cases in `backend/evals/cases.json` need research; the report counts how many research calls were answered from the KB versus the web.
+
 ## Research findings (25 Oct)
 
 ### Which search provider

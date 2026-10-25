@@ -1,4 +1,4 @@
-.PHONY: up down logs test lint
+.PHONY: up down logs test lint eval
 
 up:
 	docker compose up --build
@@ -16,3 +16,7 @@ test:
 lint:
 	cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check .
 	cd frontend && npm run lint
+
+# Runs evals/cases.json through the real model from .env (costs tokens). EVAL_ARGS="--case golden"
+eval:
+	cd backend && .venv/bin/python -m evals.run $(EVAL_ARGS)

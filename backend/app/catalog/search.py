@@ -84,6 +84,9 @@ class SearchQuery(BaseModel):
         "any", description="no_visa: domestic or visa-free; easy: also visa on arrival or e-visa."
     )
     with_kids: bool = Field(False, description="Travelling with small children.")
+    kids_ages: list[int] | None = Field(
+        None, description="Children's ages if the user named them. Leave empty when they didn't: don't guess."
+    )
     max_price_level: int | None = Field(None, ge=1, le=3, description="1 budget, 2 mid-range, 3 expensive.")
     region: Literal["any", "russia", "abroad"] = "any"
     exclude: list[str] = Field(
@@ -258,10 +261,29 @@ def near_misses(checked: list[tuple[Snapshot, list[Miss]]], q: SearchQuery) -> l
     ]
 
 
+SWIM_WARM_C = 24
+SWIM_OK_C = 21
+
+
+def _sea_bucket(sea: float | None) -> int:
+    """0 warm, 1 swimmable, 2 cold, 3 unknown: for a sea trip this matters more than the flight."""
+    if sea is None:
+        return 3
+    return 0 if sea >= SWIM_WARM_C else 1 if sea >= SWIM_OK_C else 2
+
+
 def _rank(s: Snapshot, q: SearchQuery) -> tuple:
     travel = s.train_min if q.without_flight else s.flight_min
-    sea = s.climate.get(q.month, {}).get("sea_temp", 0) if q.month else 0
-    return (travel if travel is not None else 10_000, s.place.price_level, -sea)
+    sea = s.climate.get(q.month, {}).get("sea_temp") if q.month else None
+    sea_trip = q.month is not None and (
+        q.min_sea_temp is not None or (q.kinds is not None and "sea" in q.kinds)
+    )
+    return (
+        _sea_bucket(sea) if sea_trip else 0,
+        travel if travel is not None else 10_000,
+        s.place.price_level,
+        -(sea or 0),
+    )
 
 
 def _visa_text(s: Snapshot) -> str:
@@ -317,6 +339,22 @@ def search(snapshots: list[Snapshot], q: SearchQuery) -> dict:
         "near_misses": near_misses(checked, q),
         "checked": len(candidates),
         "sources": SOURCES_NOTE,
+        **_missing(q),
+    }
+
+
+def _missing(q: SearchQuery) -> dict:
+    """What the user hasn't told us yet that changes the pick. The tool says it, so the model asks."""
+    missing = []
+    if q.with_kids and not q.kids_ages:
+        missing.append("возраст детей (от него зависят отели, перелёт и пляж)")
+    if q.month is None:
+        missing.append("когда ехать")
+    if not missing:
+        return {}
+    return {
+        "missing": missing,
+        "ask": f"Закончи ответ одним вопросом про {missing[0].split(' (')[0]}.",
     }
 
 

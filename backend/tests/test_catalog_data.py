@@ -74,3 +74,16 @@ def test_should_not_use_long_dashes_in_user_facing_text():
 def test_should_define_every_country_a_place_uses(catalog):
     used = {p.country.code for p in catalog.places}
     assert used <= set(_read(CURATED_PATH)["countries"])
+
+
+def test_should_keep_every_kb_seed_passage_sourced_licensed_and_tied_to_a_place(catalog):
+    from app.kb.seed import seed_entries
+
+    ids = {p.id for p in catalog.places}
+    entries = seed_entries()
+    assert len(entries) >= 300
+    for e in entries:
+        assert "wikivoyage.org/w/index.php?" in e.source_url and "oldid=" in e.source_url, e.source_url
+        assert e.attributes["licence"] == "CC BY-SA 4.0"
+        assert e.place_id in ids
+    assert len({e.place_id for e in entries}) >= 45

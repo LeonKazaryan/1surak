@@ -9,6 +9,8 @@ from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
+from app.kb.seed import load_kb_seed
+from app.kb.web import web_search_for
 from app.llm import LLM, StubLLM, build_llm
 from app.spa import mount_spa
 from app.tools import ToolRegistry, build_registry
@@ -18,11 +20,15 @@ log = logging.getLogger(__name__)
 
 
 async def _load_seed(sessionmaker) -> None:
-    # A broken seed must not take the whole app down: chat still works, the agent just has no catalogue.
+    # A broken seed must not take the whole app down: chat still works, the agent just knows less.
     try:
         await load_catalog_facts(sessionmaker)
     except Exception:
         log.exception("Could not load the destination catalogue seed")
+    try:
+        await load_kb_seed(sessionmaker)
+    except Exception:
+        log.exception("Could not load the knowledge base seed")
 
 
 def create_app(
@@ -38,7 +44,8 @@ def create_app(
         app.state.llm = llm or build_llm(settings)
         if settings.seed_catalog:
             await _load_seed(app.state.sessionmaker)
-        app.state.tools = tools if tools is not None else build_registry(app.state.sessionmaker)
+        web = web_search_for(settings, app.state.llm)
+        app.state.tools = tools if tools is not None else build_registry(app.state.sessionmaker, web)
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield

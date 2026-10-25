@@ -88,3 +88,17 @@ def test_should_assemble_tool_calls_from_streamed_fragments():
         ToolCall(id="call_b", name="get_flights", arguments="{}"),
     ]
     assert completions.kwargs["tools"] == tools
+
+
+def test_should_accept_openai_api_key_as_the_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "from-openai-var")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    assert Settings(_env_file=None).llm_api_key == "from-openai-var"
+
+
+def test_should_prefer_llm_api_key_over_openai_api_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.setenv("LLM_API_KEY", "llm")
+
+    assert Settings(_env_file=None).llm_api_key == "llm"

@@ -21,11 +21,17 @@ class FakeLLM:
         self.chunks = chunks if chunks is not None else ["При", "вет"]
         self.error = error
         self.rounds = list(rounds) if rounds is not None else None
-        self.calls: list[list[dict]] = []
+        self.calls: list[list[dict]] = []  # exactly what the model saw
+        self.conversations: list[list[dict]] = []  # the same without the reminders appended at the end
         self.tools_seen: list[list[dict] | None] = []
 
     async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
-        self.calls.append([dict(m) for m in messages])
+        seen = [dict(m) for m in messages]
+        self.calls.append(seen)
+        end = len(seen)
+        while end > 1 and seen[end - 1]["role"] == "system":
+            end -= 1
+        self.conversations.append(seen[:end])
         self.tools_seen.append(tools)
         script = self.rounds.pop(0) if self.rounds else self.chunks
         for item in script:

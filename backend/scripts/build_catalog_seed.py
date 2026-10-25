@@ -33,7 +33,7 @@ PAUSE_S = 3.0
 CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "build_catalog_seed"
 
 
-def get_json(url: str, params: dict, cache: bool = False) -> dict:
+def get_json(url: str, params: dict, cache: bool = False, pause_s: float = PAUSE_S) -> dict:
     full_url = f"{url}?{urllib.parse.urlencode(params)}"
     cached = CACHE_DIR / f"{hashlib.sha256(full_url.encode()).hexdigest()[:24]}.json"
     if cache and cached.exists():
@@ -53,7 +53,7 @@ def get_json(url: str, params: dict, cache: bool = False) -> dict:
     if cache:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         cached.write_text(json.dumps(data), encoding="utf-8")
-        time.sleep(PAUSE_S)  # only pause after real network calls
+        time.sleep(pause_s)  # only pause after real network calls
     return data
 
 

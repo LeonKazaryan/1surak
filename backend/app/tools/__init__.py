@@ -5,8 +5,11 @@ from app.tools.registry import Tool, ToolRegistry, ToolResult
 __all__ = ["Tool", "ToolRegistry", "ToolResult", "build_registry"]
 
 
-def build_registry(sessionmaker: async_sessionmaker[AsyncSession]) -> ToolRegistry:
-    """The tools the agent can call. Flights, hotels and the rest get added here."""
-    from app.catalog.tools import catalog_tools  # the catalogue imports Tool from this package
+def build_registry(sessionmaker: async_sessionmaker[AsyncSession], web=None) -> ToolRegistry:
+    """The tools the agent can call. Flights, hotels and the rest get added here.
+    `web` is the web search for the knowledge base; None keeps research to the stored base."""
+    # imported here: these modules import Tool from this package
+    from app.catalog.tools import catalog_tools
+    from app.kb.tools import research_tool
 
-    return ToolRegistry(catalog_tools(sessionmaker))
+    return ToolRegistry([*catalog_tools(sessionmaker), research_tool(sessionmaker, web)])

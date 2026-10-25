@@ -85,10 +85,10 @@ def test_should_match_the_golden_query_and_explain_every_near_miss(world):
     assert "kazan" not in why  # misses on two counts (no sea data, not a sea place), so it isn't "near"
 
 
-def test_should_rank_matches_by_travel_time_then_price(world):
-    result = search(world, SearchQuery(month=NOV, min_sea_temp=20))
+def test_should_rank_other_trips_by_travel_time_then_price(world):
+    result = search(world, SearchQuery(region="russia", limit=10))
 
-    assert [m["id"] for m in result["matches"]] == ["antalya", "hurghada", "dubai", "phuket"]
+    assert [m["id"] for m in result["matches"]] == ["kazan", "sochi", "kamchatka"]
 
 
 def test_should_say_when_sea_data_is_missing_instead_of_guessing(world):
@@ -194,3 +194,24 @@ def test_should_not_call_a_far_miss_near(world):
 
     assert [m["id"] for m in result["matches"]] == ["sochi"]
     assert result["near_misses"] == []  # «no train there» is a different trip, not a near miss
+
+
+def test_should_rank_a_sea_trip_by_how_warm_the_sea_is_before_flight_time(world):
+    result = search(world, SearchQuery(month=NOV, kinds=["sea"], limit=10))
+
+    ids = [m["id"] for m in result["matches"]]
+    assert ids.index("hurghada") < ids.index("antalya") < ids.index("sochi")  # 26 °C, 21 °C, 15 °C
+    assert ids[:3] == ["hurghada", "dubai", "phuket"]  # all ≥ 24 °C, then by flight time
+
+
+def test_should_tell_the_agent_to_ask_for_the_kids_age_when_it_is_unknown(world):
+    without_age = search(world, golden())
+    with_age = search(world, golden().model_copy(update={"kids_ages": [5]}))
+
+    assert without_age["missing"][0].startswith("возраст детей")
+    assert without_age["ask"] == "Закончи ответ одним вопросом про возраст детей."
+    assert "missing" not in with_age and "ask" not in with_age
+
+
+def test_should_tell_the_agent_to_ask_when_to_go_without_a_month(world):
+    assert search(world, SearchQuery(kinds=["sea"]))["missing"] == ["когда ехать"]
