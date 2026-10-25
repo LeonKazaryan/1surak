@@ -145,3 +145,44 @@ An example `kb_write` entry as the agent sends it:
 - **Citation rate:** the share of answers where every fact cites an entry.
 - **Stale or conflicting entries** found by the background job.
 - **Wrong facts** caught in our eval set ([06](./06-test-queries.md)): any answer that cites an expired or rejected entry counts as an error.
+
+## Research findings (25 Oct)
+
+### Which search provider
+
+| Provider | Free tier | Russia | Clean passages | Excludes domains | Verdict |
+|---|---|---|---|---|---|
+| **Tavily** | 1,000 credits/month, no card; a **keyless mode** with rate limits | Terms §17.1 list Russia as embargoed. Not checked whether Russian IPs are actually blocked | Yes, about 500-character chunks per source | Yes, up to 150 | **Primary.** Tested keyless: a Russian query about Kazan with kids gave good Russian results in about 3 s |
+| **Yandex Search API** | None listed; about ₽488 per 1,000 sync searches | No sanctions risk | No, short snippets; pages need fetching and cleaning | Probably `-site:` (unverified) | **Fallback.** Best Russian index, more setup (Yandex Cloud billing, service account) |
+| Exa | $10/month credits | Not named in terms, reachability unverified | Yes | Yes | Russian quality untested |
+| Brave | $5/month credit, card required | Russia reportedly on its unavailable list | Snippets only | Goggles | Storing results needs a plan with storage rights |
+| Serper, DuckDuckGo, Perplexity, Jina | | | | | Snippets only, no storing allowed, rate-limited, or answers instead of passages |
+
+- **Before relying on Tavily, test it from a Russian IP**, since that's where the jury runs it.
+- If the team won't accept the Tavily terms risk, make Yandex the primary.
+- Sources: [Tavily credits](https://docs.tavily.com/guides/api-credits), [Tavily keyless](https://docs.tavily.com/documentation/keyless.md), [Tavily terms](https://www.tavily.com/terms), [Yandex Search API pricing](https://aistudio.yandex.ru/docs/en/search-api/pricing), [Exa pricing](https://exa.ai/pricing), [Brave Search API](https://brave.com/search/api/).
+
+### Filling the seed KB
+
+- **Wikivoyage first, ru then en.**
+  - Sections map cleanly to topics. In ru: Понять → `guide`, Как добраться / Транспорт → `transport`, Достопримечательности / Чем заняться → `tip`, Меры предосторожности → `safety`.
+  - ru coverage is uneven. Good for Сочи, Бали, Казань, Пхукет, Тбилиси, Анталья; thin for Дубай, Мальдивы; Хургада is an empty skeleton.
+  - When a ru section is under about 300 characters, take the en section, translate it, and record the en URL plus "translated".
+- **Fetch with `action=parse` per section, not TextExtracts.** TextExtracts silently drops listing templates: for Анталья «Достопримечательности» it gave 1k characters against 10k from `action=parse`.
+- **Send a descriptive User-Agent** (e.g. `beshparmak-kb/0.1 (repo URL)`) and sleep about 1 s between requests. Bare requests failed.
+- Store `revid` with each passage.
+- **Chunks** of about 150–350 words, split on subsections then paragraphs, never across a top-level section. Prefix the text with «Анталья — Чем заняться:» before embedding.
+- **ru Wikipedia** is good for overview paragraphs (`exintro=1`) and climate tables, weak for tips.
+- **Visa rules:** the ru Wikipedia page «Визовые требования для граждан России» is actively maintained (edited 23 Oct) and parses into (country, regime, days, note). The `passport-index-dataset` on GitHub is archived with Jan 2025 data, so it's a cross-check only.
+- **Licence:** Wikivoyage and Wikipedia are CC BY-SA 4.0. Each passage keeps its `source_url`, and the KB file carries this notice:
+  > Destination texts are adapted from Wikivoyage and Wikipedia, © their contributors, CC BY-SA 4.0. Passages were split, trimmed and in some cases machine-translated; each passage's `source_url` and `revid` identify the original.
+
+### Extra guardrails
+
+- **Exclude OTAs from search results** (rules 6.5 and 6.6): booking.com, ostrovok.ru, and also tutu.ru, travel.yandex.ru, tripadvisor and similar. tutu.ru sells hotels and showed up in a test search.
+- **Never block the trip.** Web search runs with a short timeout (about 5 s) and in parallel with the flight and hotel tools. If it fails, the plan still renders.
+- **Optional by config.** With `SEARCH_PROVIDER` empty, the agent reads only the KB and never calls out.
+
+### Still open
+
+- How well SQLite full-text search handles Russian word endings («отели» vs «отель»), and whether we need stemming, trigrams or vectors. The research on this didn't finish; pick it up before building `kb_search`.

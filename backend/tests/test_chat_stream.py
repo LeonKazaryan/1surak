@@ -2,9 +2,35 @@ import json
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
+from app.llm import ToolCall
 from app.main import create_app
+from app.tools import Tool, ToolRegistry
 from tests.conftest import FakeLLM
+
+
+class EchoArgs(BaseModel):
+    text: str
+
+
+async def _echo(args: EchoArgs) -> dict:
+    return {"text": args.text}
+
+
+def echo_tools() -> ToolRegistry:
+    return ToolRegistry(
+        [
+            Tool(
+                name="echo",
+                title="Повторяю",
+                description="Echo",
+                args=EchoArgs,
+                handler=_echo,
+                preview=lambda r: r["text"],
+            )
+        ]
+    )
 
 
 def stream_events(client, body: dict) -> list[dict]:
@@ -14,17 +40,10 @@ def stream_events(client, body: dict) -> list[dict]:
     return [json.loads(line) for line in response.text.splitlines() if line.strip()]
 
 
-def test_should_stream_tokens_inside_a_visible_agent_step_then_done(client):
+def test_should_stream_tokens_then_done(client):
     events = stream_events(client, {"query": "Привет"})
 
-    assert [e["type"] for e in events] == [
-        "tool_start",
-        "assistant_token",
-        "assistant_token",
-        "tool_end",
-        "done",
-    ]
-    assert events[0]["title"] and events[0]["name"] == events[3]["name"]
+    assert [e["type"] for e in events] == ["assistant_token", "assistant_token", "done"]
     assert "".join(e["text"] for e in events if e["type"] == "assistant_token") == "Привет"
     done = events[-1]
     assert done["answer"] == "Привет"
@@ -32,16 +51,21 @@ def test_should_stream_tokens_inside_a_visible_agent_step_then_done(client):
     assert done["title"] == "Привет"
 
 
-def test_should_persist_user_and_assistant_messages_with_agent_steps(client):
-    done = stream_events(client, {"query": "Хочу к морю"})[-1]
+def test_should_persist_user_and_assistant_messages_with_agent_steps(settings):
+    llm = FakeLLM(rounds=[[ToolCall(id="c1", name="echo", arguments='{"text": "море"}')], ["Нашёл"]])
+    with TestClient(create_app(settings, llm=llm, tools=echo_tools())) as test_client:
+        events = stream_events(test_client, {"query": "Хочу к морю"})
+        messages = test_client.get(f"/api/chats/{events[-1]['chat_id']}/messages").json()["messages"]
 
-    messages = client.get(f"/api/chats/{done['chat_id']}/messages").json()["messages"]
-
+    assert [e["type"] for e in events] == ["tool_start", "tool_end", "assistant_token", "done"]
     assert [(m["role"], m["content"]) for m in messages] == [
         ("user", "Хочу к морю"),
-        ("assistant", "Привет"),
+        ("assistant", "Нашёл"),
     ]
-    assert [step["type"] for step in messages[1]["trace"]] == ["tool_start", "tool_end"]
+    trace = messages[1]["trace"]
+    assert [step["type"] for step in trace] == ["tool_start", "tool_end"]
+    assert trace[0]["title"] == "Повторяю" and trace[0]["args"] == {"text": "море"}
+    assert trace[1]["output_preview"] == "море"
 
 
 def test_should_send_previous_turns_to_llm_when_chat_continues(client, fake_llm):

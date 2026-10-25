@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app import agent
 from app.chats import repository
 from app.llm import LLM
+from app.tools import ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ async def stream_reply(
     chat_id: str,
     query: str,
     origin: str | None = None,
+    tools: ToolRegistry | None = None,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -46,7 +48,8 @@ async def stream_reply(
     trace: list[dict] = []
     failed = finished = False
     try:
-        async for event in agent.run(llm, [*history, {"role": "user", "content": query}], origin):
+        turns = [*history, {"role": "user", "content": query}]
+        async for event in agent.run(llm, turns, tools, origin=origin):
             if event["type"] == "assistant_token":
                 answer_parts.append(event["text"])
             else:

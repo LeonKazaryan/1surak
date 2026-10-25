@@ -4,19 +4,32 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
 
 
 class FakeLLM:
-    def __init__(self, chunks: list[str] | None = None, error: Exception | None = None):
+    """Scripted model. `chunks` is the text reply for every call; `rounds` scripts one reply per call,
+    where a str is streamed text and a ToolCall is a tool request."""
+
+    def __init__(
+        self,
+        chunks: list[str] | None = None,
+        error: Exception | None = None,
+        rounds: list[list[str | ToolCall]] | None = None,
+    ):
         self.chunks = chunks if chunks is not None else ["При", "вет"]
         self.error = error
+        self.rounds = list(rounds) if rounds is not None else None
         self.calls: list[list[dict]] = []
+        self.tools_seen: list[list[dict] | None] = []
 
-    async def stream(self, messages: list[dict]) -> AsyncIterator[str]:
-        self.calls.append(messages)
-        for chunk in self.chunks:
-            yield chunk
+    async def stream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[LLMEvent]:
+        self.calls.append([dict(m) for m in messages])
+        self.tools_seen.append(tools)
+        script = self.rounds.pop(0) if self.rounds else self.chunks
+        for item in script:
+            yield TextDelta(item) if isinstance(item, str) else item
         if self.error:
             raise self.error
 
