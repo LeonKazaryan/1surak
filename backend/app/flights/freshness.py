@@ -2,6 +2,8 @@
 
 Prices for a trip next week move within hours; for one in three months they hardly move in a day.
 A price past its expiry is still shown for a while (STALE_FOR) while a fresh one loads in the background.
+Routes people keep asking for are refreshed before they expire (Popularity + the client's refresher),
+so a popular search never waits on Aviasales.
 """
 
 import asyncio
@@ -47,3 +49,30 @@ class RateLimit:
                 self._at = self._clock()
                 self._tokens = 1
             self._tokens -= 1
+
+
+HALF_LIFE = timedelta(hours=6)  # a lookup counts half as much six hours later
+
+
+class Popularity:
+    """How often each key was asked for lately: every lookup adds 1, and the total halves every HALF_LIFE."""
+
+    def __init__(self):
+        self._scores: dict = {}  # key > (score, at)
+
+    def touch(self, key, now: datetime) -> None:
+        self._scores[key] = (self.score(key, now) + 1, now)
+
+    def score(self, key, now: datetime) -> float:
+        found = self._scores.get(key)
+        if found is None:
+            return 0.0
+        value, at = found
+        return value * 0.5 ** ((now - at) / HALF_LIFE)
+
+    def hottest(self, keys, now: datetime, at_least: float) -> list:
+        """`keys` ordered by score, only those with `at_least`; forgets keys that cooled down to nothing."""
+        for key in [k for k in self._scores if self.score(k, now) < 0.05]:
+            del self._scores[key]
+        scored = [(self.score(k, now), k) for k in keys]
+        return [k for value, k in sorted(scored, key=lambda x: -x[0]) if value >= at_least]

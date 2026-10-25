@@ -8,13 +8,13 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
 from app.flights.dictionary import airline_name, city_code, logo_url
-from app.flights.freshness import STALE_FOR, RateLimit, fare_ttl
+from app.flights.freshness import STALE_FOR, Popularity, RateLimit, fare_ttl
 
 if TYPE_CHECKING:
     from app.flights.fares import FareStore
@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 AVIASALES = "https://www.aviasales.ru"
 MAX_PARALLEL = 8
-TICKETS_PER_ROUTE = 30
+TICKETS_PER_ROUTE = 100  # more tickets, more days in the calendar (by_day)
 
 FareKey = tuple[str, str, str]  # origin city, destination city, "YYYY-MM" or "" for the nearest dates
 
@@ -41,6 +41,25 @@ class Ticket:
     transfers: int
     duration_min: int
     link: str
+
+    @property
+    def departs(self) -> datetime | None:
+        try:
+            return datetime.fromisoformat(self.departure_at)
+        except ValueError:
+            return None
+
+    @property
+    def arrives(self) -> datetime | None:
+        """Departure plus duration: aware datetimes, so time zones need no care."""
+        start = self.departs
+        return start + timedelta(minutes=self.duration_min) if start and self.duration_min else None
+
+    @property
+    def day(self) -> date | None:
+        """The local departure day."""
+        start = self.departs
+        return start.date() if start else None
 
     def view(self) -> dict:
         return {
@@ -63,6 +82,11 @@ class RouteFlights:
     cheapest: Ticket
     direct: Ticket | None  # the cheapest without transfers, if any
     fastest: Ticket
+    # the cheapest ticket for each departure day we saw, by date: the calendar connections are built from
+    by_day: tuple[Ticket, ...] = ()
+
+    def on(self, day: date) -> Ticket | None:
+        return next((t for t in self.by_day if t.day == day), None)
 
     @property
     def duration_min(self) -> int:
@@ -124,10 +148,15 @@ def summarize(rows: list[dict]) -> RouteFlights | None:
         return None
     direct = [t for t in tickets if t.transfers == 0]
     timed = [t for t in tickets if t.duration_min] or tickets
+    days: dict[date, Ticket] = {}
+    for t in sorted(tickets, key=lambda t: (t.price, t.transfers)):
+        if t.day:
+            days.setdefault(t.day, t)
     return RouteFlights(
         cheapest=min(tickets, key=lambda t: t.price),
         direct=min(direct, key=lambda t: t.price) if direct else None,
         fastest=min(timed, key=lambda t: (t.duration_min or 10**6, t.price)),
+        by_day=tuple(days[d] for d in sorted(days)),
     )
 
 
@@ -158,6 +187,7 @@ class TravelpayoutsFlights:
         self._limit = RateLimit(per_minute)
         self._inflight: dict[FareKey, asyncio.Task] = {}
         self._background: set[asyncio.Task] = set()
+        self._popular = Popularity()
 
     async def start(self) -> None:
         """Teaches the route map what the stored fares already showed."""
@@ -169,6 +199,33 @@ class TravelpayoutsFlights:
         """Waits for the background refreshes: for tests and shutdown."""
         while self._background:
             await asyncio.gather(*list(self._background), return_exceptions=True)
+
+    async def refresh_due(
+        self, budget: int, ahead: timedelta = timedelta(minutes=30), at_least: float = 2.0
+    ) -> int:
+        """Refreshes up to `budget` popular fares that expire within `ahead` (or already have).
+        Returns how many were asked. Fares nobody asked for twice lately are left to expire."""
+        now = self._clock()
+        for key in [k for k, (expires, _) in self._cache.items() if expires <= now - STALE_FOR]:
+            del self._cache[key]  # too old to show: the next lookup fetches anyway
+        due = [
+            k for k, (expires, _) in self._cache.items() if expires <= now + ahead and k not in self._inflight
+        ]
+        chosen = self._popular.hottest(due, now, at_least)[:budget]
+        if chosen:
+            await self._fetch(set(chosen))
+        return len(chosen)
+
+    async def keep_fresh(self, every: timedelta, budget: int) -> None:
+        """Runs refresh_due forever: started at app startup, cancelled at shutdown."""
+        while True:
+            await asyncio.sleep(every.total_seconds())
+            try:
+                asked = await self.refresh_due(budget)
+                if asked:
+                    log.info("Refreshed %d popular fares", asked)
+            except Exception:
+                log.exception("Fare refresh failed")
 
     async def route(self, origin: str, destination: str, month: int | None = None) -> RouteFlights | None:
         return (await self.routes(origin, [destination], month))[destination]
@@ -186,6 +243,8 @@ class TravelpayoutsFlights:
         now = self._clock()
         found: dict[FareKey, RouteFlights | None] = {}
         stale: set[FareKey] = set()
+        for key in keys:
+            self._popular.touch(key, now)
 
         def use(key: FareKey, expires: datetime, result: RouteFlights | None) -> None:
             found[key] = result

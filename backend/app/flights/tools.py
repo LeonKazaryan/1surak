@@ -21,8 +21,9 @@ PLAN_DESCRIPTION = (
     "Aviasales ticket and returns ranked plans with legs, total price and travel time. With order_fixed=false "
     "it finds the best order of the stops (up to 5). Legs without a price say whether the route map has a "
     "direct flight and the estimated hours; places without an airport (Суздаль, Анапа) go by train from "
-    "Moscow. Tell the user each leg is a separate ticket, and that prices are the cheapest found for the "
-    "month, not for the exact day."
+    "Moscow. A leg may have `cheaper_via`: two tickets through a hub that save money, with the layover; "
+    "offer it with its extra hours. Tell the user each leg is a separate ticket. Prices are the cheapest "
+    "for the month unless the leg says exact_day: true."
 )
 
 
@@ -122,7 +123,7 @@ def flight_tools(flights: Flights) -> list[Tool]:
         plans = await plan(request, flights, network())
         notes = ["Каждый перелёт — отдельный билет в одну сторону: пересадки между ними на свой риск."]
         if args.date_from:
-            notes.append("Цена — самая низкая за месяц вылета у Aviasales, не на эту дату.")
+            notes.append("exact_day: false — цена самая низкая за месяц вылета у Aviasales, не на эту дату.")
         return {
             "from": home_city.name,
             "return_home": args.return_home,

@@ -5,16 +5,19 @@ Aviasales has no price, the route map says whether a direct flight exists and ho
 A catalogue place without an airport (Suzdal, Anapa) is reached by train, from Moscow only.
 
 Plans are ranked by a score in roubles: ticket price + time + transfers, weighted by the preference.
+For the best plan, each flight leg is also tried through up to three hubs (connections.py), and a
+connection that saves real money is offered next to the leg's own ticket.
 """
 
 import asyncio
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from typing import Literal
 
 from app.catalog.catalog import RAIL_ORIGIN, Catalog
 from app.flights.client import Flights, RouteFlights, Ticket
+from app.flights.connections import Connection, connect, hubs
 from app.flights.dictionary import City, cities, city
 from app.flights.network import Network
 
@@ -28,6 +31,8 @@ WEIGHTS: dict[str, tuple[int, int]] = {
 UNPRICED_RUB = 100_000  # a leg we have no price for ranks as an expensive one, never as a free one
 MAX_OPEN_STOPS = 5  # 5! = 120 orders and 30 fares; more would be slow for a chat answer
 TOP_PLANS = 3
+MIN_SAVING_RUB = 2_000  # a connection on separate tickets has to be worth the risk
+MIN_SAVING_SHARE = 0.15
 
 Mode = Literal["flight", "train", "none"]
 
@@ -71,10 +76,16 @@ class Leg:
     minutes: int | None = None  # the ticket's, the train's, or the map's estimate
     direct_on_map: bool = False
     train_min: int | None = None  # a train alternative to a flight
+    exact_day: bool = False  # the ticket flies on `day`, not just some day that month
+    via: Connection | None = None  # a clearly better way through a hub, on separate tickets
 
     @property
     def price(self) -> int | None:
         return self.ticket.price if self.ticket else None
+
+    @property
+    def best_price(self) -> int | None:
+        return self.via.price if self.via else self.price
 
     def view(self) -> dict:
         view: dict = {"from": self.origin.name, "to": self.destination.name, "mode": self.mode}
@@ -82,6 +93,8 @@ class Leg:
             view["date"] = self.day.isoformat()
         if self.ticket:
             view["ticket"] = self.ticket.view()
+            if self.day:
+                view["exact_day"] = self.exact_day
             if self.route and self.route.direct and self.route.direct is not self.ticket:
                 view["direct_option"] = self.route.direct.view()
         elif self.mode == "flight":
@@ -91,6 +104,11 @@ class Leg:
             view["est_hours"] = _hours(self.minutes)
         if self.train_min is not None:
             view["train_hours"] = _hours(self.train_min)
+        if self.via:
+            view["cheaper_via"] = {
+                **self.via.view(),
+                "saves_rub": self.price - self.via.price if self.price is not None else None,
+            }
         return view
 
 
@@ -110,7 +128,7 @@ class Plan:
     def view(self) -> dict:
         priced = [leg.price for leg in self.legs if leg.price is not None]
         minutes = [leg.minutes for leg in self.legs if leg.minutes is not None]
-        return {
+        view = {
             "order": [s.name for s in self.stops],
             "total_price_rub": sum(priced) if priced else None,
             "unpriced_legs": sum(1 for leg in self.legs if leg.mode == "flight" and leg.price is None),
@@ -120,6 +138,10 @@ class Plan:
             "travel_hours": _hours(sum(minutes)) if minutes else None,
             "legs": [leg.view() for leg in self.legs],
         }
+        if any(leg.via for leg in self.legs):
+            best = [leg.best_price for leg in self.legs if leg.best_price is not None]
+            view["total_with_connections_rub"] = sum(best)
+        return view
 
 
 FareKey = tuple[str, str, int | None]  # origin city, destination city, month
@@ -129,9 +151,13 @@ def _hours(minutes: int) -> float:
     return round(minutes / 60 * 2) / 2
 
 
-def _ticket_score(ticket: Ticket, preference: str) -> float:
+def _score(preference: str):
     per_hour, per_transfer = WEIGHTS[preference]
-    return ticket.price + per_hour * ticket.duration_min / 60 + per_transfer * ticket.transfers
+    return lambda price, minutes, transfers: price + per_hour * minutes / 60 + per_transfer * transfers
+
+
+def _ticket_score(ticket: Ticket, preference: str) -> float:
+    return _score(preference)(ticket.price, ticket.duration_min, ticket.transfers)
 
 
 def best_ticket(route: RouteFlights, preference: str) -> Ticket:
@@ -162,7 +188,8 @@ def make_leg(
     if origin.code and destination.code:
         route = fares.get((origin.code, destination.code, month))
         if route:
-            ticket = best_ticket(route, preference)
+            on_day = route.on(day) if day else None
+            ticket = on_day or best_ticket(route, preference)
             score = _ticket_score(ticket, preference)
             return Leg(
                 *where,
@@ -173,6 +200,7 @@ def make_leg(
                 minutes=ticket.duration_min,
                 direct_on_map=route.direct is not None,
                 train_min=train,
+                exact_day=on_day is not None,
             )
         link = network.link(origin.code, destination.code)
         minutes = link.minutes if link else network.estimate(origin.code, destination.code)
@@ -259,4 +287,49 @@ async def plan(request: Request, flights: Flights, network: Network) -> list[Pla
         result.legs = [make_leg(a, b, m, d, fares, network, request.preference) for a, b, m, d in legs]
         plans.append(result)
     plans.sort(key=lambda p: p.score)
-    return plans[:TOP_PLANS]
+    plans = plans[:TOP_PLANS]
+    if plans and plans[0].possible:
+        await add_connections(plans[0], flights, network, request.preference)
+    return plans
+
+
+async def add_connections(chosen: Plan, flights: Flights, network: Network, preference: str) -> None:
+    """Offers a hub on each flight leg where it pays off (see _worth_it)."""
+    wanted = [
+        (i, leg, hubs(network, leg.origin.code, leg.destination.code))
+        for i, leg in enumerate(chosen.legs)
+        if leg.mode == "flight" and leg.origin.code and leg.destination.code
+    ]
+    keys = {
+        key
+        for _, leg, found in wanted
+        for hub in found
+        for key in ((leg.origin.code, hub, leg.month), (hub, leg.destination.code, leg.month))
+    }
+    if not keys:
+        return
+    fares = await _fares(flights, keys)
+    score = _score(preference)
+    for i, leg, found in wanted:
+        options = []
+        for hub in found:
+            first = fares.get((leg.origin.code, hub, leg.month))
+            second = fares.get((hub, leg.destination.code, leg.month))
+            if first and second and (c := connect(city(hub), first, second, score, leg.day)):
+                options.append((score(c.price, c.minutes, c.transfers), c))
+        if not options:
+            continue
+        value, best = min(options, key=lambda o: o[0])
+        if _worth_it(leg, best, value, preference):
+            chosen.legs[i] = replace(leg, via=best)
+
+
+def _worth_it(leg: Leg, via: Connection, value: float, preference: str) -> bool:
+    """A leg without a price takes any connection. Otherwise the connection is an option next to the
+    ticket, shown with its hours, so it needs to save real money; for «fastest» it must also score better."""
+    if leg.price is None:
+        return True
+    saves = leg.price - via.price
+    if saves < max(MIN_SAVING_RUB, MIN_SAVING_SHARE * leg.price):
+        return False
+    return preference != "fastest" or value < leg.score

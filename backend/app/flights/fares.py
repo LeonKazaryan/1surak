@@ -33,6 +33,7 @@ def to_row(key: FareKey, found: RouteFlights | None, fetched_at: datetime, expir
             "cheapest": asdict(found.cheapest),
             "direct": asdict(found.direct) if found.direct else None,
             "fastest": asdict(found.fastest),
+            "by_day": [asdict(t) for t in found.by_day],
         }
         if found
         else {}
@@ -56,7 +57,10 @@ def from_row(row) -> RouteFlights | None:
     if not t.get("cheapest"):
         return None
     return RouteFlights(
-        cheapest=_ticket(t["cheapest"]), direct=_ticket(t.get("direct")), fastest=_ticket(t["fastest"])
+        cheapest=_ticket(t["cheapest"]),
+        direct=_ticket(t.get("direct")),
+        fastest=_ticket(t["fastest"]),
+        by_day=tuple(Ticket(**d) for d in t.get("by_day") or ()),  # rows from before the calendar have none
     )
 
 

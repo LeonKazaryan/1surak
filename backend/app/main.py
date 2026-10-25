@@ -1,5 +1,7 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -62,6 +64,10 @@ def create_app(
             log.warning("TRAVELPAYOUTS_TOKEN is not set, the agent has no flight prices")
         else:
             await flights.start()
+        refresher = None
+        if isinstance(flights, TravelpayoutsFlights) and settings.fare_refresh_minutes > 0:
+            every = timedelta(minutes=settings.fare_refresh_minutes)
+            refresher = asyncio.create_task(flights.keep_fresh(every, settings.fare_refresh_budget))
         app.state.flights = flights
         if tools is not None:
             app.state.tools = tools
@@ -72,6 +78,8 @@ def create_app(
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield
+        if refresher:
+            refresher.cancel()
         if isinstance(flights, TravelpayoutsFlights):
             await flights.settle()
         await engine.dispose()
