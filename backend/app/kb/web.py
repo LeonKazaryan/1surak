@@ -1,6 +1,8 @@
-"""Web search for the knowledge base. Tavily works without a key (rate-limited), so the demo needs no setup."""
+"""Web search for the knowledge base. Brave (with a key) is tried first, then Tavily, which works without a key
+(rate-limited), so the demo needs no setup, then OpenAI's own web search when the agent runs on OpenAI."""
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -10,6 +12,8 @@ import httpx
 log = logging.getLogger(__name__)
 
 TAVILY_URL = "https://api.tavily.com/search"
+BRAVE_URL = "https://api.search.brave.com/res/v1/llm/context"
+CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
 # Rules 6.5 and 6.6: no OTAs. trip.com and tutu.ru also sell hotels and show up in travel searches.
 EXCLUDED_DOMAINS = [
     "booking.com",
@@ -37,6 +41,11 @@ EXCLUDED_DOMAINS = [
     "tiktok.com",
     "facebook.com",
 ]
+
+
+def excluded(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").casefold().removeprefix("www.")
+    return any(host == d or host.endswith(f".{d}") for d in EXCLUDED_DOMAINS)
 
 
 @dataclass(frozen=True)
@@ -87,6 +96,55 @@ class TavilySearch:
         ]
 
 
+class BraveSearch:
+    """Brave's LLM Context endpoint: its own index, and the text of each page already cut to the parts about
+    the query, so there is no separate scraping step. The token budget is kept small on purpose: a stored
+    passage is capped at 1500 characters anyway, and everything here goes into the model's context."""
+
+    # Inline Goggle: Brave drops these sites before ranking, so they don't take the few result slots.
+    GOGGLE = "\n".join(f"$discard,site={d}" for d in EXCLUDED_DOMAINS)
+
+    def __init__(self, api_key: str, timeout_s: float = 10.0, max_results: int = 5, transport=None):
+        self._headers = {"Accept": "application/json", "X-Subscription-Token": api_key}
+        self._timeout = timeout_s
+        self._max_results = max_results
+        self._transport = transport  # tests pass an httpx.MockTransport
+
+    async def search(self, query: str) -> list[WebResult]:
+        params = {
+            "q": query[:400],
+            "country": "ALL",
+            "search_lang": "ru" if CYRILLIC.search(query) else "en",
+            "count": 10,
+            "maximum_number_of_urls": self._max_results,
+            "maximum_number_of_tokens": 2048,
+            "maximum_number_of_tokens_per_url": 512,
+            "maximum_number_of_snippets_per_url": 3,
+            "context_threshold_mode": "balanced",
+            "goggles": self.GOGGLE,
+        }
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            response = await client.get(BRAVE_URL, params=params, headers=self._headers)
+            response.raise_for_status()
+            data = response.json()
+        sources = data.get("sources") or {}
+        results = []
+        for item in (data.get("grounding") or {}).get("generic") or []:
+            url, snippets = item.get("url"), [s for s in item.get("snippets") or [] if isinstance(s, str)]
+            if not url or not snippets or excluded(url):
+                continue
+            age = (sources.get(url) or {}).get("age") or []  # [full date, YYYY-MM-DD, relative, ISO]
+            results.append(
+                WebResult(
+                    url=url,
+                    title=item.get("title") or url,
+                    content=" ".join(snippets),
+                    published=age[1] if len(age) > 1 else None,
+                )
+            )
+        return results
+
+
 def _strip_tracking(url: str) -> str:
     parts = urlsplit(url)
     query = urlencode([(k, v) for k, v in parse_qsl(parts.query) if not k.startswith("utm_")])
@@ -131,7 +189,7 @@ class OpenAIWebSearch:
                         continue
                     url = _strip_tracking(note.url)
                     host = (urlsplit(url).hostname or "").removeprefix("www.")
-                    if any(host == d or host.endswith(f".{d}") for d in EXCLUDED_DOMAINS):
+                    if excluded(url):
                         continue
                     found = by_url.setdefault(
                         url, {"title": getattr(note, "title", None) or host, "parts": []}
@@ -143,31 +201,50 @@ class OpenAIWebSearch:
 
 
 class FallbackSearch:
-    """Tries each search in order; the next one runs only when the previous one fails (rate limit, outage)."""
+    """Tries each search in order; the next one runs when the previous one fails (rate limit, outage)
+    or finds nothing. Raises only when every search failed."""
 
     def __init__(self, searches: list[WebSearch]):
         self._searches = searches
 
     async def search(self, query: str) -> list[WebResult]:
         error: Exception | None = None
+        answered = False
         for search in self._searches:
             try:
-                return await search.search(query)
+                results = await search.search(query)
             except Exception as failure:  # noqa: BLE001  (any failure moves on to the next provider)
                 log.warning("%s failed, trying the next search: %s", type(search).__name__, failure)
                 error = failure
+                continue
+            if results:
+                return results
+            answered = True
+            log.info("%s found nothing for %r, trying the next search", type(search).__name__, query)
+        if answered:
+            return []
         raise error or RuntimeError("no web search configured")
 
 
 def build_web_search(
-    provider: str, api_key: str, timeout_s: float, openai_client: Any = None, openai_model: str = ""
+    provider: str,
+    api_key: str,
+    timeout_s: float,
+    openai_client: Any = None,
+    openai_model: str = "",
+    brave_key: str = "",
 ) -> WebSearch | None:
-    """tavily (default): Tavily, then OpenAI web search as a backup when the agent runs on OpenAI.
-    openai: only OpenAI web search. none: no web search."""
+    """auto (default): Brave when there is a key, then Tavily, then OpenAI web search when the agent runs on
+    OpenAI. brave / tavily: that one first, the rest as backups. openai: only OpenAI web search. none: off."""
     openai = OpenAIWebSearch(openai_client, openai_model) if openai_client and openai_model else None
-    if provider == "tavily":
+    if provider in ("auto", "brave", "tavily"):
+        brave = BraveSearch(brave_key, timeout_s=timeout_s) if brave_key else None
+        if provider == "brave" and brave is None:
+            log.warning("SEARCH_PROVIDER=brave needs BRAVE_API_KEY, using Tavily")
         tavily = TavilySearch(api_key=api_key, timeout_s=timeout_s)
-        return FallbackSearch([tavily, openai]) if openai else tavily
+        order = [tavily, brave] if provider == "tavily" else [brave, tavily]
+        chain = [s for s in [*order, openai] if s is not None]
+        return chain[0] if len(chain) == 1 else FallbackSearch(chain)
     if provider == "openai":
         if openai is None:
             log.warning("SEARCH_PROVIDER=openai needs the agent itself to run on OpenAI, web search is off")
@@ -188,4 +265,5 @@ def web_search_for(settings, llm) -> WebSearch | None:
         settings.search_timeout_s,
         openai_client=llm.client if on_openai else None,
         openai_model=llm.model if on_openai else "",
+        brave_key=settings.brave_api_key,
     )

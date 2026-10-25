@@ -26,8 +26,9 @@ from app.catalog.seed import load_catalog_facts
 from app.catalog.tools import catalog_tools
 from app.config import Settings
 from app.db import init_db
+from app.kb.page import page_tools_for
 from app.kb.seed import load_kb_seed
-from app.kb.tools import research_tool
+from app.kb.tools import read_page_tool, research_tool
 from app.kb.web import web_search_for
 from app.llm import StubLLM, build_llm
 from app.tools import ToolRegistry, ToolResult
@@ -53,8 +54,9 @@ class RecordingRegistry(ToolRegistry):
         return result
 
 
-async def run_case(case: dict, llm, sessionmaker, web=None) -> Transcript:
-    tools = RecordingRegistry([*catalog_tools(sessionmaker), research_tool(sessionmaker, web)])
+async def run_case(case: dict, llm, sessionmaker, web=None, pages=None) -> Transcript:
+    extra = [read_page_tool(sessionmaker, pages)] if pages else []
+    tools = RecordingRegistry([*catalog_tools(sessionmaker), research_tool(sessionmaker, web), *extra])
     transcript = Transcript()
     history: list[dict] = []
     started = time.monotonic()
@@ -67,6 +69,11 @@ async def run_case(case: dict, llm, sessionmaker, web=None) -> Transcript:
                     if event["type"] == "assistant_token":
                         first = first if first is not None else time.monotonic() - turn_start
                         parts.append(event["text"])
+                    elif event["type"] == "usage":
+                        transcript.llm_calls += event["llm_calls"]
+                        transcript.input_tokens += event["input_tokens"]
+                        transcript.cached_tokens += event["cached_tokens"]
+                        transcript.output_tokens += event["output_tokens"]
                 reply = "".join(parts)
                 transcript.replies.append(reply)
                 transcript.first_token_s.append(first)
@@ -82,6 +89,10 @@ def _fmt_s(value: float | None) -> str:
     return "–" if value is None else f"{value:.1f} с"
 
 
+def _fmt_k(tokens: int) -> str:
+    return f"{tokens / 1000:.1f}k"
+
+
 def report(scores: list[Score], model: str, started: datetime) -> str:
     passed = sum(s.passed for s in scores)
     firsts = [s.first_token_s for s in scores if s.first_token_s is not None]
@@ -89,6 +100,10 @@ def report(scores: list[Score], model: str, started: datetime) -> str:
     research = [source for s in scores for source in s.research_from]
     from_base = sum(source == "база знаний" for source in research)
     from_web = sum(source == "интернет" for source in research)
+    tokens_in = sum(s.input_tokens for s in scores)
+    cached = sum(s.cached_tokens for s in scores)
+    tokens_out = sum(s.output_tokens for s in scores)
+    llm_calls = sum(s.llm_calls for s in scores)
     lines = [
         f"# Eval: {passed}/{len(scores)} сценариев пройдено",
         "",
@@ -105,9 +120,14 @@ def report(scores: list[Score], model: str, started: datetime) -> str:
             f"| Поиск информации (research) | {len(research)} вызовов: из базы знаний {from_base}, "
             f"из интернета {from_web}, остальное без ответа |"
         ),
+        (
+            f"| Токены | вход {_fmt_k(tokens_in)} (из кэша {cached / max(tokens_in, 1):.0%}), "
+            f"выход {_fmt_k(tokens_out)}, {llm_calls} вызовов модели; "
+            f"на сценарий {_fmt_k(tokens_in // len(scores))} входа |"
+        ),
         "",
-        "| Кейс | Тип | Итог | Инструменты | Вопросов | Первый ответ | Всего | Что не так |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Кейс | Тип | Итог | Инструменты | Вопросов | Первый ответ | Всего | Токены (вход/выход) | Что не так |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for s in scores:
         tools = ", ".join(dict.fromkeys(s.tools)) or "–"
@@ -117,7 +137,8 @@ def report(scores: list[Score], model: str, started: datetime) -> str:
         mark = "✅" if s.passed else "❌"
         lines.append(
             f"| {s.case_id} | {s.category} | {mark} | {tools} | {s.questions} | "
-            f"{_fmt_s(s.first_token_s)} | {_fmt_s(s.total_s)} | {why} |"
+            f"{_fmt_s(s.first_token_s)} | {_fmt_s(s.total_s)} | "
+            f"{_fmt_k(s.input_tokens)}/{_fmt_k(s.output_tokens)} | {why} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -151,6 +172,7 @@ async def main(args: argparse.Namespace) -> int:
     await load_catalog_facts(sessionmaker)
     await load_kb_seed(sessionmaker)
     web = web_search_for(settings, llm)
+    pages = page_tools_for(settings, llm)
 
     started = datetime.now()
     print(f"Running {len(cases)} cases on {settings.llm_model} (concurrency {args.concurrency})…")
@@ -158,11 +180,13 @@ async def main(args: argparse.Namespace) -> int:
 
     async def one(case: dict) -> tuple[Score, Transcript]:
         async with limit:
-            transcript = await run_case(case, llm, sessionmaker, web)
+            transcript = await run_case(case, llm, sessionmaker, web, pages)
         result = score(case, transcript)
         mark = "PASS" if result.passed else "FAIL"
         print(
-            f"  {mark} {case['id']:26} {_fmt_s(result.total_s):>8}  {'; '.join(result.failures)}", flush=True
+            f"  {mark} {case['id']:26} {_fmt_s(result.total_s):>8} {_fmt_k(result.input_tokens):>7} in  "
+            f"{'; '.join(result.failures)}",
+            flush=True,
         )
         return result, transcript
 
@@ -170,7 +194,8 @@ async def main(args: argparse.Namespace) -> int:
     await engine.dispose()
 
     scores = [r for r, _ in results]
-    REPORT_PATH.write_text(report(scores, settings.llm_model, started), encoding="utf-8")
+    report_path = Path(args.report) if args.report else REPORT_PATH
+    report_path.write_text(report(scores, settings.llm_model, started), encoding="utf-8")
     details = WORK_DIR / f"{started:%Y%m%d-%H%M%S}.json"
     details.write_text(
         json.dumps(
@@ -184,7 +209,12 @@ async def main(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     passed = sum(s.passed for s in scores)
-    print(f"\n{passed}/{len(scores)} passed. Report: {REPORT_PATH}  Transcripts: {details}")
+    if pages.extractor and pages.extractor.input_tokens:
+        print(
+            f"read_page extraction: {pages.extractor.input_tokens} input, "
+            f"{pages.extractor.output_tokens} output tokens"
+        )
+    print(f"\n{passed}/{len(scores)} passed. Report: {report_path}  Transcripts: {details}")
     return 0
 
 
@@ -194,4 +224,5 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="Override LLM_MODEL from .env.")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument("--keep-db", action="store_true", help="Reuse the knowledge base from the last run.")
+    parser.add_argument("--report", help="Write the report here instead of evals/last_report.md.")
     sys.exit(asyncio.run(main(parser.parse_args())))

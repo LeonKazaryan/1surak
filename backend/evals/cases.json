@@ -488,6 +488,23 @@
         "каждого"
       ],
       "max_questions": 2
+    },
+    {
+      "id": "user_link_page",
+      "category": "research",
+      "turns": [
+        "Вот статья https://en.wikivoyage.org/wiki/Hurghada — где там советуют снорклить?"
+      ],
+      "expect_tools": [
+        "read_page"
+      ],
+      "expect_any": [
+        "Гифтун",
+        "Giftun",
+        "риф"
+      ],
+      "expect_source": true,
+      "max_questions": 1
     }
   ]
 }

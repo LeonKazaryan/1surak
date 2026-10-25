@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.catalog.catalog import Catalog, Place
 from app.kb import repository
 from app.kb.model import TIME_SENSITIVE, Entry, Topic
-from app.kb.text import coverage, terms
+from app.kb.text import coverage, excerpt, terms
 from app.kb.web import WebSearch
 
 log = logging.getLogger(__name__)
@@ -20,7 +20,9 @@ log = logging.getLogger(__name__)
 STRONG_COVERAGE = 0.5  # a stored entry answers the question if it has half of its terms…
 STRONG_TERMS = 3  # …or at least three of them, since the model often asks long, padded questions
 SOFT_TOPICS = ["tip", "guide", "food", "hotel"]  # these overlap, so they're searched together
-MAX_PASSAGES = 6
+MAX_PASSAGES = 5
+# Only the sentences about the question go back to the model; read_page opens the whole page when needed.
+PASSAGE_CHARS = 600
 RECHECK_AFTER = timedelta(days=1)
 CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
 
@@ -50,17 +52,15 @@ class ResearchArgs(BaseModel):
     )
 
 
-def _passage(entry: Entry) -> dict:
+def _passage(entry: Entry, question: str, ignore: set[str]) -> dict:
     return {
         "id": f"kb:{entry.id}",
-        "text": entry.text,
+        "text": excerpt(entry.text, question, PASSAGE_CHARS, ignore),
         "source": entry.source_title or entry.source_url,
         "url": entry.source_url,
         "tier": entry.source_tier,
         "published": entry.published_at,  # None when the page doesn't say
         "checked": entry.fetched_at.date().isoformat(),  # when we read it
-        "topic": entry.topic,
-        "place": entry.place_id,
     }
 
 
@@ -122,7 +122,7 @@ def research_tool_handler(
         if good:
             return {
                 "answered_from": "база знаний",
-                "passages": [_passage(e) for e in good[:MAX_PASSAGES]],
+                "passages": [_passage(e, args.question, ignore) for e in good[:MAX_PASSAGES]],
                 "note": DATA_NOTE,
             }
 
@@ -170,7 +170,7 @@ def research_tool_handler(
             "answered_from": "интернет",
             "search_query": query,
             "saved_to_base": len(entries),
-            "passages": [_passage(e) for e in [*entries, *extra][:MAX_PASSAGES]],
+            "passages": [_passage(e, args.question, ignore) for e in [*entries, *extra][:MAX_PASSAGES]],
             "note": DATA_NOTE,
         }
 
@@ -179,11 +179,12 @@ def research_tool_handler(
             hits = await repository.search(
                 db, args.question, moment, place.id if place else None, country, topics, fresh_only=False
             )
-        relevant = [e for e in hits if _strong(args.question, e, _name_terms(catalog, place, country))]
+        ignore = _name_terms(catalog, place, country)
+        relevant = [e for e in hits if _strong(args.question, e, ignore)]
         stale = [e.id for e in relevant if not e.fresh(moment)]
         result = {
             "answered_from": f"база знаний ({reason})",
-            "passages": [_passage(e) for e in relevant[:MAX_PASSAGES]],
+            "passages": [_passage(e, args.question, ignore) for e in relevant[:MAX_PASSAGES]],
             "note": DATA_NOTE,
         }
         if stale:

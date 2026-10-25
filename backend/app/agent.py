@@ -6,12 +6,15 @@ Every tool call is streamed to the UI as a tool_start / tool_end pair, so the us
 """
 
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone
 
-from app.llm import LLM, TextDelta, ToolCall
+from app.llm import LLM, TextDelta, ToolCall, Usage
 from app.tools import ToolRegistry
+
+log = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8
 # Text this short followed by tool calls is the model thinking aloud, not the answer.
@@ -43,7 +46,8 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 в карточке только оценка команды. Через research же ищи события на даты, советы на месте \
 (что делать, где поесть, какой район), транспорт (работает ли аэропорт, животные в поезде), безопасность \
 и всё, чего нет в каталоге.
-- Если в ответе есть факты из research, закончи его строкой «Источники:» и списком: название, дата, ссылка.
+- Если пользователь дал ссылку, открой её через read_page, а не ищи заново.
+- Если в ответе есть факты из research или read_page, закончи его строкой «Источники:» и списком: название, дата, ссылка.
 
 Как вести диалог:
 1. На каждое сообщение о поездке сначала вызови update_trip_brief. Передавай только сказанное явно \
@@ -63,7 +67,7 @@ SYSTEM_PROMPT = """Тебя зовут 1surak, ты ИИ-агент для пл�
 # Only after tool results: on the first call it pushes the model to answer before looking anything up.
 REPLY_CHECKLIST = (
     "Перед ответом проверь: 1) цифры и факты только из результатов инструментов; "
-    "2) если использовал research, в конце блок «Источники:» со ссылками; "
+    "2) если использовал research или read_page, в конце блок «Источники:» со ссылками; "
     "3) даты, состав и бюджет уточняй только карточками ask_user и только один раз: если уточнение уже было, "
     "не спрашивай снова, а назови допущения; "
     "4) найденные через search_destinations места показывай вызовом show_destinations, не списком в тексте."
@@ -138,12 +142,54 @@ def _assistant_message(text: str, calls: list[ToolCall]) -> dict:
     }
 
 
+class _Meter:
+    """Adds up the tokens of every model call in one turn."""
+
+    def __init__(self):
+        self.calls = self.input = self.cached = self.output = 0
+
+    def add(self, usage: Usage) -> None:
+        self.calls += 1
+        self.input += usage.input
+        self.cached += usage.cached
+        self.output += usage.output
+
+    def event(self) -> dict:
+        return {
+            "type": "usage",
+            "llm_calls": self.calls,
+            "input_tokens": self.input,
+            "cached_tokens": self.cached,
+            "output_tokens": self.output,
+        }
+
+
 async def run(
     llm: LLM,
     turns: list[dict],
     tools: ToolRegistry | None = None,
     now: Callable[[], datetime] = now_msk,
     origin: str | None = None,
+) -> AsyncIterator[dict]:
+    """One agent turn. Ends with a `usage` event (tokens of the whole turn) when the model reports usage."""
+    meter = _Meter()
+    async for event in _run(llm, turns, tools, now, origin, meter):
+        yield event
+    if meter.calls:
+        log.info(
+            "turn: %d model calls, %d input tokens (%d cached), %d output",
+            meter.calls, meter.input, meter.cached, meter.output,
+        )  # fmt: skip
+        yield meter.event()
+
+
+async def _run(
+    llm: LLM,
+    turns: list[dict],
+    tools: ToolRegistry | None,
+    now: Callable[[], datetime],
+    origin: str | None,
+    meter: _Meter,
 ) -> AsyncIterator[dict]:
     tools = tools or ToolRegistry()
     specs = tools.specs() or None
@@ -178,6 +224,8 @@ async def run(
                         yield token
             elif isinstance(event, ToolCall):
                 calls.append(event)
+            elif isinstance(event, Usage):
+                meter.add(event)
         text = "".join(text_parts)
         force = None
         # The model answers in words while it still owes a call (found places, showed none): its words become

@@ -114,3 +114,24 @@ def test_should_prefer_llm_api_key_over_openai_api_key(monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "llm")
 
     assert Settings(_env_file=None).llm_api_key == "llm"
+
+
+def test_should_report_token_usage_and_share_the_prompt_cache_only_on_openai():
+    from app.llm import Usage
+
+    usage = SimpleNamespace(
+        prompt_tokens=1500, completion_tokens=40, prompt_tokens_details=SimpleNamespace(cached_tokens=1024)
+    )
+    final = SimpleNamespace(choices=[], usage=usage)
+    completions = FakeCompletions([chunk("Hi"), final])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    out = asyncio.run(collect(OpenAICompatibleLLM(client=client, model="m", openai=True).stream([])))
+
+    assert out == [TextDelta("Hi"), Usage(input=1500, output=40, cached=1024)]
+    assert completions.kwargs["stream_options"] == {"include_usage": True}
+    assert completions.kwargs["prompt_cache_key"]
+
+    other, other_completions = llm_with([chunk("Hi")])
+    asyncio.run(collect(other.stream([])))
+    assert "prompt_cache_key" not in other_completions.kwargs

@@ -30,8 +30,11 @@ docker compose up --build
 | `LLM_MODEL` | пусто | имя модели; без него отвечает заглушка |
 | `LLM_TIMEOUT_S` | `60` | таймаут запроса к модели, секунды |
 | `OPENAI_API_KEY` | пусто | можно вместо `LLM_API_KEY` |
-| `SEARCH_PROVIDER` | `tavily` | веб-поиск для базы знаний; `none` выключает |
+| `SEARCH_PROVIDER` | `auto` | веб-поиск для базы знаний: Brave (если есть ключ), затем Tavily, затем поиск OpenAI; `none` выключает |
+| `BRAVE_API_KEY` | пусто | ключ Brave Search API (эндпоинт LLM Context) |
 | `TAVILY_API_KEY` | пусто | без ключа Tavily работает с ограничением частоты |
+| `JINA_API_KEY` | пусто | для read_page: страницы на JavaScript читаются через Jina Reader, без ключа 20 в минуту |
+| `EXTRACT_MODEL` | `LLM_MODEL` | модель, которая достаёт факты со страницы в read_page |
 | `SEARCH_TIMEOUT_S` | `10` | таймаут веб-поиска, секунды |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/1surak.db` | строка подключения к БД |
 

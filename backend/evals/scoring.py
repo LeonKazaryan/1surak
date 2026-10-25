@@ -29,6 +29,10 @@ class Transcript:
     first_token_s: list[float] = field(default_factory=list)  # per turn, None if no text came
     total_s: float = 0.0
     error: str | None = None
+    llm_calls: int = 0
+    input_tokens: int = 0
+    cached_tokens: int = 0
+    output_tokens: int = 0
 
 
 def research_sources(calls: list[ToolCallRecord]) -> list[str]:
@@ -54,6 +58,10 @@ class Score:
     first_token_s: float | None
     total_s: float
     research_from: list[str] = field(default_factory=list)
+    llm_calls: int = 0
+    input_tokens: int = 0
+    cached_tokens: int = 0
+    output_tokens: int = 0
 
     @property
     def passed(self) -> bool:
@@ -149,4 +157,8 @@ def score(case: dict, transcript: Transcript) -> Score:
         first_token_s=first,
         total_s=transcript.total_s,
         research_from=research_sources(transcript.calls),
+        llm_calls=transcript.llm_calls,
+        input_tokens=transcript.input_tokens,
+        cached_tokens=transcript.cached_tokens,
+        output_tokens=transcript.output_tokens,
     )

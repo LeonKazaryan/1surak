@@ -31,15 +31,47 @@ class Tool:
     # A tool the model must call after this one before it answers, e.g. show the places it found as cards.
     then: str | None = None
 
+    # Runs longer than TOOL_TIMEOUT_S, e.g. reading a web page and pulling facts out of it.
+    timeout_s: float | None = None
+
     def spec(self) -> dict:
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.args.model_json_schema(),
+                "parameters": compact_schema(self.args.model_json_schema()),
             },
         }
+
+
+def compact_schema(node: Any) -> Any:
+    """Pydantic's JSON schema with the parts the model doesn't need: a `title` on every field and
+    `anyOf [X, null]` with `default: null` on every optional one. The specs go with every model call,
+    so this halves a fixed cost. Optional fields stay optional: they are not in `required`."""
+    if isinstance(node, list):
+        return [compact_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: compact_schema(v) for k, v in node.items() if k != "title" or not isinstance(v, str)}
+    if "properties" in node:  # `title` here is a field name, not a label
+        out["properties"] = {k: compact_schema(v) for k, v in node["properties"].items()}
+    variants = out.get("anyOf")
+    if isinstance(variants, list) and len(variants) == 2 and {"type": "null"} in variants:
+        out.pop("anyOf")
+        out = {**next(v for v in variants if v != {"type": "null"}), **out}
+    if "default" in out and out["default"] is None:
+        out.pop("default")
+    return out
+
+
+def _drop_empty(value: Any) -> Any:
+    """None means 'unknown' everywhere in tool results, so a missing key says the same in fewer tokens."""
+    if isinstance(value, dict):
+        return {k: _drop_empty(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_empty(v) for v in value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -122,7 +154,7 @@ class ToolRegistry:
             return _error(f"Invalid arguments: {details}", args, "Неверные параметры")
 
         try:
-            with anyio.fail_after(TOOL_TIMEOUT_S):
+            with anyio.fail_after(tool.timeout_s or TOOL_TIMEOUT_S):
                 result = await tool.handler(parsed)
         except TimeoutError:
             log.warning("Tool %s timed out", name)
@@ -137,7 +169,7 @@ class ToolRegistry:
         preview = tool.preview(result) if tool.preview else "Готово"
         return ToolResult(
             ok=True,
-            content=json.dumps(result, ensure_ascii=False, default=str),
+            content=json.dumps(_drop_empty(result), ensure_ascii=False, default=str, separators=(",", ":")),
             preview=_short(preview),
             args=args,
             event=reply.event if reply else None,

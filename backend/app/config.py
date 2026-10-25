@@ -15,7 +15,14 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_timeout_s: float = 60.0
 
-    # Web search for the knowledge base. Tavily works without a key (rate-limited); "none" turns it off.
-    search_provider: str = "tavily"
+    # Web search for the knowledge base: auto | brave | tavily | openai | none (see app/kb/web.py).
+    # Brave needs a key; Tavily works without one (rate-limited).
+    search_provider: str = "auto"
+    brave_api_key: str = Field("", validation_alias=AliasChoices("BRAVE_API_KEY", "BRAVE_SEARCH_API_KEY"))
     tavily_api_key: str = ""
     search_timeout_s: float = 10.0
+
+    # read_page: opens one web page and pulls out the facts that answer a question.
+    jina_api_key: str = ""  # optional: Jina Reader works without a key at 20 pages a minute
+    extract_model: str = ""  # the model that pulls facts out of a page; LLM_MODEL when empty
+    page_timeout_s: float = 12.0

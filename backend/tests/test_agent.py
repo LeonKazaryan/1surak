@@ -291,3 +291,24 @@ def test_should_not_insist_when_the_follow_up_tool_is_not_registered():
 
     assert llm.tool_choices == [None, None]
     assert text_of(events) == "Подходят Сочи."
+
+
+def test_should_end_the_turn_with_the_tokens_of_every_model_call():
+    from app.llm import Usage
+
+    llm = FakeLLM(
+        rounds=[
+            [ToolCall(id="c1", name="get_weather", arguments='{"city": "Сочи"}'), Usage(1000, 20, 800)],
+            ["Тепло", Usage(1200, 30, 1000)],
+        ]
+    )
+
+    events = run(llm, registry())
+
+    assert events[-1] == {
+        "type": "usage",
+        "llm_calls": 2,
+        "input_tokens": 2200,
+        "cached_tokens": 1800,
+        "output_tokens": 50,
+    }

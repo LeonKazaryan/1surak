@@ -27,7 +27,8 @@ DETAILS_DESCRIPTION = (
     "Full card of one destination: climate for every month, flight and train time from Moscow, visa, "
     "price level, kids, highlights and risks. Pass the id from search_destinations, or the place name. "
     "The card has no local detail: for which area or beach to choose, where to eat, what to do with kids, "
-    "entry documents or transport, call research as well."
+    "entry documents or transport, call research as well. Don't call it for places search_destinations "
+    "just returned: their facts for the month are already there. Use it for a place the user names."
 )
 
 
