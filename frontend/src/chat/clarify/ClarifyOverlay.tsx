@@ -7,7 +7,7 @@ import { getDepartureCity } from '@/lib/departureCity'
 import type { BriefAnswers, ClarifyEvent } from '@/types/api'
 import { describeAnswers, plural } from '../widgets'
 import { buildSteps, knownFacts, partyOptions, planCards, progressAt, type Step } from './plan'
-import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, PartyStep, VibeStep } from './questions'
+import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, PartyStep, RouteStep, VibeStep } from './questions'
 import { useClarifyAnswers, type ClarifyAnswers } from './useClarifyAnswers'
 
 const PLANE_PATH = 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z'
@@ -140,7 +140,7 @@ interface ClarifyOverlayProps {
 function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, onClose, onDone }: ClarifyOverlayProps) {
   const plans = planCards(widget)
   const slots = plans.map((p) => p.slot)
-  const steps = buildSteps(widget, { party: answers.party, ages: answers.ages })
+  const steps = buildSteps(widget, { party: answers.party, ages: answers.ages, kinds: answers.kinds })
   const [index, direction] = position
   const [picked, setPicked] = useState<number | null>(null) // the step just answered, about to move on
   const [arriving, setArriving] = useState(false)
@@ -213,6 +213,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
       />
     ),
     age: () => <AgeStep selected={answers.ages[child] ?? null} onPick={(a) => pick(() => answers.setAge(child, a))} />,
+    route: () => <RouteStep selected={answers.multiCity} onPick={(v) => pick(() => answers.setMultiCity(v))} />,
     budget: () => (
       <BudgetStep level={answers.level} onLevel={(l) => pick(() => answers.setLevel(l))} onTotal={(t) => pick(() => answers.setTotal(t))} />
     ),

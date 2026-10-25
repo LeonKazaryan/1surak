@@ -323,7 +323,7 @@ describe('ChatPage', () => {
             { slot: 'travelers', title: 'Кто едет?', hint: null },
             { slot: 'budget', title: 'Какой бюджет?', hint: 'Вы написали «недорого»' },
           ],
-          prefill: { kinds: ['sea'], month: 11, nights: null, adults: null, children: 1, children_ages: [], budget_level: null },
+          prefill: { kinds: ['sea'], month: 11, nights: null, adults: null, children: 1, children_ages: [], budget_level: null, multi_city: null },
         },
       ],
       { type: 'done', answer: 'Уточню пару моментов', chat_id: 'chat-1', title: 'Море' },
@@ -422,6 +422,78 @@ describe('ChatPage', () => {
     await waitFor(() =>
       expect(sendChatStream).toHaveBeenLastCalledWith(
         expect.objectContaining({ query: 'Выбираю Шарм-эль-Шейх' }),
+        expect.any(Function),
+        expect.anything(),
+      ),
+    )
+  })
+
+  it('should draw a multi-city route as one wide card and send it when picked', async () => {
+    const ticket = (price: number, airline: string) => ({
+      price_rub: price,
+      airline,
+      airline_name: airline === 'KC' ? 'Air Astana' : 'Fly Arna',
+      logo: `https://pics.avs.io/64/64/${airline}.png`,
+      flight_number: `${airline} 1`,
+      transfers: 0,
+      hours: 4,
+      departure: '2026-10-12 08:00',
+      link: `https://www.aviasales.ru/${airline}`,
+      direct_available: true,
+    })
+    const stop = (id: string, name: string, country: string, code: string) => ({
+      id, name, country, country_code: code, kinds: ['city' as const], nights: 4, day: 20, sea: null,
+      visa: 'без визы', visa_easy: true, highlights: ['старый город'],
+    })
+    streamReply(
+      [
+        { type: 'assistant_token', text: 'Вот маршруты' },
+        {
+          type: 'destinations',
+          summary: ['Города', 'Несколько городов'],
+          cards: [
+            {
+              type: 'route',
+              id: 'tbilisi+yerevan',
+              name: 'Тбилиси → Ереван',
+              month: 'октябрь',
+              month_in: 'октябре',
+              stops: [stop('tbilisi', 'Тбилиси', 'Грузия', 'GE'), stop('yerevan', 'Ереван', 'Армения', 'AM')],
+              legs: [
+                { from: 'Астана', to: 'Тбилиси', mode: 'flight', km: 2500, hours: 4, ticket: ticket(30000, 'KC') },
+                { from: 'Тбилиси', to: 'Ереван', mode: 'ground', km: 175, hours: 4, estimate: 'по земле' },
+                { from: 'Ереван', to: 'Астана', mode: 'flight', km: 2600, hours: 4, ticket: ticket(28000, 'FA') },
+              ],
+              total_rub: 58000,
+              total_complete: true,
+              dates_chained: true,
+              match: 92,
+              interests: [{ kind: 'city', label: 'город', covered: true, wanted: true }],
+              kids: 'хорошо с детьми',
+              why: 'Два города и горы за одну поездку',
+            },
+          ],
+        },
+      ],
+      { type: 'done', answer: 'Вот маршруты', chat_id: 'chat-1', title: 'Кавказ' },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Хочу Ереван и Тбилиси{Enter}')
+
+    expect(await screen.findByRole('heading', { name: 'Тбилиси' })).toBeInTheDocument()
+    const card = screen.getByRole('heading', { name: 'Ереван' }).closest('article')!
+    expect(card).toHaveClass('sm:col-span-2')
+    expect(within(card).getByText('Два города и горы за одну поездку')).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Астана → Тбилиси, Air Astana' })).toHaveAttribute('href', 'https://www.aviasales.ru/KC')
+    expect(within(card).getByText(/по земле ~4 ч, 175 км/)).toBeInTheDocument()
+    expect(within(card).getByText(/58\s000\s₽/)).toBeInTheDocument()
+    expect(within(card).getByText('Даты состыкованы: 12 окт → 12 окт')).toBeInTheDocument()
+
+    streamReply([], { type: 'done', answer: 'Отлично', chat_id: 'chat-1', title: 'Кавказ' })
+    await userEvent.click(within(card).getByRole('button', { name: 'Выбрать маршрут' }))
+    await waitFor(() =>
+      expect(sendChatStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: 'Выбираю маршрут Тбилиси → Ереван' }),
         expect.any(Function),
         expect.anything(),
       ),

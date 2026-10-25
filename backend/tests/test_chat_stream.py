@@ -179,8 +179,8 @@ def test_should_merge_card_answers_into_the_brief_and_not_ask_again(settings):
     assert first[-1]["answer"] == "Уточню"
     assert any(e["type"] == "clarify" for e in trace)  # the cards come back when the chat is reopened
     brief = json.loads(llm.conversations[2][-1]["content"])
-    assert brief["missing"] == ["budget"] and brief["already_asked"] is True
-    assert brief["assumptions"] == ["бюджет не ограничен"]
+    assert brief["missing"] == ["route", "budget"] and brief["already_asked"] is True
+    assert brief["assumptions"] == ["бюджет не ограничен", "один город, без переездов"]
     assert second[-1]["answer"] == "Ищу"
 
 

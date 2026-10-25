@@ -8,7 +8,7 @@ export interface ChatRequest {
 }
 
 export type TripKind = 'sea' | 'mountains' | 'city' | 'nature' | 'ski'
-export type ClarifySlot = 'vibe' | 'when' | 'travelers' | 'budget'
+export type ClarifySlot = 'vibe' | 'when' | 'travelers' | 'route' | 'budget'
 
 /** What the user picked on the question cards; the server merges it into the trip brief. */
 export interface BriefAnswers {
@@ -21,6 +21,7 @@ export interface BriefAnswers {
   children_ages?: number[]
   budget_level?: number
   budget_total_rub?: number
+  multi_city?: boolean
 }
 
 export interface ClarifyQuestion {
@@ -37,6 +38,7 @@ export interface ClarifyPrefill {
   children: number | null
   children_ages: number[]
   budget_level: number | null
+  multi_city: boolean | null
 }
 
 export interface ClarifyEvent {
@@ -74,6 +76,7 @@ export interface RouteFlight extends FlightTicket {
 }
 
 export interface DestinationCard {
+  type?: 'place'
   id: string
   name: string
   country: string
@@ -97,10 +100,64 @@ export interface DestinationCard {
   image?: string | null
 }
 
+export interface RouteStop {
+  id: string
+  name: string
+  country: string
+  country_code: string
+  kinds: TripKind[]
+  nights: number
+  day: number | null
+  sea: number | null
+  visa: string
+  visa_easy: boolean
+  highlights: string[]
+}
+
+/** One leg of a route: a real ticket when it flies, an estimate by distance when it goes by land. */
+export interface RouteLeg {
+  from: string
+  to: string
+  mode: 'flight' | 'ground'
+  km: number
+  hours: number
+  ticket?: RouteFlight
+  estimate?: string
+}
+
+export interface RouteInterest {
+  kind: TripKind
+  label: string
+  covered: boolean
+  wanted: boolean
+}
+
+/** A multi-city route: drawn as a wide card across two cells of the grid. */
+export interface RouteCard {
+  type: 'route'
+  id: string
+  name: string
+  month: string | null
+  month_in: string | null
+  stops: RouteStop[]
+  legs: RouteLeg[]
+  total_rub: number | null
+  total_complete: boolean
+  /** Every flight leaves after the nights before it: the tickets make one trip, not separate cheapest ones. */
+  dates_chained: boolean
+  match: number
+  interests: RouteInterest[]
+  kids: string
+  why: string
+  tradeoff?: string | null
+}
+
+export type DestinationsCard = DestinationCard | RouteCard
+
 export interface DestinationsEvent {
   type: 'destinations'
   summary: string[]
-  cards: DestinationCard[]
+  cards: DestinationsCard[]
 }
 
 export interface ChatStreamDone {

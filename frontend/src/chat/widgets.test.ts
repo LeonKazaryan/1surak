@@ -37,6 +37,7 @@ describe('widgets', () => {
       }).replace(/\s/g, ' '), // thousands are split by a no-break space
     ).toBe('Море и пляж, горы · ноябрь, 5–7 ночей · 2 взрослых + 2 ребёнка (3 и 7 лет) · бюджет до 300 000 ₽ на всех')
     expect(describeAnswers({ budget_level: 0 })).toBe('бюджет не важен')
+    expect(describeAnswers({ multi_city: true })).toBe('несколько городов')
   })
 
   it('should take the last widget from a saved trace and ignore other events', () => {

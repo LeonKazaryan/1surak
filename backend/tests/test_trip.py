@@ -25,7 +25,7 @@ def brief(**fields) -> TripBrief:
 
 
 def test_should_miss_everything_for_a_vague_request():
-    assert missing(merge(TripBrief(), VAGUE)) == ["vibe", "when", "travelers", "budget"]
+    assert missing(merge(TripBrief(), VAGUE)) == ["vibe", "when", "travelers", "route", "budget"]
 
 
 def test_should_miss_nothing_when_the_request_says_it_all():
@@ -83,7 +83,38 @@ def test_should_hint_search_filters_from_the_brief():
 
 
 def test_should_state_assumptions_for_what_stayed_unanswered():
-    assert assumptions(brief(kinds=["sea"], month=11, nights_min=7, adults=2)) == ["бюджет не ограничен"]
+    assert assumptions(
+        brief(kinds=["sea"], month=11, nights_min=7, adults=2, children=1, children_ages=[6])
+    ) == ["бюджет не ограничен"]
+    assert assumptions(brief(kinds=["city"], month=10, nights_min=8, adults=2)) == [
+        "бюджет не ограничен",
+        "один город, без переездов",
+    ]
+
+
+def test_should_ask_about_a_route_only_alongside_other_questions_and_when_it_fits():
+    def asks(**fields) -> bool:
+        return "route" in missing(brief(**fields))
+
+    assert asks(kinds=["city"], month=10, nights_min=8)  # rides along with the party and budget questions
+    assert not asks(
+        kinds=["city"], month=10, nights_min=8, adults=2, children=0, budget_level=2
+    )  # zero questions
+    assert not asks(kinds=["city"], children=1)  # a route tires small children
+    assert not asks(kinds=["city"], nights_min=3, nights_max=4)  # too short to move around
+    assert not asks(kinds=["ski"])
+    assert not asks(destination="Хургада")  # one named place
+    assert asks(destination="Грузия")  # a country can be a route
+    assert not asks(kinds=["city"], multi_city=False)
+
+
+def test_should_hint_routes_when_the_user_wants_several_cities():
+    hint = search_hint(brief(kinds=["city"], month=10, nights_min=9, multi_city=True), load_catalog())
+
+    assert hint["multi_city"] is True and hint["nights"] == 9
+    caucasus = search_hint(brief(destination="Кавказ", multi_city=True), load_catalog())
+    assert caucasus["countries"] == ["Грузия", "Армения", "Азербайджан"]
+    assert chips(brief(kinds=["city"], multi_city=True))[-1] == "Несколько городов"
 
 
 @pytest.fixture(scope="module")
@@ -184,3 +215,33 @@ def test_should_report_unknown_destinations_to_the_model(sessionmaker):
     result = call(registry, "show_destinations", {"intro": "Вот", "picks": [{"id": "atlantis", "why": "?"}]})
 
     assert result.event is None and "Unknown ids" in json.loads(result.content)["error"]
+
+
+def test_should_find_routes_and_show_one_as_a_wide_card(sessionmaker):
+    flights = FakeFlights({"EVN": route(240, price=30_000), "TBS": route(250), "MOW": route(200)})
+    state = TripState(brief(kinds=["city", "mountains"], month=10, nights_min=8, adults=2, multi_city=True))
+    registry = ToolRegistry(trip_tools(state, sessionmaker, flights=flights))
+
+    found = call(registry, "search_routes", {"month": 10, "kinds": ["city", "mountains"]})
+    routes = json.loads(found.content)["routes"]
+    assert routes and all(2 <= len(r["stops"]) <= 3 for r in routes)
+    pick = [s["id"] for s in routes[0]["stops"]]
+
+    shown = call(
+        registry,
+        "show_destinations",
+        {"intro": "Маршруты", "picks": [{"route": pick, "why": "Город и горы"}]},
+    )
+
+    [card] = shown.event["cards"]
+    assert card["type"] == "route" and [s["id"] for s in card["stops"]] == pick
+    assert sum(s["nights"] for s in card["stops"]) == 8
+    assert card["legs"][0]["from"] == "Москва" and card["match"] > 0 and card["why"] == "Город и горы"
+
+
+def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):
+    registry = ToolRegistry(trip_tools(TripState(TripBrief()), sessionmaker))
+
+    result = call(registry, "show_destinations", {"intro": "?", "picks": [{"why": "?"}]})
+
+    assert not result.ok and result.event is None

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ClarifyEvent, ClarifyPrefill, ClarifySlot } from '@/types/api'
 import { buildSteps, knownFacts, partyOptions, progressAt, type StepState } from './plan'
 
-const EMPTY: ClarifyPrefill = { kinds: [], month: null, nights: null, adults: null, children: null, children_ages: [], budget_level: null }
+const EMPTY: ClarifyPrefill = { kinds: [], month: null, nights: null, adults: null, children: null, children_ages: [], budget_level: null, multi_city: null }
 const NOTHING_PICKED: StepState = { party: null, ages: [] }
 
 function event(slots: ClarifySlot[], prefill: Partial<ClarifyPrefill> = {}): ClarifyEvent {
@@ -41,6 +41,17 @@ describe('buildSteps', () => {
     const steps = buildSteps(event(slots), { party: 'kids', ages: [null] })
 
     expect(steps.map((_, i) => progressAt(steps, i, slots))).toEqual([0, 1 / 6, 1 / 3, 0.5])
+  })
+})
+
+describe('route step', () => {
+  it('should ask about a route, and drop the question once «С детьми» or skiing is picked in the deck', () => {
+    const e = event(['vibe', 'travelers', 'route', 'budget'])
+
+    expect(keys(e)).toEqual(['vibe', 'party', 'route', 'budget'])
+    expect(keys(e, { party: 'kids', ages: [null] })).not.toContain('route')
+    expect(keys(e, { party: 'couple', ages: [], kinds: ['ski'] })).not.toContain('route')
+    expect(keys(e, { party: 'couple', ages: [], kinds: ['city'] })).toContain('route')
   })
 })
 

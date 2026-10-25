@@ -16,6 +16,7 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
   )
   const [level, setLevelState] = useState<number | null>(prefill.budget_level)
   const [total, setTotalState] = useState<number | null>(null)
+  const [multiCity, setMultiCity] = useState<boolean | null>(prefill.multi_city)
 
   const knowsParty = prefill.adults !== null || party !== null
   const knowsKids = party !== 'kids' || ages.length > 0
@@ -24,6 +25,7 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
     when: month !== null && nights !== null,
     // a default of two adults is not an answer: only what was tapped or said counts
     travelers: knowsParty && knowsKids && ages.every((a) => a !== null),
+    route: multiCity !== null,
     budget: total !== null || level !== null,
   }
 
@@ -40,6 +42,7 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
       answers.children = ages.length
       answers.children_ages = ages as number[]
     }
+    if (asked.has('route') && multiCity !== null) answers.multi_city = multiCity
     if (asked.has('budget')) {
       if (total !== null) answers.budget_total_rub = total
       else if (level !== null) answers.budget_level = level
@@ -61,6 +64,8 @@ export function useClarifyAnswers({ questions, prefill }: ClarifyEvent) {
     setAges,
     level,
     total,
+    multiCity,
+    setMultiCity,
     choose: (picked: Party) => {
       setParty(picked)
       setAdults(PARTY_ADULTS[picked])

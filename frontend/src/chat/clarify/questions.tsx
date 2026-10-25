@@ -342,3 +342,53 @@ export function BudgetStep({ level, onLevel, onTotal }: BudgetStepProps) {
     </Options>
   )
 }
+
+const PLANE = 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z'
+
+/** One base or a route of a few cities: the second tile is two scenes stitched by a dashed flight. */
+export function RouteStep({ selected, onPick }: PickProps<boolean>) {
+  const tile = (on: boolean) =>
+    cn('group relative h-40 overflow-hidden rounded-2xl text-left ring-offset-2 ring-offset-card', on && 'ring-[3px] ring-highlight')
+  const caption = (title: string, sub: string) => (
+    <>
+      <span className="absolute inset-0 bg-linear-to-t from-slate-950/65 via-slate-950/5 to-transparent" />
+      <span className="absolute right-3 bottom-2.5 left-3">
+        <span className="block text-base leading-tight font-semibold text-white">{title}</span>
+        <span className="block text-[12px] text-white/80">{sub}</span>
+      </span>
+    </>
+  )
+  return (
+    <Options className="grid grid-cols-2 gap-2.5">
+      <motion.button type="button" variants={option} aria-pressed={selected === false} aria-label="Один город"
+        onClick={() => onPick(false)} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }} className={tile(selected === false)}>
+        <TripArt kind="city" seed="one-city" still className="absolute inset-0 transition-transform duration-500 group-hover:scale-105" />
+        {caption('Один город', 'одна база, без переездов')}
+        {selected === false && <CheckBadge className="absolute top-2.5 right-2.5" />}
+      </motion.button>
+      <motion.button type="button" variants={option} aria-pressed={selected === true} aria-label="Несколько городов"
+        onClick={() => onPick(true)} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }} className={tile(selected === true)}>
+        <span className="absolute inset-0 flex">
+          <span className="relative w-1/2 overflow-hidden">
+            <TripArt kind="mountains" seed="route-a" still className="absolute inset-0 transition-transform duration-500 group-hover:scale-105" />
+          </span>
+          <span className="relative w-1/2 overflow-hidden border-l-2 border-white/80">
+            <TripArt kind="city" seed="route-b" still className="absolute inset-0 transition-transform duration-500 group-hover:scale-105" />
+          </span>
+        </span>
+        <svg viewBox="0 0 200 160" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden>
+          <path d="M28 70 C 70 30, 130 30, 172 62" fill="none" stroke="white" strokeWidth="2.5" strokeDasharray="1 7" strokeLinecap="round" />
+          <circle cx="28" cy="70" r="5" fill="white" />
+          <circle cx="172" cy="62" r="5" fill="white" />
+        </svg>
+        <span className="absolute top-[22%] left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-white shadow-md">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 rotate-90 text-highlight" aria-hidden>
+            <path fill="currentColor" d={PLANE} />
+          </svg>
+        </span>
+        {caption('Несколько городов', 'маршрут на 2–3 города')}
+        {selected === true && <CheckBadge className="absolute top-2.5 right-2.5" />}
+      </motion.button>
+    </Options>
+  )
+}

@@ -4,15 +4,15 @@ They are built per chat around a TripState, so whatever the model learns survive
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
-from app.flights import Flights, NoFlights, current_origin
+from app.flights import Flights, NoFlights, city, current_origin
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
     SLOTS,
@@ -26,17 +26,28 @@ from app.trip.brief import (
     prefill,
     search_hint,
 )
+from app.trip.routes import (
+    RoutePlan,
+    RouteQuery,
+    find_routes,
+    plan_of,
+    price_route,
+    route_card,
+    route_for_model,
+)
 
 SLOT_TITLES: dict[Slot, str] = {
     "vibe": "Какой отдых хочется?",
     "when": "Когда и на сколько?",
     "travelers": "Кто едет?",
+    "route": "Один город или несколько?",
     "budget": "Какой бюджет?",
 }
 SLOT_NAMES: dict[Slot, str] = {
     "vibe": "тип отдыха",
     "when": "когда",
     "travelers": "кто едет",
+    "route": "маршрут",
     "budget": "бюджет",
 }
 
@@ -52,15 +63,25 @@ ASK_DESCRIPTION = (
     "and only once per trip. Ends your turn: the user answers on the cards."
 )
 SHOW_DESCRIPTION = (
-    "Show destinations from search_destinations as cards. The cards already show the facts (weather, "
-    "flight, visa, price level), so `why` explains the fit for this user in their words and `tradeoff` "
-    "names what they give up. Ends your turn."
+    "Show destinations as cards: single places from search_destinations (pass `id`) and multi-city routes "
+    "from search_routes (pass `route`, the city ids in travel order); both can be mixed. The cards already "
+    "show the facts (weather, tickets, visa, nights per city), so `why` explains the fit for this user in "
+    "their words and `tradeoff` names what they give up. Ends your turn."
+)
+ROUTES_DESCRIPTION = (
+    "Multi-city routes of 2-3 places from our catalogue for when the user wants several cities in one trip "
+    "(multi_city in the brief, or words like 'по Европе', 'Ереван и Тбилиси'). The code chains places that "
+    "are close to each other and fit the filters, scores how well each route covers the user's interests "
+    "(`kinds`), splits the nights, and prices every leg with real Aviasales tickets; short hops are a ground "
+    "estimate by distance. Pass the same filters as for search_destinations plus `nights`. Do not offer "
+    "routes to families with small children unless they asked for one."
 )
 
 
 @dataclass
 class TripState:
     brief: TripBrief
+    routes: dict[str, RoutePlan] = field(default_factory=dict)  # found this turn, by id, for the cards
 
 
 class UpdateArgs(BriefPatch):
@@ -85,9 +106,18 @@ class AskArgs(BaseModel):
 
 
 class Pick(BaseModel):
-    id: str = Field(description="Destination id from search_destinations.")
+    id: str | None = Field(None, description="A single place: its id from search_destinations.")
+    route: list[str] | None = Field(
+        None, min_length=2, max_length=3, description="A route from search_routes: city ids in travel order."
+    )
     why: str = Field(max_length=240, description="Why it fits this user, 1-2 short sentences.")
     tradeoff: str | None = Field(None, max_length=140, description="Main downside or risk, one short phrase.")
+
+    @model_validator(mode="after")
+    def _one_kind(self):
+        if (self.id is None) == (self.route is None):
+            raise ValueError("pass either `id` for a place or `route` for a multi-city route")
+        return self
 
 
 class ShowArgs(BaseModel):
@@ -150,10 +180,43 @@ def trip_tools(
             ends_turn=True,
         )
 
+    async def search_routes(query: RouteQuery) -> dict:
+        origin = city(current_origin.get())
+        if query.nights is None:
+            low, high = state.brief.nights_min, state.brief.nights_max
+            query = query.model_copy(update={"nights": high or low})
+        async with sessionmaker() as db:
+            snapshots = await load_snapshots(db, catalog, now())
+        plans = await find_routes(snapshots, query, flights, origin)
+        state.routes.update({p.id: p for p in plans})
+        if not plans:
+            return {
+                "routes": [],
+                "note": "No 2-3 city route fits. Offer single places from search_destinations.",
+            }
+        return {
+            "from": origin.name if origin else None,
+            "routes": [route_for_model(p, query.month) for p in plans],
+            "note": "Tickets are the cheapest of the month; the dates of the legs get checked when the trip is "
+            "booked. Ground hops are an estimate by distance.",
+        }
+
+    async def _route(ids: list[str], snapshots: dict) -> RoutePlan | None:
+        places = [catalog.find(i) for i in ids]
+        if any(p is None for p in places) or len({p.id for p in places}) != len(places):
+            return None
+        plan = state.routes.get("+".join(p.id for p in places))
+        if plan is None:  # shown on a later turn: rebuild it from the same places, in the same order
+            brief = state.brief
+            q = RouteQuery(month=brief.month, kinds=brief.kinds, nights=brief.nights_max or brief.nights_min)
+            plan = plan_of([snapshots[p.id] for p in places], q)
+            await price_route(plan, flights, city(current_origin.get()), brief.month)
+        return plan
+
     async def show_destinations(args: ShowArgs) -> dict | ToolReply:
         async with sessionmaker() as db:
             loaded = await load_snapshots(db, catalog, now())
-        picked = {p.id for pick in args.picks if (p := catalog.find(pick.id))}
+        picked = {p.id for pick in args.picks if pick.id and (p := catalog.find(pick.id))}
         # the same tickets the search saw: cached by the flights client, so this costs no requests
         await with_flights(
             [s for s in loaded if s.place.id in picked], flights, current_origin.get(), state.brief.month
@@ -161,14 +224,21 @@ def trip_tools(
         snapshots = {s.place.id: s for s in loaded}
         cards, unknown = [], []
         for pick in args.picks:
+            if pick.route:
+                plan = await _route(pick.route, snapshots)
+                if plan is None:
+                    unknown.append("+".join(pick.route))
+                elif plan.id not in {c["id"] for c in cards}:
+                    cards.append(route_card(plan, state.brief.month, pick.why, pick.tradeoff))
+                continue
             place = catalog.find(pick.id)
             if place is None:
                 unknown.append(pick.id)
             elif place.id not in {c["id"] for c in cards}:
                 view = card(snapshots[place.id], state.brief.month)
-                cards.append({**view, "why": pick.why, "tradeoff": pick.tradeoff})
+                cards.append({"type": "place", **view, "why": pick.why, "tradeoff": pick.tradeoff})
         if not cards:
-            return {"error": f"Unknown ids {unknown}. Use ids from search_destinations."}
+            return {"error": f"Unknown ids {unknown}. Use ids from search_destinations or search_routes."}
         state.brief = state.brief.model_copy(update={"shown": [c["id"] for c in cards]})
         return ToolReply(
             result={"shown": [c["name"] for c in cards], "unknown": unknown, "note": "Cards are on screen."},
@@ -193,6 +263,19 @@ def trip_tools(
             args=AskArgs,
             handler=ask_user,
             preview=lambda r: r.get("error") or f"Спрашиваю: {', '.join(SLOT_NAMES[s] for s in r['asked'])}",
+        ),
+        Tool(
+            name="search_routes",
+            title="Собираю маршруты",
+            description=ROUTES_DESCRIPTION,
+            args=RouteQuery,
+            handler=search_routes,
+            preview=lambda r: (
+                f"Маршруты: {', '.join(x['name'] for x in r['routes'])}"
+                if r["routes"]
+                else "Маршрутов не нашлось"
+            ),
+            then="show_destinations",
         ),
         Tool(
             name="show_destinations",

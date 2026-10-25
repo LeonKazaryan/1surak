@@ -14,8 +14,11 @@ import {
   SunIcon,
 } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { DestinationCard, DestinationsEvent, FlightTicket, RouteFlight } from '@/types/api'
-import { flagEmoji, formatRub, plural } from '../widgets'
+import type { DestinationCard, DestinationsCard, DestinationsEvent, RouteFlight } from '@/types/api'
+import { flagEmoji, formatRub } from '../widgets'
+import { AirlineLogo } from './ticket'
+import { hours, shortDate, stopsText, temp } from './ticketFormat'
+import { RouteCardView } from './RouteCard'
 import { TripArt } from './TripArt'
 
 const grid: Variants = {
@@ -35,38 +38,6 @@ const rise: Variants = {
 const chip: Variants = {
   hidden: { opacity: 0, scale: 0.85 },
   show: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 400, damping: 24 } },
-}
-
-function hours(value: number): string {
-  return `${value.toLocaleString('ru-RU')} ч`
-}
-
-function temp(value: number): string {
-  return `${value > 0 ? '+' : ''}${value}°`
-}
-
-const MONTHS_GEN = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
-
-function shortDate(departure: string): string {
-  const [, month, day] = departure.slice(0, 10).split('-').map(Number)
-  return month ? `${day} ${MONTHS_GEN[month - 1]}` : ''
-}
-
-function stopsText(t: FlightTicket): string {
-  return t.transfers === 0 ? 'прямой' : `${t.transfers} ${plural(t.transfers, ['пересадка', 'пересадки', 'пересадок'])}`
-}
-
-function AirlineLogo({ ticket, className }: { ticket: FlightTicket; className?: string }) {
-  return (
-    <img
-      src={ticket.logo}
-      srcSet={`${ticket.logo.replace('/64/64/', '/128/128/')} 2x`}
-      alt=""
-      loading="lazy"
-      className={cn('shrink-0 rounded-md bg-white object-contain ring-1 ring-border', className)}
-      onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
-    />
-  )
 }
 
 /** The real ticket as a strip: airline, stops, time in the air, date, price; opens it on Aviasales. */
@@ -304,7 +275,7 @@ function Card({ card, best, picked, dimmed, canPick, onPick }: CardProps) {
 interface DestinationCardsProps {
   widget: DestinationsEvent
   canPick: boolean
-  onPick: (card: DestinationCard) => void
+  onPick: (card: DestinationsCard) => void
 }
 
 /** The agent's picks as cards: an illustration, the weather and facts, why it fits and what you give up. */
@@ -325,21 +296,25 @@ export function DestinationCards({ widget, canPick, onPick }: DestinationCardsPr
           ))}
         </motion.ul>
       )}
-      <motion.div variants={grid} className="grid gap-4 sm:grid-cols-2">
-        {widget.cards.map((card, i) => (
-          <Card
-            key={card.id}
-            card={card}
-            best={i === 0}
-            picked={picked === card.id}
-            dimmed={picked !== null && picked !== card.id}
-            canPick={canPick && picked === null}
-            onPick={() => {
+      {/* a route spans two cells; dense flow lets single places fill the holes it leaves */}
+      <motion.div variants={grid} className="grid gap-4 sm:grid-flow-row-dense sm:grid-cols-2">
+        {widget.cards.map((card, i) => {
+          const props = {
+            best: i === 0,
+            picked: picked === card.id,
+            dimmed: picked !== null && picked !== card.id,
+            canPick: canPick && picked === null,
+            onPick: () => {
               setPicked(card.id)
               onPick(card)
-            }}
-          />
-        ))}
+            },
+          }
+          return card.type === 'route' ? (
+            <RouteCardView key={card.id} card={card} {...props} />
+          ) : (
+            <Card key={card.id} card={card} {...props} />
+          )
+        })}
       </motion.div>
     </motion.div>
   )

@@ -7,7 +7,7 @@ import { PageHeader, type Crumb } from '@/components/PageHeader'
 import { MapIcon } from '@heroicons/react/20/solid'
 import { Button } from '@/components/ui/button'
 import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
-import type { BriefAnswers, DestinationCard } from '@/types/api'
+import type { BriefAnswers, DestinationsCard } from '@/types/api'
 import { ClarifyFlow } from './clarify/ClarifyOverlay'
 import { ClarifyPrompt } from './clarify/ClarifyPrompt'
 import { AgentTracePanel } from './components/AgentTracePanel'
@@ -54,7 +54,7 @@ interface MessageBubbleProps {
   isLast: boolean
   busy: boolean
   onOpenClarify: () => void
-  onPick: (card: DestinationCard) => void
+  onPick: (card: DestinationsCard) => void
 }
 
 function MessageBubble({ message, isStreaming, isLast, busy, onOpenClarify, onPick }: MessageBubbleProps) {
@@ -179,7 +179,7 @@ export default function ChatPage() {
                             isLast={i === messages.length - 1}
                           busy={busy}
                             onOpenClarify={() => setClarifyOpenFor(m.id)}
-                            onPick={(card) => send(`Выбираю ${card.name}`)}
+                            onPick={(card) => send(card.type === 'route' ? `Выбираю маршрут ${card.name}` : `Выбираю ${card.name}`)}
                           />
                         </div>
                       ))}

@@ -1,4 +1,4 @@
-import type { ClarifyEvent, ClarifyPrefill, ClarifySlot } from '@/types/api'
+import type { ClarifyEvent, ClarifyPrefill, ClarifySlot, TripKind } from '@/types/api'
 import { BUDGET_OPTIONS, KIND_OPTIONS, MONTHS, nightsLabel, plural } from '../widgets'
 
 /** One question of the agent: which parts of it are still unknown, so nothing is asked twice. */
@@ -25,6 +25,8 @@ export function planCards({ questions, prefill }: ClarifyEvent): CardPlan[] {
       }
       case 'travelers':
         return { ...base, label: 'Кто едет', askCounts: prefill.adults === null }
+      case 'route':
+        return { ...base, label: 'Маршрут' }
       case 'budget':
         return { ...base, label: 'Бюджет' }
     }
@@ -39,7 +41,7 @@ export function partyOptions(prefill: ClarifyPrefill): Party[] {
   return prefill.children === 0 ? ['solo', 'couple', 'group'] : ['solo', 'couple', 'kids', 'group']
 }
 
-export type StepKind = 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'budget'
+export type StepKind = 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'route' | 'budget'
 
 /** One tap of the deck. A question can take a few: «С детьми» adds «Сколько детей?» and an age per child. */
 export interface Step {
@@ -54,7 +56,11 @@ export interface Step {
 export interface StepState {
   party: Party | null
   ages: (number | null)[]
+  kinds?: TripKind[]
 }
+
+/** Who travels with children: then a multi-city route is not offered, the moving tires them. */
+const WITH_KIDS: Party[] = ['kids', 'oneAdult', 'twoAdults']
 
 const ORDINALS = ['первому', 'второму', 'третьему', 'четвёртому', 'пятому']
 
@@ -89,6 +95,12 @@ export function buildSteps(event: ClarifyEvent, state: StepState): Step[] {
           }
         })
         break
+      case 'route':
+        // picked «С детьми» or skiing a card earlier in the same deck: the question goes away
+        if (!(state.party && WITH_KIDS.includes(state.party)) && !(state.kinds?.length === 1 && state.kinds[0] === 'ski')) {
+          add({ key: 'route', kind: 'route', title: 'Один город или несколько?' })
+        }
+        break
       case 'budget':
         add({ key: 'budget', kind: 'budget', title: 'Какой бюджет?' })
         break
@@ -118,5 +130,6 @@ export function knownFacts(prefill: ClarifyPrefill): string[] {
   if (prefill.children) facts.push(`${prefill.children} ${plural(prefill.children, ['ребёнок', 'ребёнка', 'детей'])}`)
   const budget = BUDGET_OPTIONS.find((o) => o.level === prefill.budget_level)
   if (budget) facts.push(budget.level ? `Бюджет: ${budget.label.toLowerCase()}` : 'Бюджет не важен')
+  if (prefill.multi_city !== null) facts.push(prefill.multi_city ? 'Несколько городов' : 'Один город')
   return facts
 }

@@ -93,6 +93,7 @@ export function describeAnswers(a: BriefAnswers): string {
     const option = BUDGET_OPTIONS.find((o) => o.level === a.budget_level)
     if (option) parts.push(option.level ? `бюджет: ${option.label.toLowerCase()}` : 'бюджет не важен')
   }
+  if (a.multi_city !== undefined) parts.push(a.multi_city ? 'несколько городов' : 'один город')
   return parts.join(' · ')
 }
 

@@ -9,12 +9,26 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.catalog.catalog import KIND_LABELS, Catalog, Kind
+from app.catalog.catalog import KIND_LABELS, Catalog, Kind, load_catalog
 from app.catalog.search import MONTHS
 
-Slot = Literal["vibe", "when", "travelers", "budget"]
-SLOTS: tuple[Slot, ...] = ("vibe", "when", "travelers", "budget")
+Slot = Literal["vibe", "when", "travelers", "route", "budget"]
+SLOTS: tuple[Slot, ...] = ("vibe", "when", "travelers", "route", "budget")
+MIN_ROUTE_NIGHTS = 5  # shorter trips stay in one place: moving eats the days
 
+# A region the user names, as the catalogue's countries, so «по Кавказу» filters the search right away.
+REGION_COUNTRIES = {
+    "кавказ": ["Грузия", "Армения", "Азербайджан"],
+    "закавказье": ["Грузия", "Армения", "Азербайджан"],
+    "европа": ["Сербия", "Черногория", "Беларусь", "Турция"],
+    "балканы": ["Сербия", "Черногория"],
+    "средняя азия": ["Узбекистан", "Казахстан", "Киргизия"],
+    "центральная азия": ["Узбекистан", "Казахстан", "Киргизия"],
+    "юго-восточная азия": ["Таиланд", "Вьетнам", "Индонезия"],
+    "азия": ["Таиланд", "Вьетнам", "Индонезия", "Китай", "Шри-Ланка", "Индия"],
+    "ближний восток": ["ОАЭ", "Оман"],
+    "африка": ["Египет", "Тунис", "Танзания", "Сейшельские Острова", "Маврикий"],
+}
 BUDGET_LABELS = {0: "Бюджет не важен", 1: "Экономно", 2: "Средний бюджет", 3: "Комфорт"}
 # Team estimates for a week per person, to turn a sum of money into the catalogue's price level.
 LEVEL_CAPS_PER_PERSON = ((70_000, 1), (150_000, 2))
@@ -39,6 +53,11 @@ class BriefPatch(BaseModel):
         None, ge=0, le=3, description="0 does not matter, 1 budget, 2 mid-range, 3 comfort."
     )
     budget_total_rub: int | None = Field(None, gt=0, description="Budget for the whole trip and party, RUB.")
+    multi_city: bool | None = Field(
+        None,
+        description="True when the user wants several cities in one trip: 'по Европе', 'Ереван и Тбилиси', "
+        "'несколько городов', 'маршрут'. False when they want to stay in one place.",
+    )
     wishes: list[str] | None = Field(
         None,
         max_length=10,
@@ -75,6 +94,19 @@ def _nights(b: BriefPatch) -> tuple[int | None, int | None]:
     return None, None
 
 
+def route_fits(b: TripBrief) -> bool:
+    """Whether «one city or several?» is worth asking: not with children (a route is tiring for them),
+    not for a short or a ski trip, not when the user named one place."""
+    if b.multi_city is not None or b.children:
+        return False
+    _, high = _nights(b)
+    if high is not None and high < MIN_ROUTE_NIGHTS:
+        return False
+    if b.kinds and set(b.kinds) <= {"ski"}:
+        return False
+    return not (b.destination and load_catalog().find(b.destination))
+
+
 def missing(b: TripBrief) -> list[Slot]:
     result: list[Slot] = []
     if not b.destination and not b.kinds:
@@ -85,6 +117,9 @@ def missing(b: TripBrief) -> list[Slot]:
         result.append("travelers")
     if b.budget_level is None and b.budget_total_rub is None:
         result.append("budget")
+    # Rides along with other questions only: a request that says everything still gets zero questions.
+    if result and route_fits(b):
+        result.insert(len([s for s in result if SLOTS.index(s) < SLOTS.index("route")]), "route")
     return result
 
 
@@ -106,6 +141,8 @@ def assumptions(b: TripBrief) -> list[str]:
             result.append("возраст детей не указан")
     if "budget" in gaps:
         result.append("бюджет не ограничен")
+    if "route" in gaps:
+        result.append("один город, без переездов")
     return result
 
 
@@ -132,8 +169,14 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
     if b.destination:
         needle = b.destination.strip().casefold()
         countries = [c.name for c in catalog.countries.values() if c.name.casefold() == needle]
-        if countries:
-            hint["countries"] = countries
+        region = next((names for key, names in REGION_COUNTRIES.items() if key in needle), None)
+        if countries or region:
+            hint["countries"] = countries or region
+    if b.multi_city:
+        hint["multi_city"] = True  # search_routes, not search_destinations
+        _, nights = _nights(b)
+        if nights:
+            hint["nights"] = nights
     return hint
 
 
@@ -183,6 +226,8 @@ def chips(b: TripBrief) -> list[str]:
         result.append(f"до {b.budget_total_rub:,} ₽".replace(",", " "))
     elif b.budget_level is not None:
         result.append(BUDGET_LABELS[b.budget_level])
+    if b.multi_city:
+        result.append("Несколько городов")
     result.extend(b.wishes or [])
     return result
 
@@ -198,4 +243,5 @@ def prefill(b: TripBrief) -> dict:
         "children": b.children,
         "children_ages": list(b.children_ages or []),
         "budget_level": b.budget_level,
+        "multi_city": b.multi_city,
     }

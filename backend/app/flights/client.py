@@ -36,6 +36,10 @@ class Ticket:
     duration_min: int
     link: str
 
+    @property
+    def day(self) -> date:
+        return date.fromisoformat(self.departure_at[:10])
+
     def view(self) -> dict:
         return {
             "price_rub": self.price,
@@ -57,6 +61,9 @@ class RouteFlights:
     cheapest: Ticket
     direct: Ticket | None  # the cheapest without transfers, if any
     fastest: Ticket
+    tickets: tuple[
+        Ticket, ...
+    ] = ()  # every ticket found, cheapest first: routes chain their dates from these
 
     @property
     def duration_min(self) -> int:
@@ -67,6 +74,22 @@ class RouteFlights:
         if self.direct and self.direct is not self.cheapest:
             view["direct_option"] = self.direct.view()
         return view
+
+
+def merged(*found: RouteFlights | None) -> RouteFlights | None:
+    """Tickets of one route from several searches (say two months) as one set."""
+    tickets = {t: None for f in found if f for t in (f.tickets or (f.cheapest,))}
+    if not tickets:
+        return None
+    rows = sorted(tickets, key=lambda t: t.price)
+    direct = [t for t in rows if t.transfers == 0]
+    timed = [t for t in rows if t.duration_min] or rows
+    return RouteFlights(
+        cheapest=rows[0],
+        direct=direct[0] if direct else None,
+        fastest=min(timed, key=lambda t: (t.duration_min or 10**6, t.price)),
+        tickets=tuple(rows),
+    )
 
 
 class Flights(Protocol):
@@ -122,6 +145,7 @@ def summarize(rows: list[dict]) -> RouteFlights | None:
         cheapest=min(tickets, key=lambda t: t.price),
         direct=min(direct, key=lambda t: t.price) if direct else None,
         fastest=min(timed, key=lambda t: (t.duration_min or 10**6, t.price)),
+        tickets=tuple(sorted(tickets, key=lambda t: t.price)),
     )
 
 
