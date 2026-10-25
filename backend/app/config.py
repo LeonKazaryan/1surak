@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./data/1surak.db"
     static_dir: str = "static"
+    seed_catalog: bool = True
 
     llm_base_url: str = ""
     llm_api_key: str = ""

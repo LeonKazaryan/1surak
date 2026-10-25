@@ -52,5 +52,9 @@ async def save_facts(db: AsyncSession, items: list[Fact]) -> None:
 
 
 async def list_facts(db: AsyncSession, entity_type: str, entity_id: str) -> list[Fact]:
-    query = select(facts).where(facts.c.entity_type == entity_type, facts.c.entity_id == entity_id)
+    return await list_facts_many(db, entity_type, [entity_id])
+
+
+async def list_facts_many(db: AsyncSession, entity_type: str, entity_ids: list[str]) -> list[Fact]:
+    query = select(facts).where(facts.c.entity_type == entity_type, facts.c.entity_id.in_(entity_ids))
     return [_to_fact(row) for row in (await db.execute(query)).all()]

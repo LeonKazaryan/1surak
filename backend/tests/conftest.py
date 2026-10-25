@@ -50,6 +50,7 @@ def settings(tmp_path, static_dir):
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         static_dir=str(static_dir),
         llm_api_key="",
+        seed_catalog=False,
     )
 
 

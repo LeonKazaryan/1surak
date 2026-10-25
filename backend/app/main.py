@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
@@ -14,6 +15,14 @@ from app.tools import ToolRegistry, build_registry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
+
+
+async def _load_seed(sessionmaker) -> None:
+    # A broken seed must not take the whole app down: chat still works, the agent just has no catalogue.
+    try:
+        await load_catalog_facts(sessionmaker)
+    except Exception:
+        log.exception("Could not load the destination catalogue seed")
 
 
 def create_app(
@@ -27,7 +36,9 @@ def create_app(
         await init_db(engine)
         app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
         app.state.llm = llm or build_llm(settings)
-        app.state.tools = tools if tools is not None else build_registry()
+        if settings.seed_catalog:
+            await _load_seed(app.state.sessionmaker)
+        app.state.tools = tools if tools is not None else build_registry(app.state.sessionmaker)
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield

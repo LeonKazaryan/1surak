@@ -1,0 +1,329 @@
+"""Destination search: exact filters on facts, plus the near misses with the reason they missed.
+
+The filters run in code, never in the model, so «море от 24 °C» or «перелёт до 6 часов» is right every time.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.catalog.catalog import (
+    KIDS_LABELS,
+    KIND_LABELS,
+    ORIGIN_NAME,
+    PRICE_LABELS,
+    VISA_LABELS,
+    Catalog,
+    Kind,
+    Place,
+)
+from app.facts.resolve import Resolution
+from app.facts.service import Resolved, resolve_entities
+
+MONTHS = [
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+]
+MONTHS_IN = [
+    "январе",
+    "феврале",
+    "марте",
+    "апреле",
+    "мае",
+    "июне",
+    "июле",
+    "августе",
+    "сентябре",
+    "октябре",
+    "ноябре",
+    "декабре",
+]
+CLIMATE_ATTRIBUTES = ("air_max", "air_min", "sea_temp", "rain_days")
+NO_VISA = {"none", "visa_free"}
+EASY_VISA = NO_VISA | {"on_arrival", "evisa"}
+MAX_NEAR_MISSES = 6
+
+SOURCES_NOTE = {
+    "климат": "Open-Meteo (ERA5), средние за 2020–2024",
+    "море": "Open-Meteo Marine, средние за 2021–2024",
+    "перелёты, визы, цены, дети": "оценка команды 1surak на 25.10.2026, не сверено с официальными источниками",
+    "время в пути": f"из города {ORIGIN_NAME}, типичное, без пересадок",
+}
+
+
+class SearchQuery(BaseModel):
+    month: int | None = Field(
+        None, ge=1, le=12, description="Travel month 1-12. Required for temperature filters."
+    )
+    kinds: list[Kind] | None = Field(
+        None, description="Wanted kinds of trip, any of them matches: sea, mountains, city, nature, ski."
+    )
+    min_sea_temp: float | None = Field(None, ge=0, le=35, description="Minimum average sea temperature, °C.")
+    min_air_temp: float | None = Field(
+        None, ge=-30, le=45, description="Minimum average daytime air temperature, °C."
+    )
+    max_flight_hours: float | None = Field(
+        None, gt=0, le=20, description="Longest acceptable flight from Moscow, h."
+    )
+    direct_only: bool = Field(False, description="Only places with direct flights from Moscow.")
+    without_flight: bool = Field(False, description="Only places reachable by train from Moscow.")
+    visa: Literal["any", "no_visa", "easy"] = Field(
+        "any", description="no_visa: domestic or visa-free; easy: also visa on arrival or e-visa."
+    )
+    with_kids: bool = Field(False, description="Travelling with small children.")
+    max_price_level: int | None = Field(None, ge=1, le=3, description="1 budget, 2 mid-range, 3 expensive.")
+    region: Literal["any", "russia", "abroad"] = "any"
+    exclude: list[str] = Field(
+        default_factory=list, description="Destination ids to leave out, e.g. rejected ones."
+    )
+    limit: int = Field(5, ge=1, le=10)
+
+    @model_validator(mode="after")
+    def _month_for_temperatures(self):
+        if self.month is None and (self.min_sea_temp is not None or self.min_air_temp is not None):
+            raise ValueError("month is required when filtering by sea or air temperature")
+        return self
+
+
+@dataclass
+class Snapshot:
+    """One place with every fact the search needs, already resolved across sources."""
+
+    place: Place
+    climate: dict[int, dict[str, float]] = field(default_factory=dict)
+    flight_min: float | None = None
+    direct: bool | None = None
+    train_min: float | None = None
+    visa_rule: str = "visa_required"
+    visa_days: float | None = None
+    visa_note: str | None = None
+    flags: list[str] = field(default_factory=list)
+
+
+def _note_quality(snapshot: Snapshot, label: str, resolution: Resolution) -> None:
+    if resolution.conflict:
+        others = ", ".join(f"{a.source}: {a.value}" for a in resolution.alternatives)
+        snapshot.flags.append(f"{label}: источники расходятся ({others})")
+    if resolution.stale:
+        snapshot.flags.append(f"{label}: данные устарели, на {resolution.chosen.fetched_at.date()}")
+
+
+def _value(snapshot: Snapshot, facts: Resolved, attribute: str, label: str, period: str | None = None):
+    resolution = facts.get((attribute, period))
+    if resolution is None:
+        return None
+    _note_quality(snapshot, label, resolution)
+    return resolution.chosen.value
+
+
+def build_snapshot(place: Place, place_facts: Resolved, route: Resolved, country: Resolved) -> Snapshot:
+    snapshot = Snapshot(place=place)
+    for month in range(1, 13):
+        values = {
+            attribute: value
+            for attribute in CLIMATE_ATTRIBUTES
+            if (value := _value(snapshot, place_facts, attribute, f"{attribute} m{month}", f"m{month}"))
+            is not None
+        }
+        if values:
+            snapshot.climate[month] = values
+    snapshot.flight_min = _value(snapshot, route, "flight_duration", "перелёт")
+    snapshot.direct = _value(snapshot, route, "direct", "прямой рейс")
+    snapshot.train_min = _value(snapshot, route, "train_duration", "поезд")
+    snapshot.visa_rule = _value(snapshot, country, "visa_rule", "виза") or "visa_required"
+    snapshot.visa_days = _value(snapshot, country, "visa_days", "срок без визы")
+    snapshot.visa_note = _value(snapshot, country, "visa_note", "виза")
+    return snapshot
+
+
+async def load_snapshots(db: AsyncSession, catalog: Catalog, now: datetime) -> list[Snapshot]:
+    places = catalog.places
+    place_facts = await resolve_entities(db, "place", [p.qid for p in places], now)
+    routes = await resolve_entities(db, "route", [p.route_id for p in places], now)
+    countries = await resolve_entities(db, "country", sorted({p.country.code for p in places}), now)
+    return [
+        build_snapshot(p, place_facts[p.qid], routes[p.route_id], countries[p.country.code]) for p in places
+    ]
+
+
+def _hours(minutes: float | None) -> float | None:
+    return None if minutes is None else round(minutes / 60 * 2) / 2  # nearest half hour
+
+
+def in_scope(s: Snapshot, q: SearchQuery) -> bool:
+    """The kind of trip and the region define what the user asked for, so a miss here is not a near miss."""
+    place = s.place
+    if q.kinds and not set(q.kinds) & set(place.kinds):
+        return False
+    if q.min_sea_temp is not None and "sea" not in place.kinds:  # a sea temperature implies a sea trip
+        return False
+    if q.region != "any" and place.domestic != (q.region == "russia"):
+        return False
+    excluded = {e.strip().casefold() for e in q.exclude}
+    return place.id not in excluded and place.name.casefold() not in excluded
+
+
+@dataclass(frozen=True)
+class Miss:
+    """One constraint a place misses. `gap` says how far off it is, so the closest misses come first."""
+
+    reason: str
+    kind: str
+    gap: float
+
+
+MISSING_DATA_GAP = 2.0
+MAX_NEAR_GAP = 2.5  # beyond this a miss is a different trip, not a near one (no train, sea at 7 °C)
+
+
+def _temp(value: float, threshold: float) -> str:
+    # 23.6 against «от 24» must not read as «около 24 °C, нужно от 24 °C»
+    return f"{value:.1f}" if round(value) >= threshold else f"{value:.0f}"
+
+
+def _climate_miss(q: SearchQuery, value: float | None, threshold: float, what: str, kind: str) -> Miss | None:
+    if value is None:
+        return Miss(f"нет данных: {what}", kind, MISSING_DATA_GAP)
+    if value >= threshold:
+        return None
+    month = MONTHS_IN[q.month - 1]
+    label = "море" if kind == "sea" else "днём"
+    reason = f"{label} в {month} около {_temp(value, threshold)} °C, нужно от {threshold:g} °C"
+    return Miss(reason, kind, (threshold - value) / 3)
+
+
+def failures(s: Snapshot, q: SearchQuery) -> list[Miss]:
+    """Every adjustable constraint this place misses, in words the agent can pass on."""
+    place, misses = s.place, []
+    month_climate = s.climate.get(q.month, {}) if q.month else {}
+    if q.min_sea_temp is not None:
+        misses.append(
+            _climate_miss(q, month_climate.get("sea_temp"), q.min_sea_temp, "температура моря", "sea")
+        )
+    if q.min_air_temp is not None:
+        misses.append(_climate_miss(q, month_climate.get("air_max"), q.min_air_temp, "погода", "air"))
+
+    if q.without_flight:
+        if s.train_min is None:
+            misses.append(Miss("без самолёта не добраться", "train", 3.0))
+    else:
+        if q.max_flight_hours is not None:
+            if s.flight_min is None:
+                misses.append(Miss(f"нет рейса из города {ORIGIN_NAME}", "flight", 3.0))
+            elif s.flight_min / 60 > q.max_flight_hours:
+                reason = f"перелёт около {_hours(s.flight_min):g} ч, нужно до {q.max_flight_hours:g} ч"
+                misses.append(Miss(reason, "flight", (s.flight_min / 60 - q.max_flight_hours) / 2))
+        if q.direct_only and not s.direct:
+            misses.append(Miss("нет прямых рейсов", "direct", 1.0))
+
+    allowed = {"no_visa": NO_VISA, "easy": EASY_VISA}.get(q.visa)
+    if allowed is not None and s.visa_rule not in allowed:
+        misses.append(Miss(VISA_LABELS.get(s.visa_rule, s.visa_rule), "visa", 1.0))
+    if q.with_kids and place.kids == "poor":
+        misses.append(Miss(KIDS_LABELS["poor"], "kids", 1.5))
+    if q.max_price_level is not None and place.price_level > q.max_price_level:
+        reason = f"{PRICE_LABELS[place.price_level]} (цены {place.price_level} из 3)"
+        misses.append(Miss(reason, "price", float(place.price_level - q.max_price_level)))
+    return [m for m in misses if m is not None]
+
+
+def near_misses(checked: list[tuple[Snapshot, list[Miss]]], q: SearchQuery) -> list[dict]:
+    """Places that miss exactly one constraint: the closest miss of each kind first, so the agent can
+    explain the trade-offs («теплее, но дорого», «море тёплое, но лететь 9 часов»), then the next closest."""
+    single = sorted(
+        ((s, why[0]) for s, why in checked if len(why) == 1 and why[0].gap < MAX_NEAR_GAP),
+        key=lambda pair: (pair[1].gap, _rank(pair[0], q)),
+    )
+    picked, kinds = [], set()
+    for s, miss in single:
+        if miss.kind not in kinds:
+            picked.append((s, miss))
+            kinds.add(miss.kind)
+    picked += [pair for pair in single if pair not in picked]
+    return [
+        {"id": s.place.id, "name": s.place.name, "why_not": m.reason} for s, m in picked[:MAX_NEAR_MISSES]
+    ]
+
+
+def _rank(s: Snapshot, q: SearchQuery) -> tuple:
+    travel = s.train_min if q.without_flight else s.flight_min
+    sea = s.climate.get(q.month, {}).get("sea_temp", 0) if q.month else 0
+    return (travel if travel is not None else 10_000, s.place.price_level, -sea)
+
+
+def _visa_text(s: Snapshot) -> str:
+    text = VISA_LABELS.get(s.visa_rule, s.visa_rule)
+    if s.visa_days:
+        text += f", до {s.visa_days:.0f} дней"
+    return f"{text}. {s.visa_note}" if s.visa_note else text
+
+
+def _climate_view(values: dict[str, float]) -> dict:
+    view = {
+        "днём": values.get("air_max"),
+        "ночью": values.get("air_min"),
+        "море": values.get("sea_temp"),
+        "дождливых_дней": values.get("rain_days"),
+    }
+    return {k: round(v) if k != "дождливых_дней" else round(v, 1) for k, v in view.items() if v is not None}
+
+
+def describe(s: Snapshot, month: int | None = None) -> dict:
+    place = s.place
+    result = {
+        "id": place.id,
+        "name": place.name,
+        "country": place.country.name,
+        "kinds": [KIND_LABELS[k] for k in place.kinds],
+        "flight_hours": _hours(s.flight_min),
+        "direct_flight": s.direct,
+        "train_hours": _hours(s.train_min),
+        "airport": place.airport,
+        "visa": _visa_text(s),
+        "price": PRICE_LABELS[place.price_level],
+        "kids": KIDS_LABELS[place.kids],
+        "highlights": list(place.highlights),
+        "watch_out": list(place.watch_out),
+    }
+    if month and month in s.climate:
+        result["climate"] = {"month": MONTHS[month - 1], **_climate_view(s.climate[month])}
+    if s.flags:
+        result["data_flags"] = s.flags
+    return {k: v for k, v in result.items() if v is not None}
+
+
+def search(snapshots: list[Snapshot], q: SearchQuery) -> dict:
+    candidates = [s for s in snapshots if in_scope(s, q)]
+    checked = [(s, failures(s, q)) for s in candidates]
+    matches = sorted((s for s, why in checked if not why), key=lambda s: _rank(s, q))
+    return {
+        "from": ORIGIN_NAME,
+        "month": MONTHS[q.month - 1] if q.month else None,
+        "matches": [describe(s, q.month) for s in matches[: q.limit]],
+        "more_matches": max(0, len(matches) - q.limit),
+        "near_misses": near_misses(checked, q),
+        "checked": len(candidates),
+        "sources": SOURCES_NOTE,
+    }
+
+
+def destination_details(s: Snapshot) -> dict:
+    details = describe(s)
+    details["by_month"] = [{"month": MONTHS[m - 1], **_climate_view(v)} for m, v in sorted(s.climate.items())]
+    details["coordinates"] = [s.place.lat, s.place.lon]
+    details["wikidata"] = f"https://www.wikidata.org/wiki/{s.place.qid}"
+    details["sources"] = SOURCES_NOTE
+    return details

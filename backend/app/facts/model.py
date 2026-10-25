@@ -47,6 +47,7 @@ ATTRIBUTES: dict[str, Attribute] = {
     "sea_temp": Attribute("°C", -2, 35, tolerance=1.0),
     "rain_days": Attribute("days", 0, 31, tolerance=2),
     "flight_duration": Attribute("min", 10, 1500, tolerance=30),
+    "train_duration": Attribute("min", 10, 6000, tolerance=30),
     "visa_days": Attribute("days", 0, 366),
 }
 
