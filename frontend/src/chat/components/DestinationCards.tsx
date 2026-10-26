@@ -153,6 +153,14 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
             Лучшее совпадение
           </motion.span>
         )}
+        {card.verified === false && (
+          <span
+            className={cn('absolute left-3 rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm backdrop-blur-md', best ? 'top-11' : 'top-3')}
+            title="Город с прямым рейсом, но не из нашего каталога: визу, цены и отдых команда не проверяла, климат по данным 2025 года"
+          >
+            не проверено
+          </span>
+        )}
         {card.climate && (card.climate.day !== undefined || card.climate.sea !== undefined) && (
           <span className="absolute top-3 right-3 inline-flex items-center gap-2 rounded-full bg-white/85 px-2.5 py-1 text-[12px] font-semibold text-foreground shadow-sm backdrop-blur-md">
             {card.climate.day !== undefined && (

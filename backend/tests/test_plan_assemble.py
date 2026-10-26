@@ -7,6 +7,7 @@ from datetime import date
 from app.catalog.catalog import load_catalog
 from app.catalog.search import Snapshot
 from app.flights import City, RouteFlights, Ticket
+from app.hotels import HotelSource
 from app.plan.assemble import assemble
 from app.trip.brief import TripBrief
 from tests.conftest import FakeFlights
@@ -43,7 +44,12 @@ ANTALYA_TICKETS = FakeFlights(
 )
 
 
+# the demo hotels, whose features (kids club, reception) these tests check; real ones are in test_hotels
+DEMO_HOTELS = HotelSource(listing=lambda place_id: ())
+
+
 def build(stops, brief=FAMILY, tickets=ANTALYA_TICKETS, **kwargs):
+    kwargs.setdefault("hotels", DEMO_HOTELS)
     return asyncio.run(assemble(stops, brief, tickets, MOSCOW, TODAY, **kwargs))
 
 

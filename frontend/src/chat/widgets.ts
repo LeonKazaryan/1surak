@@ -134,7 +134,8 @@ export function isWidgetEvent(event: ChatStreamEvent | { type?: unknown }): even
     event.type === 'destinations' ||
     event.type === 'trip_plan' ||
     event.type === 'booking' ||
-    event.type === 'flight_plan'
+    event.type === 'flight_plan' ||
+    event.type === 'hotel_options'
   )
 }
 

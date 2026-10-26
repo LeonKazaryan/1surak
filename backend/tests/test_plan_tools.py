@@ -77,7 +77,12 @@ def test_should_build_the_trip_then_show_it_as_a_plan(sessionmaker):
     assert shown.ends_turn and shown.text == "Собрал для вас неделю в Анталье."
     event = shown.event
     assert event["type"] == "trip_plan" and event["id"] == "antalya"
-    assert event["stops"][0]["hotel"]["demo"] and event["days"] and event["costs"]["total"] > 0
+    hotel = event["stops"][0]["hotel"]
+    # Antalya is in the hotel directory: a real hotel, its price an estimate and its terms not claimed
+    assert hotel["real"] and not hotel["demo"] and hotel["price_estimate"] and not hotel["terms_known"]
+    assert hotel["source_url"].startswith(("https://www.wikidata.org/", "https://www.openstreetmap.org/"))
+    assert event["days"] and event["costs"]["total"] > 0
+    assert event["costs"]["low"] < event["costs"]["total"] < event["costs"]["high"]
     assert event["currency"]["code"] == "RUB"
     assert state.brief.plan["id"] == "antalya"
 

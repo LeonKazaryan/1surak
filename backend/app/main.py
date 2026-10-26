@@ -11,9 +11,13 @@ from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
 from app.db import init_db
+from app.destinations import reachable
+from app.destinations.climate import ClimateFetcher
 from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
+from app.hotels import EstimatedOffers, HotelSource
+from app.hotels.cache import CachedOffers, OfferStore
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
@@ -84,17 +88,35 @@ def create_app(
             every = timedelta(minutes=settings.fare_refresh_minutes)
             refresher = asyncio.create_task(flights.keep_fresh(every, settings.fare_refresh_budget))
         app.state.flights = flights
+        # hotel offers: estimated today, cached like fares so a real provider plugs in behind the same cache
+        hotel_offers = CachedOffers(EstimatedOffers(), OfferStore(app.state.sessionmaker))
+        app.state.hotels = HotelSource(hotel_offers)
+        hotel_refresher = None
+        if settings.fare_refresh_minutes > 0:
+            every = timedelta(minutes=settings.fare_refresh_minutes)
+            hotel_refresher = asyncio.create_task(
+                hotel_offers.keep_fresh(every, settings.fare_refresh_budget)
+            )
+        climate = ClimateFetcher(app.state.sessionmaker) if settings.destination_climate else None
+        if climate:
+            # the cities people fly to from the usual departure cities: their climate loads in the background
+            for origin in filter(None, settings.destination_prefetch.split(",")):
+                await climate.ensure(reachable(network(), origin.strip()), urgent=False)
         if tools is not None:
             app.state.tools = tools
         else:
             web = web_search_for(settings, app.state.llm)
             pages = page_tools_for(settings, app.state.llm) if web is not None else None
-            app.state.tools = build_registry(app.state.sessionmaker, web, pages, flights, embedder)
+            app.state.tools = build_registry(app.state.sessionmaker, web, pages, flights, embedder, climate)
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield
-        if refresher:
-            refresher.cancel()
+        for task in (refresher, hotel_refresher):
+            if task:
+                task.cancel()
+        await hotel_offers.settle()
+        if climate:
+            climate.stop()
         if isinstance(flights, TravelpayoutsFlights):
             await flights.settle()
         await engine.dispose()

@@ -60,6 +60,18 @@ const TICKET = {
 }
 
 describe('DestinationCards', () => {
+  it('should mark a city from the route map as not checked by the team', () => {
+    renderCard({ ...base, verified: false })
+
+    expect(screen.getByText('не проверено')).toHaveAttribute('title', expect.stringContaining('не из нашего каталога'))
+  })
+
+  it('should not mark a catalogue place', () => {
+    renderCard(base)
+
+    expect(screen.queryByText('не проверено')).toBeNull()
+  })
+
   it('should show the real photo of the place', () => {
     renderCard({ ...base, photo: PHOTO })
 

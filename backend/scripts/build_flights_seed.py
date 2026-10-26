@@ -34,6 +34,9 @@ def main() -> None:
             "lat": round(c["coordinates"]["lat"], 3),
             "lon": round(c["coordinates"]["lon"], 3),
             "from": (c.get("cases") or {}).get("ro"),  # «из Астаны»
+            "in": (c.get("cases") or {}).get("pr"),  # «в Ташкенте»
+            "cc": c.get("country_code"),
+            "tz": c.get("time_zone"),
         }
         for c in fetch("cities")
         if c.get("has_flightable_airport") and c.get("name") and c.get("coordinates")
@@ -44,10 +47,19 @@ def main() -> None:
         if a.get("code") and (a.get("name") or (a.get("name_translations") or {}).get("en"))
     }
     known = {c["code"] for c in cities}
+    all_airports = fetch("airports")
+    # the city's main airport, for the ride to the hotel: the one sharing the city's code, else any flightable one
+    main_airport: dict[str, dict] = {}
+    for a in sorted(all_airports, key=lambda a: (a.get("code") != a.get("city_code"), a.get("code") or "")):
+        if a.get("flightable") and a.get("iata_type") == "airport" and a.get("coordinates"):
+            main_airport.setdefault(a.get("city_code"), a["coordinates"])
+    for c in cities:
+        if spot := main_airport.get(c["code"]):
+            c["air"] = [round(spot["lat"], 4), round(spot["lon"], 4)]
     # only airports whose code differs from their city's: SVO > MOW; AYT is both, so it needs no row
     airports = {
         a["code"]: a["city_code"]
-        for a in fetch("airports")
+        for a in all_airports
         if a.get("code") and a.get("city_code") in known and a["code"] != a["city_code"]
     }
     airports.update({old: new for old, new in RENAMED.items() if new in known})

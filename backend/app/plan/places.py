@@ -26,7 +26,13 @@ def _seed() -> dict:
 
 
 def place_info(place_id: str) -> PlaceInfo:
-    entry = _seed()[place_id]
+    entry = _seed().get(place_id)
+    if entry is None:  # a city from the route map: its time zone and main airport from Travelpayouts
+        from app.destinations import PREFIX
+        from app.flights import city
+
+        found = city(place_id.removeprefix(PREFIX).upper())
+        return PlaceInfo(tz=ZoneInfo(found.tz), airport=found.airport)
     airport = entry.get("airport")
     return PlaceInfo(
         tz=ZoneInfo(entry["tz"]),

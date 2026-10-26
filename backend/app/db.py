@@ -101,6 +101,19 @@ fares = Table(
 )
 
 
+# Hotel offers per place and stay (app/hotels/cache.py): every hotel's rooms for one search, until expiry.
+hotel_offers = Table(
+    "hotel_offers",
+    metadata,
+    Column("place_id", Text, primary_key=True),
+    Column("stay", Text, primary_key=True),  # check-in, nights and party, see StayQuery.key
+    Column("offers", JSON, nullable=False),  # {hotel_id: [Offer, ...]}
+    Column("source", Text, nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False, index=True),
+)
+
+
 # The knowledge base the agent keeps growing with web search (docs/09-living-knowledge-base.md).
 # The integer id is what the agent cites («kb:42»).
 kb_entries = Table(

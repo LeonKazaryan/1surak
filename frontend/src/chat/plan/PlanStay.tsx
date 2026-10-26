@@ -1,7 +1,7 @@
 import { useContext } from 'react'
 import { CheckIcon, MinusIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { PlanHotel, PlanStop } from '@/types/api'
+import type { Photo, PlanHotel, PlanStop } from '@/types/api'
 import { CurrencyContext, formatMoney, plural } from '../widgets'
 import { PlanSection, Stars } from './planParts'
 import { nightsText, spanText } from './planFormat'
@@ -13,6 +13,7 @@ function cancelText(hotel: PlanHotel): string {
 }
 
 function Rating({ hotel }: { hotel: PlanHotel }) {
+  if (hotel.rating === null || hotel.reviews === null) return null
   return (
     <span className="flex shrink-0 items-center gap-1.5">
       <span className="rounded-lg bg-highlight px-1.5 py-0.5 text-[13px] font-semibold text-white tabular-nums">
@@ -47,31 +48,60 @@ function Pros({ hotel }: { hotel: PlanHotel }) {
   )
 }
 
+/** A real hotel's photo from Wikimedia Commons, credited as its licence asks. */
+export function HotelPhoto({ photo, name }: { photo: Photo; name: string }) {
+  return (
+    <figure className="-mx-4 -mt-4 mb-0">
+      <img src={photo.url} alt={name} loading="lazy" className="block h-40 w-full object-cover" />
+      <figcaption className="px-4 pt-1 text-[11px] text-faint">
+        Фото:{' '}
+        <a href={photo.file_url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+          {photo.author}, {photo.license}
+        </a>
+      </figcaption>
+    </figure>
+  )
+}
+
+/** Demo: invented whole. Real: the hotel exists, the price is our estimate until booking. */
+export function SourceBadge({ hotel }: { hotel: { real?: boolean } }) {
+  const [label, title] = hotel.real
+    ? ['цена ориентировочная', 'Настоящий отель; цену и условия уточним при бронировании']
+    : ['демо', 'Демонстрационный отель: цены и номера сгенерированы']
+  return (
+    <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-muted-foreground" title={title}>
+      {label}
+    </span>
+  )
+}
+
 function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: string | null }) {
   const currency = useContext(CurrencyContext)
   const where = [hotel.area, hotel.beach_m !== null && `до пляжа ${hotel.beach_m} м`].filter(Boolean).join(' · ')
+  const unknownTerms = hotel.terms_known === false
   const facts = [
-    hotel.meal_label,
-    cancelText(hotel),
-    hotel.pay_at_hotel ? 'оплата в отеле' : 'оплата при бронировании',
-    `заселение с ${hotel.check_in}, выезд до ${hotel.check_out}`,
+    ...(unknownTerms
+      ? ['питание, отмену и оплату уточним при бронировании']
+      : [hotel.meal_label, cancelText(hotel), hotel.pay_at_hotel ? 'оплата в отеле' : 'оплата при бронировании']),
+    `заселение ${hotel.real ? 'обычно ' : ''}с ${hotel.check_in}, выезд до ${hotel.check_out}`,
     hotel.rooms > 1 && `${hotel.rooms} ${plural(hotel.rooms, ['номер', 'номера', 'номеров'])}`,
     transferText,
   ].filter((fact): fact is string => Boolean(fact))
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
+    <div className="flex flex-col gap-3 overflow-hidden rounded-2xl border border-border p-4">
+      {hotel.photo && <HotelPhoto photo={hotel.photo} name={hotel.name} />}
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h5 className="m-0 min-w-0 text-[17px] leading-tight font-semibold tracking-tight text-foreground">{hotel.name}</h5>
-            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground" title="Демонстрационный отель: цены и номера сгенерированы">
-              демо
-            </span>
+            <SourceBadge hotel={hotel} />
           </div>
           <div className="mt-1 flex min-w-0 items-start gap-2 text-[13px] leading-snug text-muted-foreground">
-            <span className="flex h-[18px] shrink-0 items-center">
-              <Stars count={hotel.stars} />
-            </span>
+            {hotel.stars_known !== false && (
+              <span className="flex h-[18px] shrink-0 items-center">
+                <Stars count={hotel.stars} />
+              </span>
+            )}
             <span className="min-w-0">{where}</span>
           </div>
         </div>
@@ -88,7 +118,13 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
       </ul>
       <div className="flex items-baseline justify-between gap-3 border-t border-border pt-3">
         <span className="text-[12px] text-muted-foreground">
-          {nightsText(hotel.nights)} · {formatMoney(hotel.night_rub, currency)} за ночь
+          {nightsText(hotel.nights)} · {hotel.price_estimate && hotel.real ? 'около ' : ''}
+          {formatMoney(hotel.night_rub, currency)} за ночь
+          {hotel.source_url && (
+            <a href={hotel.source_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-highlight underline-offset-2 hover:underline">
+              на карте
+            </a>
+          )}
         </span>
         <span className="text-lg font-semibold text-foreground tabular-nums">{formatMoney(hotel.total_rub, currency)}</span>
       </div>
@@ -111,10 +147,10 @@ function Alternative({ hotel, best, canAct, onPick }: AlternativeProps) {
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-1.5">
           <span className="text-[14px] font-semibold text-foreground">{hotel.name}</span>
-          <Stars count={hotel.stars} />
+          {hotel.stars_known !== false && <Stars count={hotel.stars} />}
         </span>
         <span className="block text-[12px] leading-snug text-muted-foreground">
-          {[hotel.meal_label, ...hotel.reasons.slice(0, 2)].join(' · ')}
+          {[hotel.terms_known === false ? null : hotel.meal_label, ...hotel.reasons.slice(0, 2)].filter(Boolean).join(' · ')}
         </span>
         <span className={cn('block text-[12px] font-medium tabular-nums', gap < 0 ? 'text-[#3f7d22]' : 'text-muted-foreground')}>
           {formatMoney(hotel.total_rub, currency)}
@@ -173,6 +209,14 @@ export function PlanStay({ stops, canAct, onAsk }: PlanStayProps) {
               ))}
             </ul>
           )}
+          <button
+            type="button"
+            onClick={() => onAsk(`Покажи ещё отели: ${stop.name}`)}
+            disabled={!canAct}
+            className="self-start rounded-full px-1 text-[13px] font-medium text-highlight underline-offset-4 hover:underline disabled:opacity-50"
+          >
+            Ещё отели
+          </button>
           {stop.excluded.length > 0 && (
             <ul aria-label="Не предлагаю" className="m-0 flex list-none flex-col gap-1 p-0 text-[12px] leading-snug text-muted-foreground">
               {stop.excluded.map((hotel) => (

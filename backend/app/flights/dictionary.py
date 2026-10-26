@@ -21,6 +21,10 @@ class City:
     lat: float
     lon: float
     name_from: str | None = None  # «Астаны», for «из Астаны»
+    country_code: str | None = None
+    tz: str | None = None
+    airport: tuple[float, float] | None = None  # the main airport, for the ride to the hotel
+    name_in: str | None = None  # «Ташкенте», for «в Ташкенте»
 
     @property
     def from_text(self) -> str:
@@ -40,7 +44,19 @@ class City:
 def cities() -> dict[str, City]:
     rows = json.loads((SEED / "cities.json").read_text(encoding="utf-8"))
     return {
-        r["code"]: City(r["code"], r["name"], r["country"], r["lat"], r["lon"], r.get("from")) for r in rows
+        r["code"]: City(
+            r["code"],
+            r["name"],
+            r["country"],
+            r["lat"],
+            r["lon"],
+            r.get("from"),
+            r.get("cc"),
+            r.get("tz"),
+            tuple(r["air"]) if r.get("air") else None,
+            r.get("in"),
+        )
+        for r in rows
     }
 
 

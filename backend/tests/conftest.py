@@ -110,6 +110,7 @@ def settings(db_url, static_dir):
         llm_api_key="",
         seed_catalog=False,
         embeddings=False,
+        destination_climate=False,  # no Open-Meteo calls from tests
     )
 
 

@@ -5,6 +5,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.flights import Flights
+from app.hotels import HotelSource
 from app.llm import LLM
 from app.tools import ToolRegistry
 
@@ -25,6 +26,10 @@ def get_flights(request: Request) -> Flights:
     return request.app.state.flights
 
 
+def get_hotels(request: Request) -> HotelSource:
+    return request.app.state.hotels
+
+
 def rate_limited(request: Request) -> None:
     request.app.state.rate_limit.hit(request.client.host if request.client else "unknown")
 
@@ -33,6 +38,7 @@ SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session
 Llm = Annotated[LLM, Depends(get_llm)]
 Tools = Annotated[ToolRegistry, Depends(get_tools)]
 FlightPrices = Annotated[Flights, Depends(get_flights)]
+Hotels = Annotated[HotelSource, Depends(get_hotels)]
 
 
 async def get_db(sessionmaker: SessionFactory) -> AsyncIterator[AsyncSession]:

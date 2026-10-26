@@ -1,13 +1,28 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
-from app.catalog.search import SearchQuery, destination_details, load_snapshots, search, with_flights
+from app.catalog.search import (
+    SearchQuery,
+    Snapshot,
+    destination_details,
+    failures,
+    in_scope,
+    load_snapshots,
+    search,
+    with_flights,
+)
+from app.destinations import load_discovered, reachable, snapshots_by_id
 from app.flights import Flights, NoFlights, city, current_origin
+from app.flights.network import network
 from app.tools.registry import Tool
+
+if TYPE_CHECKING:
+    from app.destinations.climate import ClimateFetcher
 
 SEARCH_DESCRIPTION = (
     "Find travel destinations in our catalogue (about 50 places) by exact filters: month, kind of trip, sea "
@@ -49,20 +64,43 @@ def _search_preview(result: dict) -> str:
     return f"Точных совпадений нет, близко: {', '.join(near)}" if near else "Ничего не подошло"
 
 
+MAX_PRICED = 12  # route-map cities that get real tickets in one search, the closest that fit everything else
+TICKET_MISSES = {"flight", "direct", "ticket", "train"}
+
+
+def shortlist(discovered: list[Snapshot], q: SearchQuery) -> list[Snapshot]:
+    """The route-map cities worth pricing: in scope and failing nothing but the ticket filters, nearest first
+    (reachable() already orders them by distance)."""
+    fits = [s for s in discovered if in_scope(s, q) and all(m.kind in TICKET_MISSES for m in failures(s, q))]
+    return fits[:MAX_PRICED]
+
+
 def catalog_tools(
     sessionmaker: async_sessionmaker[AsyncSession],
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     flights: Flights | None = None,
+    climate: "ClimateFetcher | None" = None,
 ) -> list[Tool]:
     catalog = load_catalog()
     flights = flights or NoFlights()
 
     async def search_destinations(query: SearchQuery) -> dict:
         origin = current_origin.get()
+        reach = reachable(network(), origin)
         async with sessionmaker() as db:
             snapshots = await load_snapshots(db, catalog, now())
-        snapshots = await with_flights(snapshots, flights, origin, query.month, query)
-        return search(snapshots, query, city(origin))
+            discovered = await load_discovered(db, reach, now())
+        pending = await climate.ensure(reach) if climate else 0  # their climate arrives for the next search
+        snapshots = await with_flights(
+            [*snapshots, *shortlist(discovered, query)], flights, origin, query.month, query
+        )
+        result = search(snapshots, query, city(origin))
+        result["route_map"] = {
+            "cities_with_direct_flights": len(reach),
+            "looked_at": len(discovered),
+            "climate_still_loading": pending,
+        }
+        return result
 
     async def get_destination(args: DestinationArgs) -> dict:
         place = catalog.find(args.place)
@@ -70,8 +108,7 @@ def catalog_tools(
             known = ", ".join(p.id for p in catalog.places)
             return {"error": f"Unknown destination {args.place!r}. Known ids: {known}"}
         async with sessionmaker() as db:
-            snapshots = await load_snapshots(db, catalog, now())
-        snapshot = next(s for s in snapshots if s.place.id == place.id)
+            snapshot = (await snapshots_by_id(db, catalog, now(), [place.id]))[place.id]
         await with_flights([snapshot], flights, current_origin.get(), None)
         return destination_details(snapshot)
 

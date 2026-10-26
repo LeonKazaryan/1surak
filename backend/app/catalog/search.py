@@ -166,7 +166,7 @@ def build_snapshot(place: Place, place_facts: Resolved, route: Resolved, country
         if values:
             snapshot.climate[month] = values
     snapshot.train_min = _value(snapshot, route, "train_duration", "поезд")
-    snapshot.visa_rule = _value(snapshot, country, "visa_rule", "виза") or "visa_required"
+    snapshot.visa_rule = _value(snapshot, country, "visa_rule", "виза") or place.country.visa
     snapshot.visa_days = _value(snapshot, country, "visa_days", "срок без визы")
     snapshot.visa_note = _value(snapshot, country, "visa_note", "виза")
     return snapshot
@@ -370,6 +370,8 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         result["climate"] = {"month": MONTHS[month - 1], **_climate_view(s.climate[month])}
     if s.flags:
         result["data_flags"] = s.flags
+    if not place.verified:
+        result["from_route_map"] = True  # not one of our checked places: say so if you suggest it
     return {k: v for k, v in result.items() if v is not None}
 
 
@@ -407,6 +409,7 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "highlights": list(place.highlights),
         "watch_out": list(place.watch_out),
         "photo": place_photo(place.id),
+        "verified": place.verified,  # False: a city from the route map, its facts fetched not checked
     }
 
 
