@@ -87,7 +87,8 @@ ROUTES_DESCRIPTION = (
     "estimate. Pass the same filters as for search_destinations plus `nights`; for a big tour pass "
     "min_stops (4-5, or the number the user named, also as max_stops). When the user named the cities "
     "themselves (route_places in the hint), pass them as `places` (order_fixed if they gave the order): the "
-    "route is built from exactly those, in the better order. Do not offer routes to families with small "
+    "route is built from exactly those, in the better order. When the user wants trains (by_land in the hint), "
+    "pass by_land: hops go by train or bus wherever one runs. Do not offer routes to families with small "
     "children unless they asked for one."
 )
 
@@ -260,6 +261,8 @@ def trip_tools(
             query = query.model_copy(update={"nights": high or low})
         if query.month is None and state.brief.month:
             query = query.model_copy(update={"month": state.brief.month})
+        if state.brief.by_land and not query.by_land:
+            query = query.model_copy(update={"by_land": True})
         async with sessionmaker() as db:
             snapshots = await load_snapshots(db, catalog, now())
         if query.places:

@@ -367,7 +367,7 @@ async def assemble(
     party, wishes, level = party_of(brief), wishes_from(brief.wishes), price_level(brief)
     total_nights = night_range(brief)[1] or DEFAULT_NIGHTS
     route = RoutePlan(stops, split_nights(total_nights, stops), 0.0, 0, [])
-    await price_route(route, flights, origin, brief.month, start=brief.date_from)
+    await price_route(route, flights, origin, brief.month, start=brief.date_from, by_land=bool(brief.by_land))
     fixed, home = route.dates_chained, origin is not None
     legs = route.legs
     first = next(((j, leg) for j, leg in enumerate(legs) if leg.mode == "flight" and leg.ticket), None)

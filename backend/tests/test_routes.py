@@ -246,3 +246,49 @@ def test_should_keep_the_users_order_when_they_gave_it():
     plan = asyncio.run(named_route([ISTANBUL, BATUMI], query, FakeFlights(), ASTANA))
 
     assert plan.name == "Istanbul → Batumi"
+
+
+RUSSIA = Country("RU", "Россия", "domestic", 0, "")
+NIZHNY = snap(place("nizhny", RUSSIA, 56.33, 44.0, ("city",), airport="GOJ"))
+KAZAN = snap(place("kazan", RUSSIA, 55.79, 49.12, ("city",), airport="KZN"))
+MOSCOW = City("MOW", "Москва", "Россия", 55.75, 37.62, "Москвы")
+
+
+def test_should_go_by_train_where_one_runs_when_the_user_wants_trains():
+    from app.ground import GroundOption, GroundRoute
+    from app.ground import configure as configure_ground
+    from tests.test_smart import PairFlights, Trains, fare
+
+    def train(name: str) -> GroundRoute:
+        return GroundRoute(
+            (GroundOption("train", "tutu", name, "08:00", "12:00", 240, 1_900, "сидячий", "/t"),)
+        )
+
+    configure_ground(Trains({("MOW", "GOJ"): train("Ласточка 720Г"), ("GOJ", "KZN"): train("Поезд 051Г")}))
+    flights = PairFlights(
+        {(a, b): fare(4_000, 0, 90) for a, b in [("MOW", "GOJ"), ("GOJ", "KZN"), ("KZN", "MOW")]}
+    )
+    query = RouteQuery(month=OCT, nights=6, order_fixed=True, by_land=True)
+
+    plan = asyncio.run(named_route([NIZHNY, KAZAN], query, flights, MOSCOW))
+
+    assert [(leg.mode, leg.ground.best.name if leg.ground else None) for leg in plan.legs] == [
+        ("ground", "Ласточка 720Г"),
+        ("ground", "Поезд 051Г"),
+        ("flight", None),  # 720 km home and no train found: a plane after all
+    ]
+    trains_only = asyncio.run(named_route([NIZHNY, KAZAN], query, flights, None))  # no home: no plane at all
+    assert all(leg.mode == "ground" for leg in trains_only.legs) and trains_only.dates_chained
+    flying = asyncio.run(
+        named_route([NIZHNY, KAZAN], query.model_copy(update={"by_land": False}), flights, MOSCOW)
+    )
+    assert flying.legs[0].mode == "flight"  # without the wish, 400 km from Moscow is a flight
+
+
+def test_should_keep_the_wish_for_trains_in_the_hint():
+    from app.catalog.catalog import load_catalog
+    from app.trip.brief import TripBrief, search_hint
+
+    hint = search_hint(TripBrief(multi_city=True, month=11, by_land=True), load_catalog())
+
+    assert hint["by_land"] is True

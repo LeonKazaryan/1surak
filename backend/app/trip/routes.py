@@ -44,6 +44,10 @@ MAX_LEG_KM = 1100  # further than this the hop is a separate trip, not a leg of 
 BORDER_LAND_KM = (
     350  # across a border, a longer hop by land (a mountain pass, a closed crossing) needs a plane
 )
+# When the user wants trains: a hop goes by land this far (a night train at home, Moscow – Minsk across a
+# border), and a long one keeps its plane only when no train or bus is found.
+TRAIN_KM = 1_500
+TRAIN_BORDER_KM = 1_000
 MIN_NIGHTS_PER_STOP = 2
 MAX_STOPS = 7
 DEFAULT_NIGHTS = 7
@@ -86,6 +90,16 @@ class RouteQuery(SearchQuery):
         "through exactly these, the filters are not applied.",
     )
     order_fixed: bool = Field(False, description="With places: keep the user's order of the cities.")
+    by_land: bool = Field(
+        False,
+        description="The user wants trains or buses, not planes («на поезде», «без самолётов»): every hop "
+        "where a train or bus runs goes by land, home included; a plane only where none is found.",
+    )
+
+    @property
+    def land(self) -> bool:
+        """Trains wanted: by_land, or without_flight as the destination search names it."""
+        return self.by_land or self.without_flight
 
 
 @dataclass
@@ -192,10 +206,16 @@ def _by_land(a_country: str, b_country: str, km: int) -> bool:
     return km <= (GROUND_MAX_KM if a_country == b_country else BORDER_LAND_KM)
 
 
-def _hop_ok(a: Snapshot, b: Snapshot, km: int) -> bool:
+def _by_train(a_country: str, b_country: str, km: int) -> bool:
+    """Whether a hop may go by land for someone who wants trains: a night train's distance."""
+    return km <= (TRAIN_KM if a_country == b_country else TRAIN_BORDER_KM)
+
+
+def _hop_ok(a: Snapshot, b: Snapshot, km: int, land: bool = False) -> bool:
     """Close enough to go by land, or a direct flight on the route map between them, still one leg of a trip.
     The map is what keeps Yerevan → Baku out: both have airports, but nothing flies between them."""
-    if _by_land(a.place.country.name, b.place.country.name, km):
+    countries = a.place.country.name, b.place.country.name
+    if _by_land(*countries, km) or (land and _by_train(*countries, km)):
         return True
     if km > MAX_LEG_KM or not (a.place.airport and b.place.airport):
         return False
@@ -212,7 +232,7 @@ def candidate_routes(snapshots: list[Snapshot], q: RouteQuery, home: City | None
     sized = q.model_copy(update={"nights": nights})
     km = [[_km(a, b) for b in stops] for a in stops]
     reach = [
-        [i != j and _hop_ok(stops[i], stops[j], km[i][j]) for j in range(len(stops))]
+        [i != j and _hop_ok(stops[i], stops[j], km[i][j], q.land) for j in range(len(stops))]
         for i in range(len(stops))
     ]
     start_km = [km_between(home.lat, home.lon, s.place.lat, s.place.lon) if home else 0 for s in stops]
@@ -285,14 +305,22 @@ async def price_route(
     month: int | None,
     start: date | None = None,
     improve: bool = True,
+    by_land: bool = False,
 ) -> RoutePlan:
     """Real tickets for every leg: home to the first city, between cities, and back from the last one.
-    With `improve`, a bad flight gets a smarter way, and hops by land get real trains or buses."""
+    With `improve`, a bad flight gets a smarter way, and hops by land get real trains or buses. With
+    `by_land` (the user wants trains) every hop within a night train's reach goes by land, and the trains are
+    looked up first: a long hop with none found takes a plane after all."""
     points = _route_points(plan, origin)
     legs = []
     for (a, a_name, a_stop), (b, b_name, b_stop) in pairwise(points):
         km = km_between(a.lat, a.lon, b.lat, b.lon)
-        flying = bool(a.code and b.code) and (km >= FLIGHT_FROM_KM or not _by_land(a.country, b.country, km))
+        if by_land:
+            flying = bool(a.code and b.code) and not _by_train(a.country, b.country, km)
+        else:
+            flying = bool(a.code and b.code) and (
+                km >= FLIGHT_FROM_KM or not _by_land(a.country, b.country, km)
+            )
         mode = "flight" if flying else "ground"
         leg = Leg(
             a_name,
@@ -305,6 +333,22 @@ async def price_route(
             to_stop=b_stop,
         )
         legs.append(leg)
+    plan.legs = legs
+    home = origin is not None
+    if by_land and improve:
+        await _add_ground(plan, points, month, home)
+        for leg, (a, *_), (b, *_) in zip(legs, points, points[1:], strict=False):
+            if (
+                leg.mode == "ground"
+                and not leg.ground
+                and a.code
+                and b.code
+                and not _by_land(a.country, b.country, leg.km)
+            ):
+                leg.mode, leg.hours = (
+                    "flight",
+                    hop_hours(leg.km, True),
+                )  # no train on a long hop: a plane after all
     flown = [leg for leg in legs if leg.mode == "flight"]
     # later legs may leave next month (ten nights from 25 October is November), so they search both months
     following = None if month is None else month % 12 + 1
@@ -315,8 +359,6 @@ async def price_route(
     later = iter(found[len(flown) :])
     for i, leg in enumerate(flown):
         leg.flights = merged(found[i], next(later)) if i and following else found[i]
-    plan.legs = legs
-    home = origin is not None
     plan.dates_chained = chain_dates(legs, plan.nights, start_at_home=home, start=start)
     if improve:
         await _improve(plan, points, flights, month)
@@ -400,7 +442,7 @@ async def _add_ground(plan: RoutePlan, points: list, month: int | None, home: bo
                 if p.mode == "ground" and not p.ground
             ]
             hops += [(p, a, b, days[j]) for p, a, b in ends if a and b]
-        elif leg.mode == "ground":
+        elif leg.mode == "ground" and not leg.ground:
             hops.append((leg, points[j][0], points[j + 1][0], days[j]))
     if not hops:
         return
@@ -451,8 +493,8 @@ def chain_dates(
     lands. The cheapest such chain wins. Without one, the flights take the tickets closest to the plan that
     still go forward in time, and the route says its dates do not chain."""
     items = _flight_items(legs, nights, start_at_home)
-    if not items:
-        return False
+    if not items:  # no plane at all follows the plan by itself; a plane without fares cannot
+        return not any(p.mode == "flight" for leg in legs for p in units(leg))
     for slack in DATE_SLACK_DAYS:  # the nights as planned first; a day more or less only when nothing fits
         if chosen := _chain(items, slack, start):
             for (_, flight, _), ticket in zip(items, chosen, strict=True):
@@ -540,7 +582,7 @@ async def rebuild_route(
     q = RouteQuery(
         month=brief.month, kinds=brief.kinds, nights=nights or brief.nights_max or brief.nights_min
     )
-    return await price_route(plan_of(stops, q), flights, origin, brief.month)
+    return await price_route(plan_of(stops, q), flights, origin, brief.month, by_land=bool(brief.by_land))
 
 
 def _trip_value(plan: RoutePlan) -> float:
@@ -559,7 +601,8 @@ async def named_route(
         km = [[_km(a, b) for b in stops] for a in stops]
         start = [km_between(origin.lat, origin.lon, s.place.lat, s.place.lon) if origin else 0 for s in stops]
         reach = [
-            [i != j and _hop_ok(a, b, km[i][j]) for j, b in enumerate(stops)] for i, a in enumerate(stops)
+            [i != j and _hop_ok(a, b, km[i][j], q.land) for j, b in enumerate(stops)]
+            for i, a in enumerate(stops)
         ]
 
         def cost(order: tuple[int, ...]) -> tuple[bool, float]:
@@ -569,7 +612,9 @@ async def named_route(
 
         best = min(permutations(range(len(stops))), key=cost)
         orders = [[stops[i] for i in best], [stops[i] for i in reversed(best)]]
-    plans = await asyncio.gather(*(price_route(plan_of(o, sized), flights, origin, q.month) for o in orders))
+    plans = await asyncio.gather(
+        *(price_route(plan_of(o, sized), flights, origin, q.month, by_land=q.land) for o in orders)
+    )
     return min(plans, key=_trip_value)
 
 
@@ -579,7 +624,9 @@ async def find_routes(
     """The best routes with real prices; at most one route per set of overlapping cities. Candidates get
     plain fares first; only the picked ones get smart ways and trains, which cost more requests."""
     candidates = candidate_routes(snapshots, q, origin)[:PRICED_CANDIDATES]
-    await asyncio.gather(*(price_route(plan, flights, origin, q.month, improve=False) for plan in candidates))
+    await asyncio.gather(
+        *(price_route(plan, flights, origin, q.month, improve=False, by_land=q.land) for plan in candidates)
+    )
     for plan in candidates:
         if not plan.legs or (plan.legs[0].mode == "flight" and not plan.legs[0].flights):
             plan.score -= 0.3  # no way to get there from home this month
@@ -592,14 +639,8 @@ async def find_routes(
             fresh = all(_overlap(ids, {s.place.id for s in o.stops}) <= most_shared for o in picked)
             if len(picked) < q.limit and plan not in picked and fresh:
                 picked.append(plan)
-    home = origin is not None
-    points = {plan.id: _route_points(plan, origin) for plan in picked}
-    await asyncio.gather(*(_improve(plan, points[plan.id], flights, q.month) for plan in picked))
-    for plan in picked:
-        plan.dates_chained = chain_dates(plan.legs, plan.nights, start_at_home=home)
-        for leg in plan.legs:
-            fit_rides(leg.parts)
-    await asyncio.gather(*(_add_ground(plan, points[plan.id], q.month, home) for plan in picked))
+    # the picked ones in full: smarter ways, trains and buses (the fares are cached, so no new requests)
+    await asyncio.gather(*(price_route(plan, flights, origin, q.month, by_land=q.land) for plan in picked))
     return picked
 
 

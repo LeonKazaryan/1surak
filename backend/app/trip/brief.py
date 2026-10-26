@@ -67,12 +67,17 @@ class BriefPatch(BaseModel):
         description="True when the user wants several cities in one trip: 'по Европе', 'Ереван и Тбилиси', "
         "'несколько городов', 'маршрут'. False when they want to stay in one place.",
     )
+    by_land: bool | None = Field(
+        None,
+        description="True when the user wants to go by train or bus, not by plane: 'на поезде', "
+        "'без самолётов', 'боюсь летать'.",
+    )
     wishes: list[Annotated[str, StringConstraints(max_length=80)]] | None = Field(
         None,
         max_length=MAX_WISHES,
         description="Only wishes the fields above cannot hold, in the user's words: 'без долгих перелётов', "
         "'всё включено', 'с собакой'. Never repeat budget ('недорого'), party ('с ребёнком'), "
-        "kind of trip ('тёплое море'), dates or the departure city.",
+        "kind of trip ('тёплое море'), dates, the departure city or trains (by_land).",
     )
 
 
@@ -269,6 +274,8 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         region = None if countries else countries_in(needle)
         if countries or region:
             hint["countries"] = countries or region
+    if b.by_land:
+        hint["by_land"] = True  # search_routes: trains and buses on every hop where they run
     if stops := named_stops(b.destination, catalog):
         ids = {p.name: p.id for p in catalog.places}
         if len(stops) <= MAX_NAMED and all(name in ids for name in stops):
