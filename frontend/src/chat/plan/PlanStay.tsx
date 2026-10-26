@@ -185,7 +185,9 @@ function transferText(stop: PlanStop, currency: Parameters<typeof formatMoney>[1
   const ride = stop.transfer_in
   if (!ride) return null
   const way = ride.mode === 'boat' ? 'катер' : 'такси'
-  return `трансфер из аэропорта: ${way}, около ${ride.minutes} мин, ${formatMoney(ride.price_rub, currency)}`
+  // a price from the city's own airport fare says where it comes from; one by the kilometre is an estimate
+  const basis = ride.source ? `по тарифу ${ride.source}` : ride.mode === 'boat' ? 'оценка' : 'оценка по расстоянию'
+  return `трансфер из аэропорта: ${way}, около ${ride.minutes} мин, ${formatMoney(ride.price_rub, currency)} (${basis})`
 }
 
 interface PlanStayProps {

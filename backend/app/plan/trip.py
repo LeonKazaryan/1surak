@@ -35,7 +35,8 @@ SIGHTS_FOR_MODEL = 4
 FOOD_FOR_MODEL = 3
 DEMO_NOTE = (
     "Hotels are demo data shaped like Ostrovok offers: say so once, briefly. Tickets are real Aviasales prices; "
-    "transfers and ground hops are estimates by distance."
+    "a transfer with a source is the city's airport taxi fare found on the web, scaled to the hotel; one "
+    "without is an estimate by distance at the country's prices; ground hops are estimates by distance."
 )
 
 

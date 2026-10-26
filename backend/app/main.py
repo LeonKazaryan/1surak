@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.catalog.catalog import load_catalog
 from app.catalog.seed import load_catalog_facts
 from app.chats.router import router as chats_router
 from app.config import Settings
@@ -17,6 +18,8 @@ from app.destinations.live import LiveDirections
 from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
+from app.fx import Rates
+from app.fx import configure as configure_rates
 from app.ground import GroundTransport
 from app.ground import configure as configure_ground
 from app.ground.flixbus import FlixBuses
@@ -31,12 +34,16 @@ from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
 from app.kb.web import OpenAIWebSearch, web_search_for
 from app.llm import LLM, OpenAICompatibleLLM, StubLLM, build_llm
+from app.lookups import LookupStore
+from app.plan.live_guide import LiveGuides, SeedGuides
+from app.plan.live_guide import configure as configure_guides
+from app.plan.taxi import NoTaxiFares, TaxiFares
+from app.plan.taxi import configure as configure_taxi
 from app.ratelimit import RateLimit
 from app.spa import mount_spa
 from app.tools import ToolRegistry, build_registry
 from app.visas import NoFees, VisaFees
 from app.visas import configure as configure_fees
-from app.visas.fees import FeeStore
 from app.visas.router import router as visa_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -135,13 +142,30 @@ def create_app(
             for origin in filter(None, settings.destination_prefetch.split(",")):
                 await climate.ensure(reachable(network(), origin.strip()), urgent=False)
         # visa fees: found on the web once per passport and country, read by the model, cached for a month
-        visa_fees = NoFees()
+        # what is found on the web once and kept: visa fees and the cities' airport taxi fares
+        visa_fees, taxi_fares = NoFees(), NoTaxiFares()
         if isinstance(agent_llm, OpenAICompatibleLLM):
             reader = settings.extract_model or agent_llm.model
             # the app's search first; the model's own web search (Responses API) when it is rate-limited
             searches = [s for s in (web, OpenAIWebSearch(agent_llm.client, reader)) if s is not None]
-            visa_fees = VisaFees(FeeStore(app.state.sessionmaker), searches, agent_llm.client, reader)
+            store = LookupStore(app.state.sessionmaker)
+            visa_fees = VisaFees(store, searches, agent_llm.client, reader)
+            taxi_fares = TaxiFares(store, searches, agent_llm.client, reader, load_catalog().find)
         configure_fees(visa_fees)
+        configure_taxi(taxi_fares)
+        city_guides = SeedGuides()
+        if settings.live_guides:
+            fast = agent_llm if isinstance(agent_llm, OpenAICompatibleLLM) else None
+            city_guides = LiveGuides(
+                LookupStore(app.state.sessionmaker),
+                load_catalog().find,
+                fast.client if fast else None,
+                (settings.extract_model or fast.model) if fast else "",
+                google_key=settings.google_places_api_key,
+            )
+        configure_guides(city_guides)
+        if settings.live_rates:
+            configure_rates(Rates())
         if settings.ground_transport:
             configure_ground(
                 GroundTransport(
@@ -164,6 +188,8 @@ def create_app(
                 task.cancel()
         await hotel_offers.settle()
         await visa_fees.settle()
+        await taxi_fares.settle()
+        await city_guides.settle()
         if climate:
             climate.stop()
         if isinstance(flights, TravelpayoutsFlights):

@@ -51,7 +51,10 @@ def test_should_list_the_direct_destinations_beyond_the_catalogue_nearest_first(
 
 
 def test_should_tell_the_kind_of_trip_from_the_facts():
-    assert kinds_from({"coastal": True, "sea_tempm7": 27.0}) == ("sea", "city")
+    # one warm month (New York in August) is a city by the sea; a warm season (Pattaya) is a beach first
+    assert kinds_from({"coastal": True, "sea_tempm7": 27.0}) == ("city", "sea")
+    beach = {"coastal": True, **{f"sea_tempm{m}": 28.0 for m in range(1, 13)}}
+    assert kinds_from(beach) == ("sea", "city")
     assert kinds_from({"coastal": True, "sea_tempm7": 14.0}) == ("city",)  # a cold coast is not a beach trip
     assert kinds_from({"elevation": 1600}) == ("city", "mountains")
 

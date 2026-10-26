@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
-from app.catalog.search import card, load_snapshots, with_flights
+from app.catalog.search import card, load_snapshots, sea_matters, with_flights
 from app.destinations import country_cities, load_discovered, snapshots_by_id
 from app.destinations.gateway import fill_missing
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
@@ -19,6 +19,8 @@ from app.flights.dictionary import find_city
 from app.flights.network import network
 from app.money import current_currency
 from app.photos import ensure_photos
+from app.plan.live_guide import guides
+from app.plan.taxi import taxi
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
     SLOTS,
@@ -335,6 +337,9 @@ def trip_tools(
             await ensure_photos(db, on_cards)
         # visa fees already found come from the cache; the rest are looked up while the cards are read
         await fees().warm(snapshots[p.id].visa for p in on_cards if p.id in snapshots)
+        # for the trip plan, if one of them is picked: the city's taxi fare and its guide
+        await taxi().warm(p.id for p in on_cards)
+        await guides().warm(p.id for p in on_cards)
         cards, unknown = [], []
         for pick in args.picks:
             if pick.route:
@@ -348,7 +353,10 @@ def trip_tools(
             if place is None:
                 unknown.append(pick.id)
             elif place.id not in {c["id"] for c in cards}:
-                view = card(snapshots[place.id], state.brief.month)
+                asked_sea = "sea" in (state.brief.kinds or [])
+                view = card(
+                    snapshots[place.id], state.brief.month, sea_matters(snapshots[place.id], asked_sea)
+                )
                 cards.append({"type": "place", **view, "why": pick.why, "tradeoff": pick.tradeoff})
         if not cards:
             return {"error": f"Unknown ids {unknown}. Use ids from search_destinations or search_routes."}

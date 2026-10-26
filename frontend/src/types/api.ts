@@ -458,6 +458,8 @@ export interface PlanTransfer {
   km: number
   minutes: number
   price_rub: number
+  /** The site of the city's airport taxi fare the price is scaled from; null: an estimate by the kilometre. */
+  source?: string | null
 }
 
 export interface PlanStop {

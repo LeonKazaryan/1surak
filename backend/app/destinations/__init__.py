@@ -22,7 +22,11 @@ from app.flights.network import Network
 
 PREFIX = "city-"
 MOUNTAIN_M = 900  # a town this high is a mountain trip
-WARM_SEA_C = 20  # a coast whose sea gets this warm in some month is a sea trip
+WARM_SEA_C = 20  # a coast whose sea gets this warm in some month can be a sea trip too
+BEACH_SEA_C = 24  # warm enough to swim for real
+BEACH_MONTHS = (
+    5  # that warm this many months a year: a beach place first (Pattaya), not a city by the sea (New York)
+)
 DEFAULT_LEVEL = 2
 MAX_CANDIDATES = 120  # the nearest direct destinations a search looks at
 
@@ -51,11 +55,14 @@ def _levels() -> dict[str, int]:
 
 
 def kinds_from(facts: dict) -> tuple[str, ...]:
-    """The trips a city suits, from its facts: always a city break; sea or mountains when the data says so."""
+    """The trips a city suits, from its facts: always a city break; sea or mountains when the data says so.
+    The first kind is what the place is: the sea comes first only where it is warm for a season, so New York
+    and Barcelona stay cities with a coast and Pattaya is a beach."""
     kinds = ["city"]
     sea = [v for k, v in facts.items() if k.startswith("sea_temp")]
     if facts.get("coastal") and sea and max(sea) >= WARM_SEA_C:
-        kinds.insert(0, "sea")
+        beach = sum(v >= BEACH_SEA_C for v in sea) >= BEACH_MONTHS
+        kinds.insert(0 if beach else 1, "sea")
     if (facts.get("elevation") or 0) >= MOUNTAIN_M:
         kinds.append("mountains")
     return tuple(kinds)

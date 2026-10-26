@@ -9,10 +9,16 @@ from sqlalchemy.engine import make_url
 from app.config import Settings
 from app.db import reset_database
 from app.flights import RouteFlights, Ticket
+from app.fx import FixedRates
+from app.fx import configure as configure_rates
 from app.ground import NoGround
 from app.ground import configure as configure_ground
 from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
+from app.plan.live_guide import SeedGuides
+from app.plan.live_guide import configure as configure_guides
+from app.plan.taxi import NoTaxiFares
+from app.plan.taxi import configure as configure_taxi
 from app.visas import NoFees
 from app.visas import configure as configure_fees
 
@@ -105,11 +111,18 @@ def no_real_ground():
 
 
 @pytest.fixture(autouse=True)
-def no_real_visa_fees():
-    """An app with a model and web search looks visa fees up on the web; no test may leave that switched on."""
+def no_real_web_lookups():
+    """An app with a model and web search looks visa fees and taxi fares up on the web, and exchange rates
+    online; no test may leave that switched on."""
     configure_fees(NoFees())
+    configure_taxi(NoTaxiFares())
+    configure_rates(FixedRates())
+    configure_guides(SeedGuides())
     yield
     configure_fees(NoFees())
+    configure_taxi(NoTaxiFares())
+    configure_rates(FixedRates())
+    configure_guides(SeedGuides())
 
 
 @pytest.fixture
@@ -132,6 +145,8 @@ def settings(db_url, static_dir):
         embeddings=False,
         destination_climate=False,  # no Open-Meteo calls from tests
         ground_transport=False,  # no test calls a real timetable
+        live_rates=False,  # nor the exchange rates
+        live_guides=False,  # nor Wikidata and OpenStreetMap
         osm_hotels=False,  # nor Nominatim
     )
 

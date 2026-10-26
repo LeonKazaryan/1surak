@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     # Both are keyless; FlixBus is its website's undocumented API, so it has its own switch.
     ground_transport: bool = True
     flixbus: bool = True
+    # The Bank of Russia's daily rates for any currency a price is found in (app.fx); off: the 7 fixed ones.
+    live_rates: bool = True
+    # City guides from Wikidata and OpenStreetMap for any city (app.plan.live_guide); off: the seed only.
+    live_guides: bool = True
+    # Optional: Google Places (New) for the best rated restaurants of a city, with their reviews.
+    google_places_api_key: str = ""
     # Yandex.Rasp: trains and buses on a given day, fares for much of Russia. A free key, developer.tech.yandex.ru.
     yandex_rasp_key: str = ""
     travelpayouts_per_minute: float = 300.0  # our guess at a polite rate; lower it if Aviasales answers 429

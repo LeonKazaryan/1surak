@@ -195,4 +195,4 @@ def test_should_not_remember_a_miss_for_days_when_no_search_answered():
     fees = VisaFees(None, [Limited()], client, "m", now=lambda: NOW)
 
     assert asyncio.run(fees.get(rule_for("US", "KZ"))) is None
-    assert fees._memory["KZ-US"][2] == timedelta(minutes=10)  # tried again soon, not in two days
+    assert fees.cache.ttl_of("KZ-US") == timedelta(minutes=10)  # tried again soon, not in two days

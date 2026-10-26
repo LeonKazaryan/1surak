@@ -32,6 +32,9 @@ docker compose up --build
 | `TRAVELPAYOUTS_TOKEN` | пусто | токен Aviasales Data API: реальные билеты из города пользователя; без него перелётов нет |
 | `YANDEX_RASP_KEY` | пусто | бесплатный ключ API Яндекс.Расписаний: поезда, электрички и автобусы на дату, цены по России; без него поезда только из Туту |
 | `FLIXBUS` | `true` | автобусы FlixBus по Европе и Турции (неофициальный API сайта); `false` выключает |
+| `LIVE_GUIDES` | `true` | гид для любого города: достопримечательности и районы из Wikidata, рестораны из OpenStreetMap, кэш 60 дней |
+| `LIVE_RATES` | `true` | дневные курсы ЦБ РФ для цен в любой валюте (такси, визы); `false` — только 7 фиксированных |
+| `GOOGLE_PLACES_API_KEY` | пусто | необязательно: рестораны Google Places с рейтингом и числом отзывов |
 | `OPENAI_API_KEY` | пусто | можно вместо `LLM_API_KEY` |
 | `SEARCH_PROVIDER` | `auto` | веб-поиск для базы знаний: Brave (если есть ключ), затем Tavily, затем поиск OpenAI; `none` выключает |
 | `BRAVE_API_KEY` | пусто | ключ Brave Search API (эндпоинт LLM Context) |

@@ -2,8 +2,13 @@
 
 The first day starts after the ride from the airport, the last one ends before the ride back. Small
 children get one sight a day and the beach; adults get a day trip out of town when the stay allows.
+A day keeps to one part of town: the morning takes the most notable sight left, the afternoon the one nearest
+to it (a walk along the graph of distances, never across the city twice a day), lunch is the food spot nearest
+the morning's sight and dinner the one nearest the afternoon's.
+When the sights run out, the days walk the city's own neighbourhoods before they fall back to free time.
 """
 
+import math
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from typing import Literal
@@ -30,6 +35,8 @@ SETTLE = timedelta(minutes=30)  # after reaching the hotel, and before leaving i
 LATEST_DINNER = time(22)
 DINNER_OUT_EVERY = 3  # on all inclusive, every third dinner is at a local place in town
 DAY_TRIP_FROM = 3  # full days a stay needs before one of them goes on a trip out of town
+PAIR_KM = 4.0  # an afternoon sight this close to the morning's one keeps the day in one part of town
+MEAL_KM = 2.5  # a food spot this close to where the party is beats the next one on the list
 
 
 @dataclass(frozen=True)
@@ -83,8 +90,19 @@ class Stay:
     all_inclusive: bool = False
 
 
+def _km(a: tuple[float | None, float | None] | None, b: Spot) -> float:
+    if a is None or a[0] is None or b.lat is None or b.lon is None:
+        return math.inf
+    return km_between(a[0], a[1], b.lat, b.lon)
+
+
+def _at(spot: Spot | None) -> tuple[float | None, float | None] | None:
+    return (spot.lat, spot.lon) if spot and spot.lat is not None else None
+
+
 class _Menu:
-    """Meals in turn: the guide's food spots, then local dishes to try, then simply a place nearby."""
+    """Meals in turn: the guide's food spots (the nearest to where the party is), then local dishes to try,
+    then simply a place nearby."""
 
     def __init__(self, guide: Guide, all_inclusive: bool):
         self.spots = list(guide.food)
@@ -92,15 +110,17 @@ class _Menu:
         self.all_inclusive = all_inclusive
         self.dinners = 0
 
-    def meal(self, slot: str) -> Item:
+    def meal(self, slot: str, near: tuple[float | None, float | None] | None = None) -> Item:
         name = "Обед" if slot == "lunch" else "Ужин"
         self.dinners += slot == "dinner"
         out = slot == "dinner" and self.dinners % DINNER_OUT_EVERY == 0
         if self.all_inclusive and not out:
             return Item("food", f"{name} в отеле", note="входит во «всё включено»")
         if self.spots:
-            spot = self.spots.pop(0)
-            return Item("food", f"{name}: {spot.name}", note=spot.summary, spot=spot)
+            close = min(self.spots, key=lambda s: _km(near, s))
+            spot = close if _km(near, close) <= MEAL_KM else self.spots[0]
+            self.spots.remove(spot)
+            return Item("food", f"{name}: {spot.name}", note=spot.summary or None, spot=spot)
         if self.dishes:
             dish = self.dishes.pop(0)
             return Item("food", f"{name}: попробуйте {dish.name}", note=dish.note or None)
@@ -137,13 +157,15 @@ def plan_days(stay: Stay, party: Party) -> list[Day]:
     kids, small = bool(party.children_ages), party.small_kids
     dates = [stay.check_in + timedelta(days=i) for i in range((stay.check_out - stay.check_in).days + 1)]
     full = dates[1:-1]
-    sights = _ordered([s for s in stay.guide.sights if s.type != "vicinity"], stay.hotel_at)
+    sights = _ordered([s for s in stay.guide.sights if s.type not in ("vicinity", "walk")], stay.hotel_at)
+    walks = [s for s in stay.guide.sights if s.type == "walk"]
     trips = _ordered([s for s in stay.guide.sights if s.type == "vicinity"], stay.hotel_at)
     trip_day = full[len(full) // 2] if trips and not small and len(full) >= DAY_TRIP_FROM else None
     menu = _Menu(stay.guide, stay.all_inclusive)
     days = []
     for n, day in enumerate(dates):
         items: list[Item] = []
+        near: tuple[float | None, float | None] | None = stay.hotel_at  # where the party is: meals nearby
         if day == trip_day:
             trip = trips[0]
             items.append(Item("trip", f"Поездка на день: {trip.name}", "09:00", trip.summary, trip))
@@ -157,24 +179,39 @@ def plan_days(stay: Stay, party: Party) -> list[Day]:
                 continue
             at = start.strftime("%H:%M")
             if slot in ("lunch", "dinner"):
-                items.append(replace(menu.meal(slot), time=at))
-            elif slot == "morning":
-                items.append(_sight(sights, at) or _rest(stay, at, morning=True))
+                items.append(replace(menu.meal(slot, near), time=at))
+                continue
+            if slot == "morning":
+                item = _sight(sights, at) or _walk(walks, at) or _rest(stay, at, morning=True)
             elif stay.sea_warm and (kids or n % 2 == 0):
-                items.append(Item("beach", "Пляж и море", at, "купаться и отдыхать"))
-            elif not small and (sight := _sight(sights, at)):
-                items.append(sight)
+                item = Item("beach", "Пляж и море", at, "купаться и отдыхать")
+            elif not small and (sight := _sight(sights, at, near) or _walk(walks, at)):
+                item = sight
             else:
-                items.append(_rest(stay, at, morning=False))
+                item = _rest(stay, at, morning=False)
+            items.append(item)
+            near = _at(item.spot) or near
         days.append(Day(day, _title(day, dates, items), stay.guide.place_id, items))
     return days
 
 
-def _sight(sights: list[Spot], at: str) -> Item | None:
+def _sight(sights: list[Spot], at: str, near: tuple[float | None, float | None] | None = None) -> Item | None:
+    """The most notable sight left; in the afternoon, the one nearest to where the morning was, if one is
+    close enough, so the day stays in one part of town."""
     if not sights:
         return None
-    spot = sights.pop(0)
+    close = min(sights, key=lambda s: _km(near, s)) if near else None
+    spot = close if close and _km(near, close) <= PAIR_KM else sights[0]
+    sights.remove(spot)
     return Item("sight", spot.name, at, spot.summary, spot)
+
+
+def _walk(walks: list[Spot], at: str) -> Item | None:
+    """A walk through one of the city's own neighbourhoods, when the sights have run out."""
+    if not walks:
+        return None
+    spot = walks.pop(0)
+    return Item("walk", f"Прогулка: {spot.name}", at, spot.summary or "улицы, кафе и витрины района", spot)
 
 
 def _rest(stay: Stay, at: str, morning: bool) -> Item:
@@ -190,7 +227,9 @@ def _title(day: date, dates: list[date], items: list[Item]) -> str:
         return "Прилёт и первый вечер"
     if day == dates[-1]:
         return "Последнее утро и дорога домой"
-    names = [i.title for i in items if i.kind == "sight"]
+    names = [i.title for i in items if i.kind == "sight"] or [
+        i.spot.name for i in items if i.kind == "walk" and i.spot
+    ]
     if names:
         return " и ".join(names[:2])
     return "Море и отдых" if any(i.kind == "beach" for i in items) else "Свободный день"

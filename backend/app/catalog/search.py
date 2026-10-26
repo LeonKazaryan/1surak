@@ -383,13 +383,25 @@ def _climate_view(values: dict[str, float]) -> dict:
     return {k: round(v) if k != "дождливых_дней" else round(v, 1) for k, v in view.items() if v is not None}
 
 
-def describe(s: Snapshot, month: int | None = None) -> dict:
+def sea_trip(q: SearchQuery | None) -> bool:
+    """The user asked for the sea: a sea kind or a sea temperature."""
+    return bool(q) and (q.min_sea_temp is not None or bool(q.kinds and "sea" in q.kinds))
+
+
+def sea_matters(s: Snapshot, asked: bool) -> bool:
+    """The sea is worth a word: the trip is about it, or the place is a beach place (its first kind). New York
+    in May has a sea of 15 °C, and nobody flying there for the city needs to hear it."""
+    return asked or (bool(s.place.kinds) and s.place.kinds[0] == "sea")
+
+
+def describe(s: Snapshot, month: int | None = None, sea: bool | None = None) -> dict:
     place = s.place
+    sea = sea_matters(s, False) if sea is None else sea
     result = {
         "id": place.id,
         "name": place.name,
         "country": place.country.name,
-        "kinds": [KIND_LABELS[k] for k in place.kinds],
+        "kinds": [KIND_LABELS[k] for k in place.kinds if sea or k != "sea"],
         "flight_hours": _hours(s.flight_min),
         "direct_flight": s.direct,
         "flight": s.flights.view() if s.flights else None,
@@ -402,7 +414,10 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         "watch_out": list(place.watch_out),
     }
     if month and month in s.climate:
-        result["climate"] = {"month": MONTHS[month - 1], **_climate_view(s.climate[month])}
+        climate = _climate_view(s.climate[month])
+        if not sea:
+            climate.pop("море", None)
+        result["climate"] = {"month": MONTHS[month - 1], **climate}
     if s.flags:
         result["data_flags"] = s.flags
     if not s.flights and s.via:
@@ -423,9 +438,12 @@ def _card_climate(values: dict[str, float], month: int) -> dict:
     return {"month": MONTHS[month - 1], "month_in": MONTHS_IN[month - 1], **rounded}
 
 
-def card(s: Snapshot, month: int | None = None) -> dict:
-    """One destination as the chat draws it: the facts as numbers, so the UI can lay them out."""
+def card(s: Snapshot, month: int | None = None, sea: bool | None = None) -> dict:
+    """One destination as the chat draws it: the facts as numbers, so the UI can lay them out. The sea's
+    temperature only where it matters (see sea_matters)."""
     place, climate = s.place, s.climate.get(month) if month else None
+    if climate and not (sea_matters(s, False) if sea is None else sea):
+        climate = {k: v for k, v in climate.items() if k != "sea_temp"}
     return {
         "id": place.id,
         "name": place.name,
@@ -472,7 +490,7 @@ def search(snapshots: list[Snapshot], q: SearchQuery, origin: City | None = None
     return {
         "from": origin.name if origin else None,
         "month": MONTHS[q.month - 1] if q.month else None,
-        "matches": [describe(s, q.month) for s in shown],
+        "matches": [describe(s, q.month, sea_matters(s, sea_trip(q))) for s in shown],
         "more_matches": max(0, len(matches) - q.limit),
         "near_misses": near_misses(checked, q),
         "checked": len(candidates),

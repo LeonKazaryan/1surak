@@ -114,12 +114,13 @@ hotel_offers = Table(
 )
 
 
-# What a visa costs for a passport and country (app.visas.fees): found on the web, fee NULL for «not found».
-visa_fees = Table(
-    "visa_fees",
+# Answers found once and kept (app.lookups): visa fees, taxi fares, city guides; value NULL for «not found».
+lookups = Table(
+    "lookups",
     metadata,
-    Column("pair", Text, primary_key=True),  # «KZ-US»: passport, destination
-    Column("fee", JSON, nullable=True),
+    Column("kind", Text, primary_key=True),  # visa_fee, taxi_fare, city_guide
+    Column("key", Text, primary_key=True),  # «KZ-US», a city code, a place id
+    Column("value", JSON, nullable=True),
     Column("checked_at", DateTime(timezone=True), nullable=False),
 )
 

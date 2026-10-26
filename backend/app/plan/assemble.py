@@ -12,6 +12,7 @@ from datetime import date, datetime, time, timedelta
 from app.catalog.catalog import Place
 from app.catalog.search import MONTHS_IN, Snapshot
 from app.flights import City, Flights, Ticket
+from app.fx import rates
 from app.hotels import HotelSource
 from app.hotels.evidence import hotel_wishes
 from app.money import CURRENCIES, money
@@ -24,10 +25,11 @@ from app.plan.checks import (
     departure_checks,
     keeps_room_to_flight,
 )
-from app.plan.guide import guide_for
 from app.plan.hotels import WISH_WORDS, Hotel, HotelPick, Party, choose_hotel, hundreds, wishes_from
 from app.plan.itinerary import LOGISTICS, Day, Item, Stay, plan_days
+from app.plan.live_guide import guides
 from app.plan.places import PlaceInfo, place_info
+from app.plan.taxi import taxi
 from app.plan.transfers import Transfer, transfer_to
 from app.plan.trip import HOTEL_SPREAD, Costs, Move, StopPlan, TripPlan, day_text, span_text
 from app.trip.brief import TripBrief, night_range, price_level
@@ -42,6 +44,8 @@ START_DAY = 10  # with a month and no tickets the trip starts on the 10th
 LEAD_DAYS = 14  # and never sooner than two weeks from today
 SEA_WARM_C = 22
 GROUND_RUB_PER_KM = 5  # a bus or train seat, per person: an estimate, never a quote
+GUIDE_WAIT_S = 15.0  # a city's live guide not found by then: the plan keeps what the seed has
+TAXI_WAIT_S = 12.0  # a city's taxi fare not found by then: the ride is the estimate by the kilometre
 INFANT_FARE = 0.1  # under two flies on a lap for about a tenth of the fare
 INFANT_AGE = 2
 UNKNOWN_CHILD_AGE = 7
@@ -398,7 +402,14 @@ async def assemble(
         found = await hotels.hotels(place, nominals[i], route.nights[i], party)
         return await hotels.checked(place, found, asked, party, level, (prefer or {}).get(place.id))
 
-    stays = await asyncio.gather(*(stay(i, s.place) for i, s in enumerate(route.stops)))
+    # the hotels and the cities' taxi fares at once; the fares are usually cached since the cards were shown
+    # usually all cached since the cards were shown: the guide of a city found live, its taxi fare
+    stays, fares, found_guides = await asyncio.gather(
+        asyncio.gather(*(stay(i, s.place) for i, s in enumerate(route.stops))),
+        taxi().fares([s.place.id for s in route.stops], TAXI_WAIT_S),
+        asyncio.gather(*(guides().guide(s.place, GUIDE_WAIT_S) for s in route.stops)),
+    )
+    fare_rubs = {pid: await rates().to_rub(f.amount, f.currency) for pid, f in fares.items() if f}
     for i, s in enumerate(route.stops):
         place, info = s.place, place_info(s.place.id)
         j_in, j_out = (i, i + 1) if home else (i - 1, i)
@@ -409,8 +420,17 @@ async def assemble(
         month = nominal.month
         pick = choose_hotel(stays[i], party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
         hotel = pick.best.hotel
-        ride_in = transfer_to(hotel, place, info, party) if leg_in and leg_in.mode == "flight" else None
-        ride_out = transfer_to(hotel, place, info, party) if leg_out and leg_out.mode == "flight" else None
+        fare, fare_rub = fares.get(place.id), fare_rubs.get(place.id)
+        ride_in = (
+            transfer_to(hotel, place, info, party, fare, fare_rub)
+            if leg_in and leg_in.mode == "flight"
+            else None
+        )
+        ride_out = (
+            transfer_to(hotel, place, info, party, fare, fare_rub)
+            if leg_out and leg_out.mode == "flight"
+            else None
+        )
         arrival = _arrival(leg_in, fixed, nominal, cursor, info, hotel.name, ride_in)
         check_in = (arrival.reached - NIGHT_ENDS).date()
         if i < len(route.stops) - 1:
@@ -422,7 +442,7 @@ async def assemble(
             leg_out, fixed, check_in, route.nights[i], info, abroad, ride_out, hotel.check_out, last
         )
         pick = _with_nights(pick, (departure.check_out - check_in).days)
-        stop = StopPlan(s, check_in, departure.check_out, pick, guide_for(place.id), ride_in, ride_out)
+        stop = StopPlan(s, check_in, departure.check_out, pick, found_guides[i], ride_in, ride_out)
         if arrival.landing:
             checks += arrival_checks(arrival.landing, hotel, info, ride_in.minutes if ride_in else 0)
         if departure.back:
