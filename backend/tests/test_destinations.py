@@ -31,8 +31,10 @@ def test_should_make_a_place_of_any_city_the_route_map_flies_to():
     assert tashkent.id == "city-tas" and not tashkent.verified and tashkent.airport == "TAS"
     assert tashkent.country.visa == "visa_free"  # Uzbekistan is a catalogue country: its checked rule
     assert discovered_place("BJV") is None  # Bodrum is the catalogue's, with its checked facts
-    unknown = discovered_place("LIM")  # Lima: a country we never checked
-    assert unknown.country.visa == "unknown" and "не проверяли" in unknown.country.visa_note
+    unknown = discovered_place("LIM")  # Lima: a country the catalogue has no rule for
+    assert (
+        unknown.country.visa == "unknown" and not unknown.country.visa_note
+    )  # the visa: app.visas, by passport
     assert (
         load_catalog().find("Ташкент").id == "city-tas" and load_catalog().find("city-tas").name == "Ташкент"
     )
@@ -127,9 +129,9 @@ def test_should_fetch_a_cities_climate_once_and_search_it():
         180,
     )  # Passport Index, for the Moscow default's passport
     assert "city-fru" not in snapshots  # no climate fetched for it: not offered yet
-    # in July the fake Tashkent is 24 °C by day: it matches «20 °C or warmer», marked as from the route map
+    # in July the fake Tashkent is 24 °C by day: it matches «20 °C or warmer», a city from the route map
     tashkent = next(m for m in hot["matches"] if m["name"] == "Ташкент")
-    assert tashkent["from_route_map"] and tashkent["id"] == "city-tas"
+    assert tashkent["id"] == "city-tas" and "from_route_map" not in tashkent  # no «not checked» note
     assert hot["route_map"]["destinations_from_your_city"] > 0 and hot["route_map"]["looked_at"] >= 1
 
 
@@ -223,7 +225,7 @@ def test_should_offer_european_cities_people_fly_to_on_the_first_search():
 
     names = [m["name"] for m in found["matches"]]
     assert "Вена" in names and "Париж" in names  # live destinations, climate fetched before answering
-    assert all(m.get("from_route_map") for m in found["matches"] if m["name"] in ("Вена", "Париж"))
+    assert all(m["id"].startswith("city-") for m in found["matches"] if m["name"] in ("Вена", "Париж"))
     assert found["route_map"]["live_from_aviasales"] == 2 and found["route_map"]["climate_fetched_now"] >= 2
 
 

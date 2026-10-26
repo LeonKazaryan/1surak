@@ -405,8 +405,6 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         result["climate"] = {"month": MONTHS[month - 1], **_climate_view(s.climate[month])}
     if s.flags:
         result["data_flags"] = s.flags
-    if not place.verified:
-        result["from_route_map"] = True  # not one of our checked places: say so if you suggest it
     if not s.flights and s.via:
         result["flight_via"] = {k: s.via[k] for k in ("via", "price", "estimate")}
     if not s.flights and s.search_link:
@@ -450,7 +448,6 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "highlights": list(place.highlights),
         "watch_out": list(place.watch_out),
         "photo": place_photo(place.id),
-        "verified": place.verified,  # False: a city from the route map, its facts fetched not checked
         "search_link": s.search_link if not s.flights else None,
         "flight_via": s.via if not s.flights else None,
     }

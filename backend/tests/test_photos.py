@@ -92,5 +92,5 @@ def test_should_not_put_made_up_estimates_on_a_route_map_city_card():
     izmir = discovered_place("IZM")
     view = card(build_snapshot(izmir, {}, {}, {}))
 
-    assert view["verified"] is False
+    assert "verified" not in view and view["watch_out"] == []  # no «not checked» badge or note
     assert (view["price_level"], view["price"], view["kids"], view["kids_fit"]) == (None, None, None, None)

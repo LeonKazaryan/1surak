@@ -3,9 +3,9 @@
 The catalogue's 53 places are hand-checked. A city from the route map becomes a Place too, with what we can
 get for it and nothing more: its name, country, coordinates and airport from Travelpayouts; its climate and
 sea from Open-Meteo (one year, fetched once and kept in the facts table, see climate.py); its kind of trip
-from those facts (a coast with sea data is «sea», a high town «mountains»). Its visa rule is the catalogue's
-when we curate that country, otherwise «not checked». Every such place says `verified=False`, and its cards
-say so.
+from those facts (a coast with sea data is «sea», a high town «mountains»). Its visa is the Passport Index rule
+for the traveller's passport (app.visas). `verified=False` only keeps the team's estimates (price level, kids)
+off such a place: nobody made them.
 """
 
 from collections.abc import Iterable
@@ -21,8 +21,6 @@ from app.flights import city, city_code
 from app.flights.network import Network
 
 PREFIX = "city-"
-UNVERIFIED = "Не из нашего каталога: визу, цены и отдых команда не проверяла, климат по данным 2025 года"
-UNKNOWN_VISA_NOTE = "Визовый режим для этой страны мы не проверяли: уточним перед поездкой"
 MOUNTAIN_M = 900  # a town this high is a mountain trip
 WARM_SEA_C = 20  # a coast whose sea gets this warm in some month is a sea trip
 DEFAULT_LEVEL = 2
@@ -73,7 +71,11 @@ def discovered_place(code: str) -> Place | None:
         return None
     catalog = load_catalog()
     country = catalog.countries.get(c.country_code) or Country(
-        c.country_code, c.country, "unknown", None, UNKNOWN_VISA_NOTE
+        c.country_code,
+        c.country,
+        "unknown",
+        None,
+        "",  # the visa itself: app.visas, by passport
     )
     return Place(
         id=place_id(c.code),
@@ -87,7 +89,7 @@ def discovered_place(code: str) -> Place | None:
         price_level=_levels().get(c.country_code, DEFAULT_LEVEL),
         kids="ok",
         highlights=(),
-        watch_out=(UNVERIFIED,),
+        watch_out=(),
         train_min=None,
         verified=False,
     )
