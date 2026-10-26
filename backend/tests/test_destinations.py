@@ -250,3 +250,14 @@ def test_should_read_abroad_from_the_users_own_country():
         assert in_scope(kostanay, home) and not in_scope(tashkent, home)
     finally:
         current_origin.reset(token)
+
+
+def test_should_show_a_named_country_as_near_misses_when_the_budget_rules_it_out():
+    from app.catalog.search import SearchQuery, Snapshot
+    from app.catalog.tools import shortlist
+
+    frankfurt = Snapshot(discovered_place("FRA"))  # price level 2 (not «недорого»)
+    frankfurt.visa_rule = "visa_free"
+    found = shortlist([frankfurt], SearchQuery(countries=["Германия"], max_price_level=1))
+
+    assert found == [frankfurt]  # priced and shown with its reason, not dropped

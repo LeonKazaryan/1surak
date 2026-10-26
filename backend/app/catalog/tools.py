@@ -67,15 +67,25 @@ def _search_preview(result: dict) -> str:
 
 SEARCH_TIMEOUT_S = 45.0  # live destinations, a few climates and the tickets
 FETCH_NOW = 8  # route-map cities of the asked region whose climate a search fetches before answering
-MAX_PRICED = 12  # route-map cities that get real tickets in one search, the closest that fit everything else
+MAX_PRICED = 12
+MAX_NEAR = 4  # route-map cities shown as near misses, with the one filter they fail  # route-map cities that get real tickets in one search, the closest that fit everything else
 TICKET_MISSES = {"flight", "direct", "ticket", "train"}
 
 
 def shortlist(discovered: list[Snapshot], q: SearchQuery) -> list[Snapshot]:
-    """The route-map cities worth pricing: in scope and failing nothing but the ticket filters, nearest first
-    (reachable() already orders them by distance)."""
-    fits = [s for s in discovered if in_scope(s, q) and all(m.kind in TICKET_MISSES for m in failures(s, q))]
-    return fits[:MAX_PRICED]
+    """The route-map cities worth pricing: the closest that fail nothing but the ticket filters, and a few
+    that miss by exactly one more (dearer, a visa), so «Германия, недорого» shows Frankfurt as a near miss
+    with its reason instead of nothing at all. Live destinations come first in `discovered`."""
+    fits, near = [], []
+    for s in discovered:
+        if not in_scope(s, q):
+            continue
+        other = [m for m in failures(s, q) if m.kind not in TICKET_MISSES]
+        if not other:
+            fits.append(s)
+        elif len(other) == 1:
+            near.append(s)
+    return fits[:MAX_PRICED] + near[:MAX_NEAR]
 
 
 def catalog_tools(

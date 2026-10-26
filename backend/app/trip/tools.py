@@ -100,6 +100,7 @@ INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan", "origin_over",
 class TripState:
     brief: TripBrief
     routes: dict[str, RoutePlan] = field(default_factory=dict)  # found this turn, by id, for the cards
+    answered: bool = False  # this turn carries the card answers: the same trip, whatever the model thinks
 
 
 class UpdateArgs(BriefPatch):
@@ -175,8 +176,9 @@ def trip_tools(
     flights = flights or NoFlights()
 
     async def update_trip_brief(args: UpdateArgs) -> dict | ToolReply:
-        base = TripBrief() if args.new_trip else state.brief
-        if args.new_trip:  # a new trip keeps where the user flies from
+        new_trip = args.new_trip and not state.answered  # answering the cards never starts over
+        base = TripBrief() if new_trip else state.brief
+        if new_trip:  # a new trip keeps where the user flies from
             base = base.model_copy(update={k: state.brief.__dict__[k] for k in ORIGIN_FIELDS})
         before = current_origin.get()  # the city this turn has searched from so far
         patch = BriefPatch.model_validate(args.model_dump(exclude={"new_trip"}))

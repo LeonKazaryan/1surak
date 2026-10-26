@@ -152,6 +152,7 @@ async def stream_reply(
     currency_token = current_currency.set(currency_for(origin_code))
     if answers:
         trip.brief = merge(trip.brief, answers)
+        trip.answered = True
         if trip.brief.origin_code and trip.brief.origin_code != origin_code:  # picked on the cards
             origin_code = trip.brief.origin_code
             current_origin.set(origin_code)
