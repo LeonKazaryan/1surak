@@ -114,7 +114,14 @@ def choice_view(c: HotelChoice) -> dict:
         "check_out": h.check_out.strftime("%H:%M"),
         "reasons": c.reasons,
         "misses": c.misses,
-        "demo": True,
+        # a real hotel: its name, place, stars and photo are real, the price is our estimate until booking
+        "demo": not h.real,
+        "real": h.real,
+        "stars_known": h.stars_known,
+        "photo": h.photo,
+        "source_url": h.source_url,
+        "price_estimate": c.rate.estimate or not h.real,
+        "terms_known": c.rate.terms_known,
     }
 
 
@@ -126,8 +133,11 @@ def _choice_for_model(c: HotelChoice) -> dict:
         "stars": h.stars,
         "rating": h.rating,
         "area": h.area,
-        "meal": MEAL_LABELS[c.rate.meal],
+        # a meal plan we only estimated is not something to promise
+        "meal": MEAL_LABELS[c.rate.meal] if c.rate.terms_known else "питание уточним при бронировании",
         "total": money(c.total_rub),
+        "real_hotel": h.real,  # real name and place; the price is an estimate, terms are confirmed at booking
+        "price_is_estimate": c.rate.estimate or not h.real,
         "why": c.reasons,
         "misses": c.misses,
     }
@@ -178,6 +188,11 @@ class StopPlan:
         }
 
 
+FARE_DRIFT = 0.1  # cached fares are a few days old: the same ticket may cost this much more at booking
+RIDE_SPREAD = 0.25  # a taxi or a bus estimated by distance
+HOTEL_SPREAD = (0.85, 1.2)  # an estimated room price, low and high
+
+
 @dataclass(frozen=True)
 class Costs:
     flights: int
@@ -187,6 +202,23 @@ class Costs:
     guests: int
     flights_complete: bool  # every flight leg has a ticket, so the total is the whole cost
     budget: int | None = None
+    # The cheapest and the dearest the same trip may come to. Tickets are real cached prices, hotels and
+    # rides are estimates: they get a spread, and the lower end takes the cheapest hotel offered instead.
+    hotels_low: int | None = None
+    hotels_high: int | None = None
+    hotels_estimate: bool = True
+
+    @property
+    def low(self) -> int:
+        hotels = self.hotels_low if self.hotels_low is not None else self.hotels
+        return round(self.flights + hotels + (self.transfers + self.ground) * (1 - RIDE_SPREAD))
+
+    @property
+    def high(self) -> int:
+        hotels = self.hotels_high if self.hotels_high is not None else self.hotels
+        return round(
+            self.flights * (1 + FARE_DRIFT) + hotels + (self.transfers + self.ground) * (1 + RIDE_SPREAD)
+        )
 
     @property
     def total(self) -> int:
@@ -210,6 +242,9 @@ class Costs:
             "per_person": self.per_person,
             "guests": self.guests,
             "flights_complete": self.flights_complete,
+            "low": self.low,
+            "high": self.high,
+            "hotels_estimate": self.hotels_estimate,
             "budget": self.budget,
             "over_by": self.over_by,
         }

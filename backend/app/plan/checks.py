@@ -54,7 +54,15 @@ def arrival_checks(landing: Ticket, hotel: Hotel, info: PlaceInfo, transfer_minu
         return []
     lands = _hm(info.local(landing.arrives))
     check_in = datetime.combine(reached.date(), hotel.check_in, reached.tzinfo)
-    title = f"Прилёт {lands}, заселение с {hotel.check_in:%H:%M}"
+    usually = "обычно " if hotel.real else ""  # a real hotel's own times come with its offer
+    title = f"Прилёт {lands}, заселение {usually}с {hotel.check_in:%H:%M}"
+    late = reached.time() < time(NIGHT_ENDS.seconds // 3600) or reached.hour >= LATE_RECEPTION
+    if hotel.real and late:  # whether its reception works at night is not known: no claim either way
+        return [
+            Check(
+                "warn", title, f"В отеле вы будете около {_hm(reached)}: предупредим отель о позднем заезде."
+            )
+        ]
     if reached.time() < time(NIGHT_ENDS.seconds // 3600):
         if hotel.reception_24h:
             return [
@@ -106,7 +114,7 @@ def departure_checks(
     flight = info.local(leaves)
     go = flight - AIRPORT_BEFORE[abroad] - timedelta(minutes=transfer_minutes)
     check_out = datetime.combine(go.date(), hotel.check_out, go.tzinfo)
-    title = f"Выезд до {hotel.check_out:%H:%M}, вылет {_hm(flight)}"
+    title = f"Выезд {'обычно ' if hotel.real else ''}до {hotel.check_out:%H:%M}, вылет {_hm(flight)}"
     if keeps_room_to_flight(go, flight, last):
         return [
             Check("ok", title, f"Ночь перед вылетом уже в брони: номер ваш до выезда в аэропорт в {_hm(go)}.")

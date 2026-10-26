@@ -1,0 +1,82 @@
+import { useContext } from 'react'
+import { motion } from 'motion/react'
+import { MapPinIcon } from '@heroicons/react/20/solid'
+import { cn } from '@/components/ui/utils'
+import type { HotelOption, HotelOptionsEvent } from '@/types/api'
+import { HotelPhoto, SourceBadge } from '../plan/PlanStay'
+import { Stars } from '../plan/planParts'
+import { nightsText } from '../plan/planFormat'
+import { CurrencyContext, RUB, formatMoney } from '../widgets'
+
+function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: number; canPick: boolean; onPick: () => void }) {
+  const currency = useContext(CurrencyContext)
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 26, delay: index * 0.05 }}
+      className={cn(
+        'flex list-none flex-col gap-2 overflow-hidden rounded-2xl border bg-card p-4',
+        hotel.current ? 'border-primary' : 'border-border',
+      )}
+    >
+      {hotel.photo && <HotelPhoto photo={hotel.photo} name={hotel.name} />}
+      <div className="flex items-start gap-2">
+        <h4 className="m-0 min-w-0 flex-1 text-[15px] leading-snug font-semibold text-foreground">{hotel.name}</h4>
+        <SourceBadge hotel={hotel} />
+      </div>
+      <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
+        {hotel.stars_known && <Stars count={hotel.stars} />}
+        <span className="inline-flex items-center gap-1">
+          <MapPinIcon aria-hidden className="h-3.5 w-3.5 text-faint" />
+          {hotel.area}
+        </span>
+        {hotel.source_url && (
+          <a href={hotel.source_url} target="_blank" rel="noopener noreferrer" className="text-highlight underline-offset-2 hover:underline">
+            на карте
+          </a>
+        )}
+      </p>
+      <div className="mt-auto flex items-end gap-3 pt-1">
+        <span className="min-w-0 flex-1">
+          <span className="block text-lg font-semibold text-foreground tabular-nums">
+            {hotel.price_estimate && hotel.real ? 'около ' : ''}
+            {formatMoney(hotel.total_rub, currency)}
+          </span>
+          <span className="block text-[12px] text-muted-foreground">
+            {formatMoney(hotel.night_rub, currency)} за ночь{hotel.terms_known ? ` · ${hotel.meal_label}` : ''}
+          </span>
+        </span>
+        {hotel.current ? (
+          <span className="shrink-0 rounded-full bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground">В плане</span>
+        ) : (
+          <button
+            type="button"
+            onClick={onPick}
+            disabled={!canPick}
+            aria-label={`Выбрать «${hotel.name}»`}
+            className="h-9 shrink-0 rounded-full bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:bg-secondary disabled:text-faint"
+          >
+            Выбрать
+          </button>
+        )}
+      </div>
+    </motion.li>
+  )
+}
+
+/** More hotels for one place of the trip: picking one rebuilds the plan with it. */
+export function HotelOptionsCards({ widget, canPick, onPick }: { widget: HotelOptionsEvent; canPick: boolean; onPick: (name: string) => void }) {
+  return (
+    <CurrencyContext.Provider value={widget.currency ?? RUB}>
+      <p className="m-0 mt-3 text-[12px] text-muted-foreground">
+        {`${widget.place}: ${nightsText(widget.nights)}, цена за всё проживание`}
+      </p>
+      <ul className="m-0 mt-2 grid gap-3 p-0 sm:grid-cols-2">
+        {widget.hotels.map((hotel, i) => (
+          <Option key={hotel.id} hotel={hotel} index={i} canPick={canPick} onPick={() => onPick(hotel.name)} />
+        ))}
+      </ul>
+    </CurrencyContext.Provider>
+  )
+}

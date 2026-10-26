@@ -45,3 +45,7 @@ class Settings(BaseSettings):
     # Popular fares are refreshed before they expire: how often to look, and how many requests per look.
     fare_refresh_minutes: float = 10.0  # 0 turns it off
     fare_refresh_budget: int = 60
+    # Destinations beyond the catalogue: cities the route map flies to, with climate fetched from Open-Meteo
+    # in the background (app/destinations). Off in tests. The departure cities whose destinations load first.
+    destination_climate: bool = True
+    destination_prefetch: str = "MOW,LED,ALA,NQZ"

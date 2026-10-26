@@ -25,7 +25,7 @@ CURATED_SOURCE = "1surak-curated"
 CURATED_ON = datetime(2026, 10, 25, tzinfo=UTC)
 
 Kind = Literal["sea", "mountains", "city", "nature", "ski"]
-VisaRule = Literal["none", "visa_free", "on_arrival", "evisa", "visa_required"]
+VisaRule = Literal["none", "visa_free", "on_arrival", "evisa", "visa_required", "unknown"]
 KidsFit = Literal["good", "ok", "poor"]
 
 KIND_LABELS: dict[str, str] = {
@@ -41,6 +41,7 @@ VISA_LABELS: dict[str, str] = {
     "on_arrival": "виза по прибытии",
     "evisa": "электронная виза заранее",
     "visa_required": "нужна виза заранее",
+    "unknown": "визовый режим не проверен",
 }
 PRICE_LABELS = {1: "недорого", 2: "средне", 3: "дорого"}
 KIDS_LABELS = {"good": "хорошо с детьми", "ok": "можно с детьми", "poor": "не для маленьких детей"}
@@ -72,6 +73,8 @@ class Place:
     watch_out: tuple[str, ...]
     # curated train time from Moscow, turned into a fact by curated_facts()
     train_min: int | None
+    # False for a city from the route map (app/destinations): its facts are fetched, not checked by the team
+    verified: bool = True
 
     @property
     def domestic(self) -> bool:
@@ -104,7 +107,10 @@ class Catalog:
         for place in self.places:
             if needle and needle in place.name.casefold():
                 return place
-        return None
+        # a city the route map flies to: imported here, the destinations package builds on this module
+        from app.destinations import find as find_discovered
+
+        return find_discovered(key) if needle else None
 
 
 def _read(path: Path):

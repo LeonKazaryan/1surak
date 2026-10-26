@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import agent
 from app.catalog.catalog import load_catalog
-from app.catalog.search import load_snapshots
 from app.chats import repository
+from app.destinations import snapshots_by_id
 from app.flights import DEFAULT_ORIGIN, Flights, city, currency_for, current_origin
+from app.hotels import HotelSource
 from app.llm import LLM
 from app.money import current_currency
 from app.plan.tools import plan_tools
@@ -76,7 +77,8 @@ async def refresh_prices(
             or moment - brief.priced_at <= STALE_AFTER
         ):
             return None
-        snapshots = {s.place.id: s for s in await load_snapshots(db, load_catalog(), moment)}
+        shown = [c.get("id", "") for c in found[1].get("cards", [])]
+        snapshots = await snapshots_by_id(db, load_catalog(), moment, shown)
     _, event = found
     currency = currency_for(brief.priced_from)
     token = current_currency.set(currency)
@@ -132,6 +134,7 @@ async def stream_reply(
     flights: Flights | None = None,
     retry: bool = False,
     origin_known: bool = True,
+    hotels: HotelSource | None = None,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -157,7 +160,10 @@ async def stream_reply(
     if known_code and (home := city(origin_code)) and origin and home.name != origin:
         origin = home.name  # the agent is told the city its tickets really fly from
     tools = (tools or ToolRegistry()).extended(
-        [*trip_tools(trip, sessionmaker, flights=flights), *plan_tools(trip, sessionmaker, flights=flights)]
+        [
+            *trip_tools(trip, sessionmaker, flights=flights),
+            *plan_tools(trip, sessionmaker, flights=flights, hotels=hotels),
+        ]
     )
 
     answer_parts: list[str] = []

@@ -25,6 +25,7 @@ import { TripFreshness } from './components/TripFreshness'
 import { useChatSession } from './hooks/useChatSession'
 import { BookingCard } from './plan/BookingCard'
 import { FlightPlanCards } from './components/FlightPlanCard'
+import { HotelOptionsCards } from './components/HotelOptions'
 import type { BookFn } from './plan/CheckoutSheet'
 import { TripPlan } from './plan/TripPlan'
 import { isFailed } from './trace'
@@ -112,6 +113,9 @@ function MessageBubble(props: MessageBubbleProps) {
       )}
       {widget?.type === 'booking' && <BookingCard booking={widget} />}
       {widget?.type === 'flight_plan' && <FlightPlanCards widget={widget} />}
+      {widget?.type === 'hotel_options' && (
+        <HotelOptionsCards widget={widget} canPick={isLast && !busy} onPick={(name) => props.onAsk(`Хочу отель «${name}»`)} />
+      )}
     </div>
   )
 }

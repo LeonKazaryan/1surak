@@ -10,6 +10,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.catalog.search import MONTHS_IN, Snapshot
 from app.flights import City, Flights, Ticket
+from app.hotels import HotelSource
 from app.money import CURRENCIES, money
 from app.plan.checks import (
     AIRPORT_BEFORE,
@@ -21,11 +22,11 @@ from app.plan.checks import (
     keeps_room_to_flight,
 )
 from app.plan.guide import guide_for
-from app.plan.hotels import WISH_WORDS, HotelPick, Party, choose_hotel, hotels_for, hundreds, wishes_from
+from app.plan.hotels import WISH_WORDS, HotelPick, Party, choose_hotel, hundreds, wishes_from
 from app.plan.itinerary import LOGISTICS, Day, Item, Stay, plan_days
 from app.plan.places import PlaceInfo, place_info
 from app.plan.transfers import Transfer, transfer_to
-from app.plan.trip import Costs, Move, StopPlan, TripPlan, day_text, span_text
+from app.plan.trip import HOTEL_SPREAD, Costs, Move, StopPlan, TripPlan, day_text, span_text
 from app.trip.brief import TripBrief, night_range, price_level
 from app.trip.legs import arriving, leaving, units
 from app.trip.routes import DEFAULT_NIGHTS, ROAD_DETOUR, Leg, RoutePlan, price_route, split_nights
@@ -288,7 +289,21 @@ def _costs(route: RoutePlan, party: Party, stops: list[StopPlan], brief: TripBri
         guests=party.guests,
         flights_complete=all(leg.ticket for leg in flown),
         budget=budget,
+        **_hotel_range(stops),
     )
+
+
+def _hotel_range(stops: list[StopPlan]) -> dict:
+    """The hotels' share of the range: down to the cheapest hotel offered, with the estimate's spread."""
+    estimate = any(s.pick.best.rate.estimate or not s.pick.best.hotel.real for s in stops)
+    low_k, high_k = HOTEL_SPREAD if estimate else (1.0, 1.0)
+    low = sum(min([s.pick.best.total_rub, *(a.total_rub for a in s.pick.alternatives)]) for s in stops)
+    high = sum(s.pick.best.total_rub for s in stops)
+    return {
+        "hotels_low": round(low * low_k),
+        "hotels_high": round(high * high_k),
+        "hotels_estimate": estimate,
+    }
 
 
 def _days(
@@ -346,7 +361,9 @@ async def assemble(
     today: date,
     prefer: dict[str, str] | None = None,
     previous: dict | None = None,
+    hotels: "HotelSource | None" = None,
 ) -> TripPlan:
+    hotels = hotels or HotelSource()
     party, wishes, level = party_of(brief), wishes_from(brief.wishes), price_level(brief)
     total_nights = night_range(brief)[1] or DEFAULT_NIGHTS
     route = RoutePlan(stops, split_nights(total_nights, stops), 0.0, 0, [])
@@ -377,9 +394,8 @@ async def assemble(
         leg_out = leaving(legs[j_out]) if 0 <= j_out < len(legs) else None
         nominal = start + timedelta(days=sum(route.nights[:i]))
         month = nominal.month
-        pick = choose_hotel(
-            hotels_for(place, month), party, wishes, level, route.nights[i], (prefer or {}).get(place.id)
-        )
+        options = await hotels.hotels(place, nominal, route.nights[i], party)
+        pick = choose_hotel(options, party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
         hotel = pick.best.hotel
         ride_in = transfer_to(hotel, place, info, party) if leg_in and leg_in.mode == "flight" else None
         ride_out = transfer_to(hotel, place, info, party) if leg_out and leg_out.mode == "flight" else None

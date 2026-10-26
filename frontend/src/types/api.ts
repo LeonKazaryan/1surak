@@ -125,6 +125,8 @@ export interface DestinationCard {
   tradeoff?: string | null
   photo?: Photo | null
   price_change?: PriceChange
+  /** False for a city from the route map: its facts are fetched, not checked by the team. */
+  verified?: boolean
 }
 
 export interface RouteStop {
@@ -272,6 +274,35 @@ export interface FlightPlanEvent {
   currency?: Currency
 }
 
+/** One hotel of search_hotels: real ones carry their photo and source; the price is for the whole stay. */
+export interface HotelOption {
+  id: string
+  name: string
+  stars: number
+  stars_known: boolean
+  area: string
+  photo: Photo | null
+  source_url: string | null
+  real: boolean
+  meal_label: string
+  night_rub: number
+  total_rub: number
+  price_estimate: boolean
+  terms_known: boolean
+  /** The hotel already in the plan. */
+  current: boolean
+}
+
+export interface HotelOptionsEvent {
+  type: 'hotel_options'
+  place: string
+  check_in: string
+  nights: number
+  guests: number
+  hotels: HotelOption[]
+  currency?: Currency
+}
+
 /** The agent now searches from another city (the user named it): the picker follows. */
 export interface OriginEvent {
   type: 'origin'
@@ -334,8 +365,9 @@ export interface PlanHotel {
   id: string
   name: string
   stars: number
-  rating: number
-  reviews: number
+  /** null for a real hotel: we never invent its guest rating. */
+  rating: number | null
+  reviews: number | null
   area: string
   beach_m: number | null
   meal: string
@@ -352,6 +384,14 @@ export interface PlanHotel {
   reasons: string[]
   misses: string[]
   demo: boolean
+  /** A real hotel (name, place, stars, photo); its price is an estimate until booking. */
+  real?: boolean
+  stars_known?: boolean
+  photo?: Photo | null
+  source_url?: string | null
+  price_estimate?: boolean
+  /** False: meals, refunds and payment are confirmed at booking, so the card claims none of them. */
+  terms_known?: boolean
 }
 
 export interface PlanTransfer {
@@ -419,6 +459,10 @@ export interface PlanCosts {
   flights_complete: boolean
   budget: number | null
   over_by: number | null
+  /** What the same trip may come to: tickets are cached real prices, hotels and rides are estimates. */
+  low?: number
+  high?: number
+  hotels_estimate?: boolean
 }
 
 /** The whole trip the agent assembled: tickets, hotels, rides, checks, days and the bill. */
@@ -495,6 +539,7 @@ export type ChatStreamEvent =
   | TripPlanEvent
   | BookingEvent
   | FlightPlanEvent
+  | HotelOptionsEvent
   | OriginEvent
   | ChatStreamDone
 

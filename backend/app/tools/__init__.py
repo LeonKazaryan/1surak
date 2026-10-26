@@ -6,7 +6,13 @@ __all__ = ["Tool", "ToolRegistry", "ToolReply", "ToolResult", "build_registry"]
 
 
 def build_registry(
-    sessionmaker: async_sessionmaker[AsyncSession], web=None, pages=None, flights=None, embedder=None
+    sessionmaker: async_sessionmaker[AsyncSession],
+    web=None,
+    pages=None,
+    flights=None,
+    embedder=None,
+    climate=None,
+    directions=None,
 ) -> ToolRegistry:
     """The tools the agent can call. Hotels and the rest get added here.
     `web` is the web search for the knowledge base; None keeps research to the stored base.
@@ -21,7 +27,7 @@ def build_registry(
 
     flights = flights or NoFlights()
     tools = [
-        *catalog_tools(sessionmaker, flights=flights),
+        *catalog_tools(sessionmaker, flights=flights, climate=climate, directions=directions),
         *flight_tools(flights),
         research_tool(sessionmaker, web, embedder=embedder),
     ]

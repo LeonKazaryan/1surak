@@ -58,6 +58,31 @@ describe('TripPlan', () => {
     buy.forEach((a) => expect(a).toHaveAttribute('target', '_blank'))
   })
 
+  it('should show a real hotel without inventing its rating or terms, and offer more hotels', async () => {
+    const stop = PLAN.stops[0]
+    const real = {
+      ...stop.hotel,
+      rating: null,
+      reviews: null,
+      demo: false,
+      real: true,
+      stars_known: true,
+      price_estimate: true,
+      terms_known: false,
+      source_url: 'https://www.wikidata.org/wiki/Q1',
+      photo: { url: 'https://upload.wikimedia.org/h.jpg', width: 640, height: 400, author: 'Анна', license: 'CC BY 4.0', file_url: 'https://commons.wikimedia.org/wiki/File:H.jpg' },
+    }
+    const { onAsk } = renderPlan({}, { ...PLAN, stops: [{ ...stop, hotel: real }, ...PLAN.stops.slice(1)] })
+
+    const stay = screen.getByRole('region', { name: 'Где живёте' })
+    expect(within(stay).getByText('цена ориентировочная')).toBeInTheDocument()
+    expect(within(stay).getByText('Питание, отмену и оплату уточним при бронировании')).toBeInTheDocument()
+    expect(within(stay).queryByText(/отзыв/)).toBeNull()
+    expect(within(stay).getByRole('link', { name: 'Анна, CC BY 4.0' })).toBeInTheDocument()
+    await userEvent.click(within(stay).getByRole('button', { name: 'Ещё отели' }))
+    expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
+  })
+
   it('should explain the hotel pick, offer the alternative and say what it ruled out', async () => {
     const { onAsk } = renderPlan()
 

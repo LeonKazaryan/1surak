@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
+from app.destinations import snapshots_by_id
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
 from app.flights.dictionary import find_city
 from app.money import current_currency
@@ -271,7 +272,11 @@ def trip_tools(
             plans = await find_routes(snapshots, query, flights, origin)
         state.routes.update({p.id: p for p in plans})
         if not plans:
-            return {"routes": [], "note": "No route fits. Offer single places from search_destinations."}
+            again = {"countries": query.countries} if query.countries else {}
+            note = "No route fits. Offer single places: call search_destinations with the same month"
+            if again:  # the region the user asked for stays: without it the search drifts to other countries
+                note += f" and countries={query.countries}"
+            return {"routes": [], "note": note + "."}
         return {
             "from": origin.name if origin else None,
             "routes": [route_for_model(p, query.month) for p in plans],
@@ -292,9 +297,9 @@ def trip_tools(
     async def show_destinations(args: ShowArgs) -> dict | ToolReply:
         if refusal := cards_first(state.brief):
             return refusal
-        async with sessionmaker() as db:
-            loaded = await load_snapshots(db, catalog, now())
         picked = {p.id for pick in args.picks if pick.id and (p := catalog.find(pick.id))}
+        async with sessionmaker() as db:
+            loaded = list((await snapshots_by_id(db, catalog, now(), picked)).values())
         # the same tickets the search saw: cached by the flights client, so this costs no requests
         await with_flights(
             [s for s in loaded if s.place.id in picked], flights, current_origin.get(), state.brief.month

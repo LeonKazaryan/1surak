@@ -16,7 +16,7 @@ from app.chats.schemas import (
     ChatRequest,
     RefreshResponse,
 )
-from app.deps import Db, FlightPrices, Llm, SessionFactory, Tools, rate_limited
+from app.deps import Db, FlightPrices, Hotels, Llm, SessionFactory, Tools, rate_limited
 
 router = APIRouter(prefix="/api", tags=["Chats"])
 
@@ -44,7 +44,12 @@ async def _ndjson(events: AsyncIterator[dict]) -> AsyncIterator[bytes]:
 
 @router.post("/chat/stream", dependencies=[Depends(rate_limited)])
 async def chat_stream(
-    body: ChatRequest, sessionmaker: SessionFactory, llm: Llm, tools: Tools, flights: FlightPrices
+    body: ChatRequest,
+    sessionmaker: SessionFactory,
+    llm: Llm,
+    tools: Tools,
+    flights: FlightPrices,
+    hotels: Hotels,
 ) -> StreamingResponse:
     chat_id = str(body.chat_id or uuid4())
     events = service.stream_reply(
@@ -59,6 +64,7 @@ async def chat_stream(
         flights,
         body.retry,
         body.origin_known,
+        hotels,
     )
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 

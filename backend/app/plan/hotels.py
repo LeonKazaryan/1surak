@@ -71,6 +71,8 @@ class Rate:
     night_rub: int  # a room for two, one night
     free_cancel_days: int | None  # free cancellation until this many days before arrival; None: no refund
     pay_at_hotel: bool
+    terms_known: bool = True  # False for an estimate: the meal, refund and payment rules are not known yet
+    estimate: bool = False  # the price is our estimate, not a provider's offer
 
 
 @dataclass(frozen=True)
@@ -79,8 +81,8 @@ class Hotel:
     place_id: str
     name: str
     stars: int
-    rating: float
-    reviews: int
+    rating: float | None
+    reviews: int | None
     area: str
     lat: float
     lon: float
@@ -97,6 +99,13 @@ class Hotel:
     early_check_in_rub: int
     late_check_out_rub: int
     rates: tuple[Rate, ...]
+    # A real hotel from the directory (app/hotels): its name, place, stars and photo are real; its features
+    # above are unknown, so nothing is claimed from them. A demo hotel (real=False) is invented whole.
+    real: bool = False
+    stars_known: bool = True
+    photo: dict | None = field(default=None, hash=False, compare=False)  # not part of who the hotel is
+    source_url: str | None = None
+    centre_m: int | None = None
 
 
 @dataclass(frozen=True)
@@ -152,6 +161,16 @@ class HotelPick:
 def hundreds(value: float) -> int:
     """A price as people say it: 15 437.5 → 15 400."""
     return round(value / 100) * 100
+
+
+def party_night(rate: Rate, party: Party) -> int:
+    """One night for the whole party: enough rooms, and a share more for every guest beyond two a room."""
+    extra = 1 + EXTRA_GUEST_FACTOR * max(0, party.guests - 2 * party.rooms)
+    return hundreds(rate.night_rub * party.rooms * extra)
+
+
+def cheapest_rate(hotel: Hotel) -> Rate:
+    return _rate(hotel, False)
 
 
 def wishes_from(words: list[str] | None) -> Wishes:
@@ -258,6 +277,12 @@ def _explain(
     hotel: Hotel, rate: Rate, party: Party, wishes: Wishes, sea: bool
 ) -> tuple[list[str], list[str]]:
     reasons, misses = [], []
+    if hotel.real:  # only what the directory knows: where it is and its stars
+        if hotel.centre_m is not None and hotel.centre_m <= 1500:
+            reasons.append("в центре")
+        if hotel.stars_known:
+            reasons.append(f"{hotel.stars}★")
+        return reasons, misses
     if party.children_ages:
         (reasons if hotel.kids_club else misses).append(
             "детский клуб" if hotel.kids_club else "нет детского клуба"
@@ -285,7 +310,11 @@ def _explain(
 
 
 def _score(hotel: Hotel, rate: Rate, party: Party, wishes: Wishes, target: int, cheapest: int) -> float:
-    score = -abs(hotel.stars - target) + (hotel.rating - 8) * 0.5 - 0.3 * rate.night_rub / cheapest
+    rating = (hotel.rating - 8) * 0.5 if hotel.rating else 0.0
+    score = -abs(hotel.stars - target) + rating - 0.3 * rate.night_rub / cheapest
+    if hotel.real:  # known stars beat a guess; close to the centre is what we can tell about the place
+        score -= 0.5 * (not hotel.stars_known)
+        score += 0.4 * (hotel.centre_m is not None and hotel.centre_m <= 2000)
     if party.children_ages:
         score += 1.5 * hotel.kids_club + 0.8 * (hotel.family_rooms and party.guests >= 3)
         score += 0.6 * (hotel.beach_m is not None and hotel.beach_m <= 200)
@@ -314,6 +343,8 @@ def choose_hotel(
         (h, "только для взрослых, а с вами ребёнок") for h in hotels if h.adults_only and party.children_ages
     ]
     unmet = []
+    if all(h.real for h in hotels):
+        return _choose_real(hotels, party, wishes, level, nights, prefer)
     if wishes.pets:
         if any(h.pets for h in hotels):
             excluded += [
@@ -336,9 +367,7 @@ def choose_hotel(
 
     def choice(h: Hotel) -> HotelChoice:
         rate = rates[h.id]
-        night = hundreds(
-            rate.night_rub * party.rooms * (1 + EXTRA_GUEST_FACTOR * max(0, party.guests - 2 * party.rooms))
-        )
+        night = party_night(rate, party)
         reasons, misses = _explain(h, rate, party, wishes, sea)
         return HotelChoice(h, rate, party.rooms, nights, night, reasons, misses)
 
@@ -350,6 +379,46 @@ def choose_hotel(
         key=lambda h: rates[h.id].night_rub,
         default=None,
     )
-    nicer = next((h for h in rest if h.stars > best.stars or h.rating > best.rating + 0.3), None)
+    nicer = next(
+        (h for h in rest if h.stars > best.stars or (h.rating or 0) > (best.rating or 0) + 0.3), None
+    )
     alternatives = [choice(h) for h in dict.fromkeys(x for x in (cheaper, nicer) if x)]
     return HotelPick(choice(best), alternatives, excluded, unmet)
+
+
+UNKNOWN_FOR_REAL = {
+    "pets": "Можно ли с животными, по этим отелям не знаю: уточним при бронировании",
+    "all_inclusive": "Есть ли «всё включено», уточним при бронировании",
+    "beach": "Как далеко от пляжа, уточним по каждому отелю",
+    "spa": "Есть ли спа, уточним при бронировании",
+}
+
+
+def _choose_real(
+    hotels: list[Hotel], party: Party, wishes: Wishes, level: int | None, nights: int, prefer: str | None
+) -> HotelPick:
+    """Real hotels: chosen by stars, the centre and the estimated price; every wish we cannot check is said."""
+    unmet = [text for wish, text in UNKNOWN_FOR_REAL.items() if getattr(wishes, wish)]
+    target = TARGET_STARS[level or 0]
+    rates = {h.id: _rate(h, False) for h in hotels}
+    cheapest = min(r.night_rub for r in rates.values())
+
+    def choice(h: Hotel) -> HotelChoice:
+        rate = rates[h.id]
+        night = party_night(rate, party)
+        reasons, misses = _explain(h, rate, party, wishes, False)
+        return HotelChoice(h, rate, party.rooms, nights, night, reasons, misses)
+
+    ranked = sorted(hotels, key=lambda h: -_score(h, rates[h.id], party, wishes, target, cheapest))
+    best = next((h for h in hotels if h.id == prefer), ranked[0])
+    rest = [h for h in ranked if h.id != best.id]
+    cheaper = min(
+        (h for h in rest if rates[h.id].night_rub < rates[best.id].night_rub),
+        key=lambda h: rates[h.id].night_rub,
+        default=None,
+    )
+    nicer = next((h for h in rest if h.stars_known and h.stars > best.stars), None)
+    # without stars to compare, the runner-up stands in for «nicer», so there is always a choice
+    runner_up = next((h for h in rest if h not in (cheaper, nicer)), None)
+    alternatives = [choice(h) for h in dict.fromkeys(x for x in (cheaper, nicer or runner_up) if x)]
+    return HotelPick(choice(best), alternatives, [], unmet)

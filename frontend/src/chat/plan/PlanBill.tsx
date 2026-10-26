@@ -72,6 +72,14 @@ export function PlanBill({ plan }: { plan: TripPlanEvent }) {
         </span>
         <span className="shrink-0 text-xl font-semibold tracking-tight text-foreground tabular-nums">{formatMoney(costs.total, currency)}</span>
       </div>
+      {costs.low !== undefined && costs.high !== undefined && costs.high > costs.low && (
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+          {`Скорее всего от ${formatMoney(costs.low, currency)} до ${formatMoney(costs.high, currency)}: `}
+          {costs.hotels_estimate
+            ? 'билеты по ценам Aviasales, отели и трансферы оценены, точную сумму назовём при бронировании.'
+            : 'цены билетов могут измениться до покупки.'}
+        </p>
+      )}
       {costs.budget ? <Budget plan={plan} budget={costs.budget} /> : null}
     </PlanSection>
   )

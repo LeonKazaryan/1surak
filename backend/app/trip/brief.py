@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.catalog.catalog import KIND_LABELS, Catalog, Kind, load_catalog
 from app.catalog.search import MONTHS
+from app.destinations.regions import countries_in, country_names
 from app.flights import city, current_origin
 from app.flights.dictionary import find_city
 from app.money import CURRENCIES, CurrencyCode, current_currency
@@ -20,19 +21,6 @@ Slot = Literal["origin", "vibe", "when", "travelers", "route", "budget"]
 SLOTS: tuple[Slot, ...] = ("origin", "vibe", "when", "travelers", "route", "budget")
 MIN_ROUTE_NIGHTS = 5  # shorter trips stay in one place: moving eats the days
 
-# A region the user names, as the catalogue's countries, so «по Кавказу» filters the search right away.
-REGION_COUNTRIES = {
-    "кавказ": ["Грузия", "Армения", "Азербайджан"],
-    "закавказье": ["Грузия", "Армения", "Азербайджан"],
-    "европа": ["Сербия", "Черногория", "Беларусь", "Турция"],
-    "балканы": ["Сербия", "Черногория"],
-    "средняя азия": ["Узбекистан", "Казахстан", "Киргизия"],
-    "центральная азия": ["Узбекистан", "Казахстан", "Киргизия"],
-    "юго-восточная азия": ["Таиланд", "Вьетнам", "Индонезия"],
-    "азия": ["Таиланд", "Вьетнам", "Индонезия", "Китай", "Шри-Ланка", "Индия"],
-    "ближний восток": ["ОАЭ", "Оман"],
-    "африка": ["Египет", "Тунис", "Танзания", "Сейшельские Острова", "Маврикий"],
-}
 BUDGET_LABELS = {0: "Бюджет не важен", 1: "Экономно", 2: "Средний бюджет", 3: "Комфорт"}
 # Team estimates for a week per person, to turn a sum of money into the catalogue's price level.
 LEVEL_CAPS_PER_PERSON = ((70_000, 1), (150_000, 2))
@@ -276,8 +264,9 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         hint["max_price_level"] = level
     if b.destination:
         needle = b.destination.strip().casefold()
-        countries = [c.name for c in catalog.countries.values() if c.name.casefold() == needle]
-        region = next((names for key, names in REGION_COUNTRIES.items() if key in needle), None)
+        # any country or region in the world: route-map cities fill what the catalogue lacks
+        countries = country_names(needle)
+        region = None if countries else countries_in(needle)
         if countries or region:
             hint["countries"] = countries or region
     if stops := named_stops(b.destination, catalog):
