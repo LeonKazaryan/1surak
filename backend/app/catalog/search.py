@@ -126,6 +126,9 @@ class Snapshot:
     visa_days: float | None = None
     visa_note: str | None = None
     flags: list[str] = field(default_factory=list)
+    # no cached ticket: the live search on Aviasales, and two tickets through the country's main airport
+    search_link: str | None = None
+    via: dict | None = None
 
     @property
     def flight_min(self) -> int | None:
@@ -380,6 +383,10 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         result["data_flags"] = s.flags
     if not place.verified:
         result["from_route_map"] = True  # not one of our checked places: say so if you suggest it
+    if not s.flights and s.via:
+        result["flight_via"] = {k: s.via[k] for k in ("via", "price", "estimate")}
+    if not s.flights and s.search_link:
+        result["no_cached_ticket"] = "Aviasales has no cached price: the card links to its live search"
     return {k: v for k, v in result.items() if v is not None}
 
 
@@ -418,6 +425,8 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "watch_out": list(place.watch_out),
         "photo": place_photo(place.id),
         "verified": place.verified,  # False: a city from the route map, its facts fetched not checked
+        "search_link": s.search_link if not s.flights else None,
+        "flight_via": s.via if not s.flights else None,
     }
 
 

@@ -287,3 +287,14 @@ def test_should_name_the_catalogue_place_the_user_asked_for(sessionmaker):
 
     assert named["named_place"] == "antalya"
     assert "named_place" not in country
+
+
+def test_should_never_start_over_on_the_turn_that_answers_the_cards(sessionmaker):
+    state = TripState(
+        merge(TripBrief(asked=True), BriefPatch(destination="Германия", month=12)), answered=True
+    )
+    registry = ToolRegistry(trip_tools(state, sessionmaker))
+
+    result = json.loads(call(registry, "update_trip_brief", {"new_trip": True, "adults": 1}).content)
+
+    assert result["brief"]["destination"] == "Германия" and result["already_asked"]  # kept, not wiped
