@@ -109,7 +109,9 @@ function CheckoutBar({ plan, booking, canAct, onCheckout }: CheckoutBarProps) {
           )
         )}
       </div>
-      <p className="m-0 mt-1.5 hidden text-[11px] text-faint sm:block">Отели демонстрационные, оплата имитируется</p>
+      <p className="m-0 mt-1.5 hidden text-[11px] text-faint sm:block">
+        {plan.stops.some((s) => s.hotel.real) ? 'Цены отелей ориентировочные' : 'Отели демонстрационные'}, оплата имитируется
+      </p>
     </div>
   )
 }

@@ -122,6 +122,7 @@ def settings(db_url, static_dir):
         embeddings=False,
         destination_climate=False,  # no Open-Meteo calls from tests
         ground_transport=False,  # no test calls a real timetable
+        osm_hotels=False,  # nor Nominatim
     )
 
 

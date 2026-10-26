@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Popular fares are refreshed before they expire: how often to look, and how many requests per look.
     fare_refresh_minutes: float = 10.0  # 0 turns it off
     fare_refresh_budget: int = 60
+    # Hotels around every place from OpenStreetMap (Nominatim, keyless), and the guest's hotel wishes checked
+    # against the hotel's site and reviews. Off in tests.
+    osm_hotels: bool = True
+    hotel_wishes: bool = True
     # Destinations beyond the catalogue: cities the route map flies to, with climate fetched from Open-Meteo
     # in the background (app/destinations). Off in tests. The departure cities whose destinations load first.
     destination_climate: bool = True

@@ -75,6 +75,23 @@ class Rate:
     estimate: bool = False  # the price is our estimate, not a provider's offer
 
 
+Verdict = Literal["yes", "no", "unknown"]
+SITE = "сайт отеля"
+OSM_SOURCE = "OpenStreetMap"
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """One wish of the guest checked against one hotel: what a real source says, word for word."""
+
+    wish: str  # as the guest put it: «с видом на море»
+    verdict: Verdict
+    quote: str | None = None
+    note: str | None = None  # the condition, if any: «собаки до 5 кг, за доплату»
+    source: str | None = None  # «сайт отеля», a review site's domain, «OpenStreetMap»
+    source_url: str | None = None
+
+
 @dataclass(frozen=True)
 class Hotel:
     id: str
@@ -106,6 +123,9 @@ class Hotel:
     photo: dict | None = field(default=None, hash=False, compare=False)  # not part of who the hotel is
     source_url: str | None = None
     centre_m: int | None = None
+    website: str | None = None
+    tags: dict[str, str] = field(default_factory=dict, hash=False, compare=False)
+    evidence: tuple[Evidence, ...] = field(default=(), hash=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -359,7 +379,9 @@ def choose_hotel(
     if wishes.beach and not any(h.beach_m is not None and h.beach_m <= 150 for h in hotels):
         unmet.append("Отелей на первой линии здесь нет, беру ближайший к пляжу")
     ruled_out = {h.id for h, _ in excluded}
-    allowed = [h for h in hotels if h.id not in ruled_out] or hotels
+    allowed = [h for h in hotels if h.id not in ruled_out]
+    if not allowed:  # every hotel said no: the plan still needs one, and the unmet line says why
+        allowed, excluded = hotels, []
     sea = any(h.beach_m is not None for h in hotels)
     target = TARGET_STARS[level or 0]
     rates = {h.id: _rate(h, all_inclusive) for h in allowed}
@@ -392,15 +414,57 @@ UNKNOWN_FOR_REAL = {
     "beach": "Как далеко от пляжа, уточним по каждому отелю",
     "spa": "Есть ли спа, уточним при бронировании",
 }
+UNCHECKED_PENALTY = 0.6  # a hotel nobody checked yet ranks below one with the same score that was
+CONFIRMED_BONUS = 2.5  # per wish a source confirms (or minus, per one it denies): worth more than a star
+SAID_NO_CHARS = 120
+
+
+def rank_real(hotels: list[Hotel], party: Party, level: int | None) -> list[Hotel]:
+    """Real hotels by fit before any wish is checked: the order in which they are worth checking."""
+    rates = {h.id: _rate(h, False) for h in hotels}
+    cheapest = min((r.night_rub for r in rates.values()), default=1)
+    target = TARGET_STARS[level or 0]
+    return sorted(hotels, key=lambda h: -_score(h, rates[h.id], party, Wishes(), target, cheapest))
+
+
+def _said_no(e: Evidence) -> str:
+    """Goes to the model: a site's text is kept short so it can say little but the reason."""
+    quote = (
+        e.quote if not e.quote or len(e.quote) <= SAID_NO_CHARS else f"{e.quote[:SAID_NO_CHARS].rstrip()}…"
+    )
+    return f"«{e.wish}»: «{quote}» ({e.source})" if quote else f"«{e.wish}»: нет"
+
+
+def _rules_out(e: Evidence) -> bool:
+    """Only the hotel's own word rules it out: a review's «no» is one guest's story, so it only ranks lower."""
+    return e.verdict == "no" and e.source in (SITE, OSM_SOURCE)
 
 
 def _choose_real(
     hotels: list[Hotel], party: Party, wishes: Wishes, level: int | None, nights: int, prefer: str | None
 ) -> HotelPick:
-    """Real hotels: chosen by stars, the centre and the estimated price; every wish we cannot check is said."""
-    unmet = [text for wish, text in UNKNOWN_FOR_REAL.items() if getattr(wishes, wish)]
+    """Real hotels: chosen by the wishes real sources confirm, then stars, the centre and the estimated price.
+    A hotel a source says no to is ruled out; a wish no hotel confirms is said."""
+    asked = list(dict.fromkeys(e.wish for h in hotels for e in h.evidence))
+    unmet = [
+        text
+        for wish, text in UNKNOWN_FOR_REAL.items()
+        if getattr(wishes, wish) and not any(k in w.casefold() for w in asked for k in WISH_WORDS[wish])
+    ]
+    excluded = [
+        (h, _said_no(no)) for h in hotels if (no := next((e for e in h.evidence if _rules_out(e)), None))
+    ]
+    ruled_out = {h.id for h, _ in excluded}
+    allowed = [h for h in hotels if h.id not in ruled_out]
+    if not allowed:  # every hotel said no: the plan still needs one, and the unmet line says why
+        allowed, excluded = hotels, []
+    unmet += [
+        f"Отеля, где подтверждено «{wish}», не нашёл: беру лучший по остальному, уточним при бронировании"
+        for wish in asked
+        if not any(e.wish == wish and e.verdict == "yes" for h in allowed for e in h.evidence)
+    ]
     target = TARGET_STARS[level or 0]
-    rates = {h.id: _rate(h, False) for h in hotels}
+    rates = {h.id: _rate(h, False) for h in allowed}
     cheapest = min(r.night_rub for r in rates.values())
 
     def choice(h: Hotel) -> HotelChoice:
@@ -409,8 +473,17 @@ def _choose_real(
         reasons, misses = _explain(h, rate, party, wishes, False)
         return HotelChoice(h, rate, party.rooms, nights, night, reasons, misses)
 
-    ranked = sorted(hotels, key=lambda h: -_score(h, rates[h.id], party, wishes, target, cheapest))
-    best = next((h for h in hotels if h.id == prefer), ranked[0])
+    def fit(h: Hotel) -> float:
+        said = sum(e.verdict == "yes" for e in h.evidence) - sum(e.verdict == "no" for e in h.evidence)
+        unchecked = bool(asked) and not h.evidence
+        return (
+            _score(h, rates[h.id], party, wishes, target, cheapest)
+            + CONFIRMED_BONUS * said
+            - (UNCHECKED_PENALTY * unchecked)
+        )
+
+    ranked = sorted(allowed, key=lambda h: -fit(h))
+    best = next((h for h in allowed if h.id == prefer), ranked[0])
     rest = [h for h in ranked if h.id != best.id]
     cheaper = min(
         (h for h in rest if rates[h.id].night_rub < rates[best.id].night_rub),
@@ -421,4 +494,4 @@ def _choose_real(
     # without stars to compare, the runner-up stands in for «nicer», so there is always a choice
     runner_up = next((h for h in rest if h not in (cheaper, nicer)), None)
     alternatives = [choice(h) for h in dict.fromkeys(x for x in (cheaper, nicer or runner_up) if x)]
-    return HotelPick(choice(best), alternatives, [], unmet)
+    return HotelPick(choice(best), alternatives, excluded, unmet)

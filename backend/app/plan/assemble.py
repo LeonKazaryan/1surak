@@ -4,13 +4,16 @@ rides, the checks and the days, then the bill against the budget.
 All of it is code, so a 23:40 landing or a budget overrun is found here; the model only explains the result.
 """
 
+import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 
+from app.catalog.catalog import Place
 from app.catalog.search import MONTHS_IN, Snapshot
 from app.flights import City, Flights, Ticket
 from app.hotels import HotelSource
+from app.hotels.evidence import hotel_wishes
 from app.money import CURRENCIES, money
 from app.plan.checks import (
     AIRPORT_BEFORE,
@@ -22,7 +25,7 @@ from app.plan.checks import (
     keeps_room_to_flight,
 )
 from app.plan.guide import guide_for
-from app.plan.hotels import WISH_WORDS, HotelPick, Party, choose_hotel, hundreds, wishes_from
+from app.plan.hotels import WISH_WORDS, Hotel, HotelPick, Party, choose_hotel, hundreds, wishes_from
 from app.plan.itinerary import LOGISTICS, Day, Item, Stay, plan_days
 from app.plan.places import PlaceInfo, place_info
 from app.plan.transfers import Transfer, transfer_to
@@ -264,7 +267,9 @@ def _budget_check(costs: Costs, stops: list[StopPlan]) -> list[Check]:
 def _wishes(brief: TripBrief, stops: list[StopPlan], moves: list[Move]) -> tuple[list[str], list[str]]:
     words = brief.wishes or []
     known = (*(w for keys in WISH_WORDS.values() for w in keys), *FLIGHT_WISHES)
-    not_checked = [w for w in words if not any(k in w.casefold() for k in known)]
+    seen = (h for s in stops for h in (s.pick.best.hotel, *(a.hotel for a in s.pick.alternatives)))
+    checked = {e.wish for h in (*seen, *(h for s in stops for h, _ in s.pick.excluded)) for e in h.evidence}
+    not_checked = [w for w in words if w not in checked and not any(k in w.casefold() for k in known)]
     many = len(stops) > 1
     unmet = [f"{s.place.name}: {u}" if many else u for s in stops for u in s.pick.unmet]
     wants_direct = any(k in w.casefold() for w in words for k in ("прям", "без пересад"))
@@ -365,6 +370,7 @@ async def assemble(
 ) -> TripPlan:
     hotels = hotels or HotelSource()
     party, wishes, level = party_of(brief), wishes_from(brief.wishes), price_level(brief)
+    asked = hotel_wishes(brief.wishes)
     total_nights = night_range(brief)[1] or DEFAULT_NIGHTS
     route = RoutePlan(stops, split_nights(total_nights, stops), 0.0, 0, [])
     await price_route(route, flights, origin, brief.month, start=brief.date_from, by_land=bool(brief.by_land))
@@ -386,16 +392,22 @@ async def assemble(
     checks = _ticket_checks(route, fixed, brief)
     checks += [c for leg in route.legs if (c := _smart_check(leg))]
     cursor: datetime | None = None
+    nominals = [start + timedelta(days=sum(route.nights[:i])) for i in range(len(route.stops))]
+
+    async def stay(i: int, place: Place) -> list[Hotel]:
+        found = await hotels.hotels(place, nominals[i], route.nights[i], party)
+        return await hotels.checked(place, found, asked, party, level, (prefer or {}).get(place.id))
+
+    stays = await asyncio.gather(*(stay(i, s.place) for i, s in enumerate(route.stops)))
     for i, s in enumerate(route.stops):
         place, info = s.place, place_info(s.place.id)
         j_in, j_out = (i, i + 1) if home else (i - 1, i)
         # a smart way is seen from each city by its own end: a train out of here, a flight landing there
         leg_in = arriving(legs[j_in]) if 0 <= j_in < len(legs) else None
         leg_out = leaving(legs[j_out]) if 0 <= j_out < len(legs) else None
-        nominal = start + timedelta(days=sum(route.nights[:i]))
+        nominal = nominals[i]
         month = nominal.month
-        options = await hotels.hotels(place, nominal, route.nights[i], party)
-        pick = choose_hotel(options, party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
+        pick = choose_hotel(stays[i], party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
         hotel = pick.best.hotel
         ride_in = transfer_to(hotel, place, info, party) if leg_in and leg_in.mode == "flight" else None
         ride_out = transfer_to(hotel, place, info, party) if leg_out and leg_out.mode == "flight" else None

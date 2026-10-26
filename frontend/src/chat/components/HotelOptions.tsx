@@ -6,6 +6,7 @@ import type { HotelOption, HotelOptionsEvent } from '@/types/api'
 import { HotelPhoto, SourceBadge } from '../plan/PlanStay'
 import { Stars } from '../plan/planParts'
 import { nightsText } from '../plan/planFormat'
+import { WishChips } from '../plan/WishProof'
 import { CurrencyContext, RUB, formatMoney } from '../widgets'
 
 function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: number; canPick: boolean; onPick: () => void }) {
@@ -37,6 +38,7 @@ function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: 
           </a>
         )}
       </p>
+      <WishChips evidence={hotel.evidence} />
       <div className="mt-auto flex items-end gap-3 pt-1">
         <span className="min-w-0 flex-1">
           <span className="block text-lg font-semibold text-foreground tabular-nums">

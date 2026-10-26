@@ -55,4 +55,17 @@ describe('HotelOptionsCards', () => {
 
     expect(onPick).toHaveBeenCalledWith('Ногай')
   })
+
+  it('should show which wishes real sources confirm, with the quote on hover, and which they do not', () => {
+    const checked = hotel({
+      evidence: [
+        { wish: 'с видом на море', verdict: 'yes', quote: 'Окна выходят на море', note: null, source: 'otzovik.com', source_url: 'https://otzovik.com/r' },
+        { wish: 'с ванной', verdict: 'unknown', quote: null, note: null, source: null, source_url: null },
+      ],
+    })
+    render(<HotelOptionsCards widget={{ ...WIDGET, hotels: [checked] }} canPick onPick={() => {}} />)
+
+    expect(screen.getByText('с видом на море')).toHaveAttribute('title', '«Окна выходят на море», otzovik.com')
+    expect(screen.getByText('Не подтверждено: с ванной')).toBeInTheDocument()
+  })
 })

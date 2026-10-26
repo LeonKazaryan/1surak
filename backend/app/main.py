@@ -24,11 +24,13 @@ from app.ground.tutu import TutuTrains
 from app.ground.yandex import YandexRasp
 from app.hotels import EstimatedOffers, HotelSource
 from app.hotels.cache import CachedOffers, OfferStore
+from app.hotels.evidence import EvidenceFinder, WishJudge
+from app.hotels.osm import OsmHotels
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
 from app.kb.web import web_search_for
-from app.llm import LLM, StubLLM, build_llm
+from app.llm import LLM, OpenAICompatibleLLM, StubLLM, build_llm
 from app.ratelimit import RateLimit
 from app.spa import mount_spa
 from app.tools import ToolRegistry, build_registry
@@ -96,7 +98,24 @@ def create_app(
         app.state.flights = flights
         # hotel offers: estimated today, cached like fares so a real provider plugs in behind the same cache
         hotel_offers = CachedOffers(EstimatedOffers(), OfferStore(app.state.sessionmaker))
-        app.state.hotels = HotelSource(hotel_offers)
+        web = web_search_for(settings, app.state.llm)
+        pages = page_tools_for(settings, app.state.llm) if web is not None else None
+        agent_llm = app.state.llm
+        wishes = (
+            EvidenceFinder(
+                app.state.sessionmaker,
+                WishJudge(agent_llm.client, settings.extract_model or agent_llm.model),
+                search=web,
+                reader=pages.reader,
+            )
+            if settings.hotel_wishes and pages and isinstance(agent_llm, OpenAICompatibleLLM)
+            else None
+        )
+        app.state.hotels = HotelSource(
+            hotel_offers,
+            live=OsmHotels(app.state.sessionmaker) if settings.osm_hotels else None,
+            evidence=wishes,
+        )
         hotel_refresher = None
         if settings.fare_refresh_minutes > 0:
             every = timedelta(minutes=settings.fare_refresh_minutes)
@@ -122,8 +141,6 @@ def create_app(
         if tools is not None:
             app.state.tools = tools
         else:
-            web = web_search_for(settings, app.state.llm)
-            pages = page_tools_for(settings, app.state.llm) if web is not None else None
             app.state.tools = build_registry(
                 app.state.sessionmaker, web, pages, flights, embedder, climate, directions
             )

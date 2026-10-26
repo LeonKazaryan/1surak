@@ -5,6 +5,7 @@ import type { Photo, PlanHotel, PlanStop } from '@/types/api'
 import { CurrencyContext, formatMoney, plural } from '../widgets'
 import { PlanSection, Stars } from './planParts'
 import { nightsText, spanText } from './planFormat'
+import { WishProof } from './WishProof'
 
 function cancelText(hotel: PlanHotel): string {
   if (hotel.free_cancel_days === null) return 'без бесплатной отмены'
@@ -108,6 +109,7 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
         <Rating hotel={hotel} />
       </div>
       <Pros hotel={hotel} />
+      <WishProof evidence={hotel.evidence} />
       {facts.length > 0 && (
       <ul className="m-0 grid list-none grid-cols-1 gap-x-4 gap-y-1 p-0 text-[13px] text-foreground sm:grid-cols-2">
         {facts.map((fact) => (
@@ -128,7 +130,7 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
             </a>
           )}
         </span>
-        <span className="text-lg font-semibold text-foreground tabular-nums">{formatMoney(hotel.total_rub, currency)}</span>
+        <span className="shrink-0 text-lg font-semibold whitespace-nowrap text-foreground tabular-nums">{formatMoney(hotel.total_rub, currency)}</span>
       </div>
     </div>
   )
@@ -152,7 +154,14 @@ function Alternative({ hotel, best, canAct, onPick }: AlternativeProps) {
           {hotel.stars_known !== false && <Stars count={hotel.stars} />}
         </span>
         <span className="block text-[12px] leading-snug text-muted-foreground">
-          {[hotel.terms_known === false ? null : hotel.meal_label, ...hotel.reasons.slice(0, 2)].filter(Boolean).join(' · ')}
+          {[
+            ...(hotel.evidence ?? []).filter((e) => e.verdict === 'yes').map((e) => e.wish),
+            hotel.terms_known === false ? null : hotel.meal_label,
+            ...hotel.reasons.slice(0, 2),
+          ]
+            .filter(Boolean)
+            .slice(0, 3)
+            .join(' · ')}
         </span>
         <span className={cn('block text-[12px] font-medium tabular-nums', gap < 0 ? 'text-[#3f7d22]' : 'text-muted-foreground')}>
           {formatMoney(hotel.total_rub, currency)}

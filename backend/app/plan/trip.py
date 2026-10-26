@@ -1,7 +1,7 @@
 """One assembled trip, in three shapes: what the plan on screen draws, what the model reads to explain it,
 and the short summary the next plan is compared with."""
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 
 from app.catalog.catalog import Place
@@ -11,7 +11,7 @@ from app.money import money
 from app.photos import place_photo
 from app.plan.checks import Check
 from app.plan.guide import Guide
-from app.plan.hotels import MEAL_LABELS, HotelChoice, HotelPick, Party
+from app.plan.hotels import MEAL_LABELS, Evidence, HotelChoice, HotelPick, Party
 from app.plan.itinerary import Day
 from app.plan.transfers import Transfer
 from app.trip.brief import plural
@@ -123,7 +123,17 @@ def choice_view(c: HotelChoice) -> dict:
         "source_url": h.source_url,
         "price_estimate": c.rate.estimate or not h.real,
         "terms_known": c.rate.terms_known,
+        "evidence": [asdict(e) for e in h.evidence],
     }
+
+
+VERDICT_FOR_MODEL = {"yes": "подтверждено", "no": "нет", "unknown": "не подтверждено"}
+
+
+def wish_for_model(e: Evidence) -> str:
+    """«с видом на море: подтверждено (номера с балконом), otzovik.com»"""
+    note = f" ({e.note})" if e.note else ""
+    return f"{e.wish}: {VERDICT_FOR_MODEL[e.verdict]}{note}" + (f", {e.source}" if e.source else "")
 
 
 def _choice_for_model(c: HotelChoice) -> dict:
@@ -141,6 +151,7 @@ def _choice_for_model(c: HotelChoice) -> dict:
         "price_is_estimate": c.rate.estimate or not h.real,
         "why": c.reasons,
         "misses": c.misses,
+        "wishes": [wish_for_model(e) for e in h.evidence],
     }
 
 

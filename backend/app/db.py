@@ -124,6 +124,16 @@ place_photos = Table(
 )
 
 
+# OpenStreetMap hotels around a place, found live through Nominatim (app/hotels/osm.py).
+place_hotels = Table(
+    "place_hotels",
+    metadata,
+    Column("place_id", Text, primary_key=True),
+    Column("hotels", JSON, nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+)
+
+
 # The knowledge base the agent keeps growing with web search (docs/09-living-knowledge-base.md).
 # The integer id is what the agent cites («kb:42»).
 kb_entries = Table(

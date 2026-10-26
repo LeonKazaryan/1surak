@@ -6,7 +6,7 @@ them. Prices are offers (offers.py), estimated until a real provider is plugged 
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
@@ -27,6 +27,9 @@ class Listed:
     photo: dict | None  # a Commons photo with its author and licence, as the guide keeps them
     source_url: str
     website: str | None = None
+    tags: dict[str, str] = field(
+        default_factory=dict, hash=False, compare=False
+    )  # OSM amenities: dog, internet
 
 
 def hotel_id(place_id: str, row: dict) -> str:

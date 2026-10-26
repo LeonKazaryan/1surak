@@ -2,6 +2,7 @@
 with the agent's own words. Built per chat around the same TripState as the trip tools."""
 
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from typing import Literal
 
@@ -12,19 +13,21 @@ from app.catalog.catalog import load_catalog
 from app.destinations import snapshots_by_id
 from app.flights import Flights, NoFlights, city, current_origin
 from app.hotels import HotelSource
-from app.hotels.directory import listed
+from app.hotels.evidence import hotel_wishes
 from app.money import current_currency, money
 from app.photos import ensure_photos
 from app.plan.assemble import _start, assemble, party_of
 from app.plan.hotels import MEAL_LABELS, Hotel, cheapest_rate, hotels_for, party_night
-from app.plan.trip import TripPlan
+from app.plan.trip import TripPlan, wish_for_model
 from app.tools import Tool, ToolReply
-from app.trip.brief import cards_first, chips, night_range
+from app.trip.brief import cards_first, chips, night_range, price_level
 from app.trip.routes import DEFAULT_NIGHTS
 from app.trip.tools import TripState
 
 MAX_STOPS = 3
 CENTRE_M = 2000
+# tickets, then hotels checked against the wishes on their sites and in reviews (evidence.py waits up to 25 s)
+HOTEL_TOOL_TIMEOUT_S = 60.0
 
 
 def _central(h: Hotel) -> bool:
@@ -51,6 +54,7 @@ def _hotel_card(h: Hotel, rate, night: int, nights: int, current: bool) -> dict:
         "price_estimate": rate.estimate or not h.real,
         "terms_known": rate.terms_known,
         "current": current,
+        "evidence": [asdict(e) for e in h.evidence],
     }
 
 
@@ -143,7 +147,7 @@ def plan_tools(
             await ensure_photos(db, places)
         asked = {}
         for wanted in args.hotels or []:
-            found = _hotel_id(wanted, places)
+            found = await _hotel_id(wanted, places)
             if found:
                 asked[found.rsplit("-h", 1)[0]] = found
         plan = await assemble(
@@ -172,7 +176,7 @@ def plan_tools(
         )
         return start, night_range(state.brief)[1] or DEFAULT_NIGHTS
 
-    def _hotel_id(wanted: str, places) -> str | None:
+    async def _hotel_id(wanted: str, places) -> str | None:
         """A hotel id as given, or the hotel the user named: «Ногай», «отель Ногай»."""
         ids = {p.id for p in places}
         if "-h" in wanted and wanted.rsplit("-h", 1)[0] in ids:
@@ -180,7 +184,7 @@ def plan_tools(
         needle = wanted.casefold().replace("отель", "").strip(' «»"')
         for place in places:
             start, _ = _stay(place.id)
-            names = [(h.id, h.name) for h in listed(place.id)] + [
+            names = [(h.id, h.name) for h in await hotels.listing(place)] + [
                 (h.id, h.name) for h in hotels_for(place, start.month)
             ]
             match = next((hid for hid, name in names if name.casefold() == needle), None) or next(
@@ -200,7 +204,10 @@ def plan_tools(
         check_in, nights = _stay(place.id)
         found = await hotels.hotels(place, check_in, nights, party)
         current = ((state.brief.plan or {}).get("hotels") or {}).get(place.id, {}).get("id")
-        priced = [(h, cheapest_rate(h)) for h in found]
+        wishes = hotel_wishes(state.brief.wishes)
+        found = await hotels.checked(place, found, wishes, party, price_level(state.brief), current)
+        said_no = {h.id for h in found if any(e.verdict == "no" for e in h.evidence)}
+        priced = [(h, cheapest_rate(h)) for h in found if h.id not in said_no]
         limit = current_currency.get().to_rub(args.max_night) if args.max_night else None
         priced = [
             (h, r)
@@ -216,7 +223,9 @@ def plan_tools(
                 x[0].centre_m if x[0].centre_m is not None else (0 if _central(x[0]) else 9999)
             ),
         }[args.sort]
-        shown = sorted(priced, key=order)[: args.limit]
+        shown = sorted(priced, key=order)
+        # the wishes a source confirms come first, in the asked order within the same count
+        shown = sorted(shown, key=lambda x: -sum(e.verdict == "yes" for e in x[0].evidence))[: args.limit]
         cards = [_hotel_card(h, r, party_night(r, party), nights, h.id == current) for h, r in shown]
         result = {
             "place": place.name,
@@ -225,11 +234,20 @@ def plan_tools(
             "hotels": [
                 {k: c[k] for k in ("name", "stars", "area", "total", "current")}
                 | {"price_is_estimate": c["price_estimate"]}
-                for c in cards
+                | ({"wishes": [wish_for_model(e) for e in h.evidence]} if h.evidence else {})
+                for c, (h, _) in zip(cards, shown, strict=True)
             ],
             "note": "The hotels are on screen as cards. When the user picks one, call build_trip with `hotels` "
             "set to its name. Prices are estimates for real hotels: say so once.",
         }
+        if said_no:
+            result["ruled_out"] = [
+                f"{h.name}: {wish_for_model(e)}"
+                for h in found
+                if h.id in said_no
+                for e in h.evidence
+                if e.verdict == "no"
+            ][:3]
         if not cards:
             return {**result, "note": "No hotel fits these filters: say which filter to relax."}
         event = {
@@ -270,6 +288,7 @@ def plan_tools(
             description=HOTELS_DESCRIPTION,
             args=HotelSearchArgs,
             handler=search_hotels,
+            timeout_s=HOTEL_TOOL_TIMEOUT_S,
             preview=lambda r: (
                 r.get("error")
                 or (
@@ -285,6 +304,7 @@ def plan_tools(
             description=BUILD_DESCRIPTION,
             args=BuildArgs,
             handler=build_trip,
+            timeout_s=HOTEL_TOOL_TIMEOUT_S,
             preview=_build_preview,
             then="show_trip",
         ),

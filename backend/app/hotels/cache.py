@@ -110,7 +110,8 @@ class CachedOffers:
             hit = await self._store.load(key, now)
             if hit:
                 self._cache[key] = hit
-        if hit and hit[0] > now - STALE_FOR:
+        # shortcut: a hotel with no offer makes each search ask again; store the asked ids once a provider skips some
+        if hit and hit[0] > now - STALE_FOR and all(h.id in hit[1] for h in hotels):
             if hit[0] <= now:
                 self._in_background(key)
             return hit[1]

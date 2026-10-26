@@ -1,17 +1,21 @@
-"""Hotels for a stay: real ones from the directory with cached offers, or the demo set where we have none.
+"""Hotels for a stay: real ones from the directory and OpenStreetMap with cached offers, or the demo set where
+we have none.
 
-HotelSource is what the trip assembly asks. A place with at least MIN_REAL hotels in the directory gets those,
-each with its cheapest offers (estimated until a real provider is plugged in); a place with fewer keeps the
-demo hotels, which are labelled as such.
+HotelSource is what the trip assembly asks. A place with at least MIN_REAL real hotels gets those, each with its
+cheapest offers (estimated until a real provider is plugged in); a place with fewer keeps the demo hotels, which
+are labelled as such. `checked` adds what real sources say about the guest's wishes (evidence.py).
 """
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, time
+from typing import Protocol
 
 from app.catalog.catalog import Place
 from app.hotels.directory import Listed, directory, find, listed
 from app.hotels.offers import EstimatedOffers, HotelOffers, Offer, StayQuery, priced_stars
-from app.plan.hotels import Hotel, Party, Rate, hotels_for, hundreds
+from app.hotels.osm import merge_listings
+from app.plan.hotels import Evidence, Hotel, Party, Rate, hotels_for, hundreds, rank_real
 
 MIN_REAL = 4
 
@@ -57,18 +61,58 @@ def real_hotel(h: Listed, offers: list[Offer]) -> Hotel:
         photo=h.photo,
         source_url=h.source_url,
         centre_m=h.centre_m,
+        website=h.website,
+        tags=h.tags,
     )
+
+
+class LiveHotels(Protocol):
+    async def around(self, place: Place) -> list[Listed]: ...
+
+
+class WishChecker(Protocol):
+    async def check(
+        self, place: Place, hotels: list[Hotel], wishes: list[str]
+    ) -> dict[str, tuple[Evidence, ...]]: ...
 
 
 class HotelSource:
     def __init__(
-        self, offers: HotelOffers | None = None, listing: Callable[[str], tuple[Listed, ...]] = listed
+        self,
+        offers: HotelOffers | None = None,
+        listing: Callable[[str], tuple[Listed, ...]] = listed,
+        live: LiveHotels | None = None,
+        evidence: WishChecker | None = None,
     ):
         self.offers = offers or EstimatedOffers()
         self._listing = listing  # the directory; tests pass an empty one to get the demo hotels
+        self._live = live
+        self._evidence = evidence
+
+    async def listing(self, place: Place) -> tuple[Listed, ...]:
+        """The seed's hotels completed with OpenStreetMap's, plus the ones only OpenStreetMap has."""
+        seed = self._listing(place.id)
+        return merge_listings(seed, await self._live.around(place)) if self._live else seed
+
+    async def checked(
+        self,
+        place: Place,
+        hotels: list[Hotel],
+        wishes: list[str],
+        party: Party,
+        level: int | None,
+        prefer: str | None = None,
+    ) -> list[Hotel]:
+        """The same hotels with what real sources say about the wishes: the best candidates and the hotel the
+        user named are checked first."""
+        if not (self._evidence and wishes and hotels and all(h.real for h in hotels)):
+            return hotels
+        order = sorted(rank_real(hotels, party, level), key=lambda h: h.id != prefer)
+        found = await self._evidence.check(place, order, wishes)
+        return [replace(h, evidence=found.get(h.id, ())) for h in hotels]
 
     async def hotels(self, place: Place, check_in: date, nights: int, party: Party) -> list[Hotel]:
-        found = list(self._listing(place.id))
+        found = list(await self.listing(place))
         if len(found) < MIN_REAL:
             return hotels_for(place, check_in.month)
         stay = StayQuery(place.id, check_in, nights, party.adults, party.children_ages)

@@ -284,6 +284,18 @@ export interface FlightPlanEvent {
   currency?: Currency
 }
 
+/** One wish of the guest checked against a hotel: what a real source says, word for word. */
+export interface HotelEvidence {
+  wish: string
+  verdict: 'yes' | 'no' | 'unknown'
+  quote: string | null
+  /** The condition, if any: «собаки до 5 кг, за доплату». */
+  note: string | null
+  /** «сайт отеля», a review site's domain, «OpenStreetMap». */
+  source: string | null
+  source_url: string | null
+}
+
 /** One hotel of search_hotels: real ones carry their photo and source; the price is for the whole stay. */
 export interface HotelOption {
   id: string
@@ -301,6 +313,7 @@ export interface HotelOption {
   terms_known: boolean
   /** The hotel already in the plan. */
   current: boolean
+  evidence?: HotelEvidence[]
 }
 
 export interface HotelOptionsEvent {
@@ -404,6 +417,7 @@ export interface PlanHotel {
   price_estimate?: boolean
   /** False: meals, refunds and payment are confirmed at booking, so the card claims none of them. */
   terms_known?: boolean
+  evidence?: HotelEvidence[]
 }
 
 export interface PlanTransfer {

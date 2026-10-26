@@ -86,6 +86,40 @@ describe('TripPlan', () => {
     expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
   })
 
+  it('should show each wish with the proof word for word and its source, and which ones are not confirmed', () => {
+    const stop = PLAN.stops[0]
+    const sea = { wish: 'с видом на море', verdict: 'yes' as const, quote: 'Потрясающий вид на море открывается с балкона', note: null, source: 'otzovik.com', source_url: 'https://otzovik.com/r' }
+    const hotel = {
+      ...stop.hotel,
+      evidence: [
+        sea,
+        { wish: 'можно с собакой', verdict: 'yes' as const, quote: 'Размещение с животными до 5 кг', note: 'до 5 кг, 1000 ₽ в сутки', source: 'сайт отеля', source_url: 'https://hotel.example' },
+        { wish: 'с ванной', verdict: 'unknown' as const, quote: null, note: null, source: null, source_url: null },
+      ],
+    }
+    const alternative = { ...stop.alternatives[0], evidence: [sea] }
+    renderPlan({}, { ...PLAN, stops: [{ ...stop, hotel, alternatives: [alternative] }, ...PLAN.stops.slice(1)] })
+
+    const proof = screen.getByRole('list', { name: 'Ваши пожелания' })
+    expect(within(proof).getByText('С видом на море')).toBeInTheDocument()
+    expect(within(proof).getByText('«Потрясающий вид на море открывается с балкона»')).toBeInTheDocument()
+    expect(within(proof).getByRole('link', { name: 'otzovik.com' })).toHaveAttribute('href', 'https://otzovik.com/r')
+    expect(within(proof).getByText('до 5 кг, 1000 ₽ в сутки')).toBeInTheDocument()
+    expect(within(proof).getByRole('link', { name: 'сайт отеля' })).toHaveAttribute('href', 'https://hotel.example')
+    expect(within(proof).getByText('С ванной')).toBeInTheDocument()
+    expect(within(proof).getByText('не нашёл подтверждения')).toBeInTheDocument()
+    const others = screen.getByRole('list', { name: 'Другие варианты' })
+    expect(within(others).getByText(/с видом на море/)).toBeInTheDocument()
+  })
+
+  it('should not call real hotels a demo at checkout, only their price an estimate', () => {
+    const stop = PLAN.stops[0]
+    renderPlan({}, { ...PLAN, stops: [{ ...stop, hotel: { ...stop.hotel, real: true, demo: false } }, ...PLAN.stops.slice(1)] })
+
+    expect(screen.getByText('Цены отелей ориентировочные, оплата имитируется')).toBeInTheDocument()
+    expect(screen.queryByText(/Отели демонстрационные/)).toBeNull()
+  })
+
   it('should explain the hotel pick, offer the alternative and say what it ruled out', async () => {
     const { onAsk } = renderPlan()
 

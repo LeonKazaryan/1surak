@@ -43,9 +43,30 @@ EXCLUDED_DOMAINS = [
 ]
 
 
+# on any country domain; zenhotels and ratehawk are Ostrovok's own brands
+EXCLUDED_BRANDS = {
+    "booking",
+    "tripadvisor",
+    "agoda",
+    "expedia",
+    "airbnb",
+    "ostrovok",
+    "zenhotels",
+    "ratehawk",
+    "readytotrip",
+    "hotelscombined",
+    "momondo",
+    "kayak",
+    "trivago",
+    "skyscanner",
+}
+
+
 def excluded(url: str) -> bool:
     host = (urlsplit(url).hostname or "").casefold().removeprefix("www.")
-    return any(host == d or host.endswith(f".{d}") for d in EXCLUDED_DOMAINS)
+    return any(host == d or host.endswith(f".{d}") for d in EXCLUDED_DOMAINS) or bool(
+        EXCLUDED_BRANDS & set(host.split("."))
+    )
 
 
 @dataclass(frozen=True)
