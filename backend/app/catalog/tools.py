@@ -22,19 +22,24 @@ from app.destinations.live import Directions, NoDirections
 from app.flights import Flights, NoFlights, city, current_origin
 from app.flights.network import network
 from app.tools.registry import Tool
+from app.visas import fees
 
 if TYPE_CHECKING:
     from app.destinations.climate import ClimateFetcher
 
 SEARCH_DESCRIPTION = (
     "Find travel destinations in our catalogue (about 50 places) by exact filters: month, kind of trip, sea "
-    "and air temperature, flight time, direct flights, ticket price, visa for a Russian passport, kids, budget. "
+    "and air temperature, flight time, direct flights, ticket price, visa for the user's passport (the "
+    "departure country's, Passport Index), kids, budget. "
     "Flights are real Aviasales tickets from the user's departure city: `flight` has the cheapest one-way "
     "ticket (price, airline, transfers, hours, date) and a direct option when there is one. Returns the "
     "matches with facts (climate for the month, flight, visa, price level, highlights, risks) and "
     "near_misses: places that failed exactly one filter, with the reason. Use near_misses to explain what "
     "was excluded and why. Climate comes from Open-Meteo, tickets from Aviasales (found in the last days, "
-    "not a live search); visas and price levels are team estimates (see sources). When the "
+    "not a live search); visas are the Passport Index rules for the user's passport, with the fee when "
+    "it was already found on the web; price levels are team estimates (see sources). Never filter by visa "
+    "(visa) unless the user asked for «без визы»: a visa is shown on the card, it is not a reason to drop a "
+    "country the user named. When the "
     "user asks where a number comes from, name the source from `sources` (e.g. Open-Meteo for climate).\n"
     "Turn the user's words into filters: «тёплое море» means min_sea_temp 24 (relax to 22 only if nothing "
     "matches, and say so); «без долгих перелётов» means max_flight_hours 5 to 6; «недорого» means "
@@ -121,6 +126,9 @@ def catalog_tools(
         shown = [s for s in snapshots if in_scope(s, query)]
         await fill_missing(shown, origin, flights, network(), query.month)
         result = search(snapshots, query, city(origin))
+        # the fees of the visas these places need start loading now: the cards come a step later
+        shown_ids = {m["id"] for m in result.get("matches", [])}
+        await fees().warm(s.visa for s in snapshots if s.place.id in shown_ids)
         result["route_map"] = {
             "destinations_from_your_city": len(reach),
             "live_from_aviasales": len(live),

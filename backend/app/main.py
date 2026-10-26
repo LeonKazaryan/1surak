@@ -29,11 +29,15 @@ from app.hotels.osm import OsmHotels
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
-from app.kb.web import web_search_for
+from app.kb.web import OpenAIWebSearch, web_search_for
 from app.llm import LLM, OpenAICompatibleLLM, StubLLM, build_llm
 from app.ratelimit import RateLimit
 from app.spa import mount_spa
 from app.tools import ToolRegistry, build_registry
+from app.visas import NoFees, VisaFees
+from app.visas import configure as configure_fees
+from app.visas.fees import FeeStore
+from app.visas.router import router as visa_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -130,6 +134,14 @@ def create_app(
             # the cities people fly to from the usual departure cities: their climate loads in the background
             for origin in filter(None, settings.destination_prefetch.split(",")):
                 await climate.ensure(reachable(network(), origin.strip()), urgent=False)
+        # visa fees: found on the web once per passport and country, read by the model, cached for a month
+        visa_fees = NoFees()
+        if isinstance(agent_llm, OpenAICompatibleLLM):
+            reader = settings.extract_model or agent_llm.model
+            # the app's search first; the model's own web search (Responses API) when it is rate-limited
+            searches = [s for s in (web, OpenAIWebSearch(agent_llm.client, reader)) if s is not None]
+            visa_fees = VisaFees(FeeStore(app.state.sessionmaker), searches, agent_llm.client, reader)
+        configure_fees(visa_fees)
         if settings.ground_transport:
             configure_ground(
                 GroundTransport(
@@ -151,6 +163,7 @@ def create_app(
             if task:
                 task.cancel()
         await hotel_offers.settle()
+        await visa_fees.settle()
         if climate:
             climate.stop()
         if isinstance(flights, TravelpayoutsFlights):
@@ -166,6 +179,7 @@ def create_app(
 
     app.include_router(chats_router)
     app.include_router(places_router)
+    app.include_router(visa_router)
     mount_spa(app, Path(settings.static_dir))
     return app
 

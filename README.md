@@ -37,7 +37,7 @@ docker compose up --build
 | `BRAVE_API_KEY` | пусто | ключ Brave Search API (эндпоинт LLM Context) |
 | `TAVILY_API_KEY` | пусто | без ключа Tavily работает с ограничением частоты |
 | `JINA_API_KEY` | пусто | для read_page: страницы на JavaScript читаются через Jina Reader, без ключа 20 в минуту |
-| `EXTRACT_MODEL` | `LLM_MODEL` | модель, которая достаёт факты со страницы в read_page |
+| `EXTRACT_MODEL` | `LLM_MODEL` | быстрая модель, которая достаёт факты со страницы в read_page и находит стоимость виз; лучше без reasoning (на xAI `grok-4.20-0309-non-reasoning`) |
 | `SEARCH_TIMEOUT_S` | `10` | таймаут веб-поиска, секунды |
 | `EMBEDDINGS` | `true` | искать в базе знаний и по словам, и по смыслу; `false` оставляет только слова |
 | `DATABASE_URL` | `postgresql+asyncpg://onesurak:onesurak@127.0.0.1:5433/onesurak` | строка подключения к БД; в Docker задаётся автоматически |

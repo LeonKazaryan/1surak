@@ -6,6 +6,7 @@ import type {
   ChatStreamDone,
   ChatStreamEvent,
   RefreshResponse,
+  VisaInfo,
 } from '../types/api'
 
 const BASE = '/api'
@@ -101,4 +102,9 @@ export async function deleteChat(chatId: string): Promise<void> {
   if (!res.ok && res.status !== 404) {
     throw new Error(`${res.status} ${res.statusText}`)
   }
+}
+
+/** The visa rule and its fee for «KZ-US»; the first time a pair is asked, the server looks the fee up. */
+export function fetchVisa(pair: string, signal?: AbortSignal): Promise<VisaInfo> {
+  return request<VisaInfo>(`${BASE}/visa/${encodeURIComponent(pair)}`, { signal })
 }

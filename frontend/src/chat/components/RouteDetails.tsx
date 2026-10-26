@@ -11,6 +11,7 @@ import { RouteTotal } from './RouteCard'
 import { sceneKinds } from './routeScenes'
 import { temp } from './ticketFormat'
 import { TripArt } from './TripArt'
+import { VisaChip } from './VisaChip'
 
 function Banner({ card }: { card: RouteCard }) {
   const scenes = sceneKinds(card.stops)
@@ -96,11 +97,15 @@ export function RouteDetails({ card }: { card: RouteCard }) {
 
       <Section title="Коротко">
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {countries.map((s) => (
-            <Fact key={s.country} icon={s.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={s.visa_easy ? 'good' : 'warn'}>
-              {`${s.country}: ${s.visa}`}
-            </Fact>
-          ))}
+          {countries.map((s) =>
+            s.visa_info ? (
+              <VisaChip key={s.country} info={s.visa_info} prefix={`${s.country}: `} />
+            ) : (
+              <Fact key={s.country} icon={s.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={s.visa_easy ? 'good' : 'warn'}>
+                {`${s.country}: ${s.visa}`}
+              </Fact>
+            ),
+          )}
           {card.kids && <Fact icon={FaceSmileIcon}>{card.kids}</Fact>}
         </ul>
       </Section>

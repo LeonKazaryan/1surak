@@ -12,11 +12,13 @@ import { PriceChangeNote } from './ticket'
 import { sceneKinds } from './routeScenes'
 import { hours, temp } from './ticketFormat'
 import { TripArt } from './TripArt'
+import { VisaChip } from './VisaChip'
 
 const SPRING = { type: 'spring', stiffness: 230, damping: 26 } as const
 const MERGE_AFTER_MS = 140 // the stop cards land first, then close up into one route
 const DENSE_FROM = 4 // cities in the banner from which the panels get narrow and the text small
 const TIGHT_FROM = 6
+const NO_VISA = new Set(['none', 'visa_free'])
 
 /** The route rises like any card, but as separate city cards: they merge once it has landed. */
 const routeRise: Variants = {
@@ -155,6 +157,8 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
   })
   const nights = card.stops.reduce((sum, s) => sum + s.nights, 0)
   const scenes = sceneKinds(card.stops)
+  // a country that needs a visa (or an e-visa, a permit) gets its chip; one with no visa needs no words
+  const visas = [...new Map(card.stops.filter((s) => s.visa_info && !NO_VISA.has(s.visa_info.rule)).map((s) => [s.country, s])).values()]
   const dense = card.stops.length >= DENSE_FROM
   const tight = card.stops.length >= TIGHT_FROM
 
@@ -265,6 +269,14 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
             </li>
           ))}
         </ul>
+
+        {visas.length > 0 && (
+          <ul className="m-0 flex list-none flex-wrap items-center gap-1.5 p-0" aria-label="Визы">
+            {visas.map((stop) => (
+              <VisaChip key={stop.country} info={stop.visa_info!} prefix={`${stop.country}: `} />
+            ))}
+          </ul>
+        )}
 
         <div>
           <RouteTotal card={card} />

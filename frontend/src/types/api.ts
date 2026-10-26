@@ -106,6 +106,37 @@ export interface RouteFlight extends FlightTicket {
   direct_option?: FlightTicket
 }
 
+/** What a visa costs, found once on the web (an official page where there is one) and cached. */
+export interface VisaFee {
+  /** 0: the visa is free. */
+  amount: number
+  /** ISO 4217, as the source states it. */
+  currency: string
+  /** «консульский сбор за туристическую визу B1/B2» */
+  covers: string
+  /** The amount in roubles when the currency is one we convert; the UI shows it in the user's currency. */
+  rub: number | null
+  /** The site: «travel.state.gov». */
+  source: string
+  url: string
+  /** ISO date it was found. */
+  checked: string
+}
+
+/** The visa for the traveller's own passport (the departure country's), from the Passport Index. */
+export interface VisaInfo {
+  rule: 'none' | 'visa_free' | 'on_arrival' | 'eta' | 'evisa' | 'visa_required' | 'no_admission'
+  /** «нужна виза», «без визы до 30 дней» */
+  label: string
+  /** «Для граждан Казахстана нужна виза в США, …» */
+  text: string
+  days: number | null
+  /** «KZ-US»: passport and destination, to ask GET /api/visa/{pair} for the fee. */
+  pair: string
+  /** null: not found yet (or not anywhere); the chip asks when it opens. */
+  fee?: VisaFee | null
+}
+
 export interface DestinationCard {
   type?: 'place'
   id: string
@@ -118,6 +149,7 @@ export interface DestinationCard {
   train_hours?: number | null
   visa: string
   visa_easy: boolean
+  visa_info?: VisaInfo | null
   /** The team's estimates; null for a city from the route map, which nobody has checked. */
   price_level: number | null
   price: string | null
@@ -150,6 +182,7 @@ export interface RouteStop {
   sea: number | null
   visa: string
   visa_easy: boolean
+  visa_info?: VisaInfo | null
   highlights: string[]
   photo?: Photo | null
 }

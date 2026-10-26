@@ -16,7 +16,17 @@ from itertools import pairwise, permutations
 from pydantic import Field
 
 from app.catalog.catalog import KIDS_LABELS, KIND_LABELS, VISA_LABELS
-from app.catalog.search import EASY_VISA, MONTHS, MONTHS_IN, SearchQuery, Snapshot, failures, in_scope
+from app.catalog.search import (
+    EASY_VISA,
+    MONTHS,
+    MONTHS_IN,
+    SearchQuery,
+    Snapshot,
+    failures,
+    in_scope,
+    visa_info,
+    visa_text,
+)
 from app.flights import City, Flights, Ticket
 from app.flights.client import merged
 from app.flights.dictionary import city
@@ -35,6 +45,7 @@ from app.trip.legs import (  # re-exported: the trip plan imports them from here
     units,
 )
 from app.trip.smart import better_way, fit_rides, leg_value, wants_better
+from app.visas import label as visa_label
 
 log = logging.getLogger(__name__)
 
@@ -673,7 +684,7 @@ def route_for_model(plan: RoutePlan, month: int | None) -> dict:
                 "nights": n,
                 "kinds": [KIND_LABELS[k] for k in s.place.kinds],
                 "day_c": _day(s, month),
-                "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
+                "visa": visa_text(s),
                 "highlights": list(s.place.highlights[:2]),
             }
             for s, n in zip(plan.stops, plan.nights, strict=True)
@@ -701,8 +712,9 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
                 "nights": nights,
                 "day": round(climate["air_max"]) if climate and "air_max" in climate else None,
                 "sea": round(climate["sea_temp"]) if climate and "sea_temp" in climate else None,
-                "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
+                "visa": visa_label(s.visa) if s.visa else VISA_LABELS.get(s.visa_rule, s.visa_rule),
                 "visa_easy": s.visa_rule in EASY_VISA,
+                "visa_info": visa_info(s),
                 "highlights": list(s.place.highlights[:2]),
                 "photo": place_photo(s.place.id),
             }

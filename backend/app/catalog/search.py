@@ -25,6 +25,10 @@ from app.facts.service import Resolved, resolve_entities
 from app.flights import City, Flights, RouteFlights, city, current_origin
 from app.money import current_currency, money
 from app.photos import place_photo
+from app.visas import VisaRule, fees, rule_for
+from app.visas import label as visa_label
+from app.visas import sentence as visa_sentence
+from app.visas import view as visa_view
 
 MONTHS = [
     "январь",
@@ -56,7 +60,7 @@ MONTHS_IN = [
 ]
 CLIMATE_ATTRIBUTES = ("air_max", "air_min", "sea_temp", "rain_days")
 NO_VISA = {"none", "visa_free"}
-EASY_VISA = NO_VISA | {"on_arrival", "evisa"}
+EASY_VISA = NO_VISA | {"on_arrival", "evisa", "eta"}
 MAX_NEAR_MISSES = 6
 
 SOURCES_NOTE = {
@@ -125,6 +129,8 @@ class Snapshot:
     visa_rule: str = "visa_required"
     visa_days: float | None = None
     visa_note: str | None = None
+    # the rule for the traveller's own passport (the departure country's), from the Passport Index
+    visa: VisaRule | None = None
     flags: list[str] = field(default_factory=list)
     # no cached ticket: the live search on Aviasales, and two tickets through the country's main airport
     search_link: str | None = None
@@ -174,6 +180,11 @@ def build_snapshot(place: Place, place_facts: Resolved, route: Resolved, country
     snapshot.visa_rule = _value(snapshot, country, "visa_rule", "виза") or place.country.visa
     snapshot.visa_days = _value(snapshot, country, "visa_days", "срок без визы")
     snapshot.visa_note = _value(snapshot, country, "visa_note", "виза")
+    if rule := rule_for(place.country.code):  # the traveller's passport beats the team's note for Russians
+        snapshot.visa = rule
+        snapshot.visa_rule, snapshot.visa_days = rule.code, rule.days
+        if rule.passport != "RU":
+            snapshot.visa_note = None
     return snapshot
 
 
@@ -342,11 +353,24 @@ def _rank(s: Snapshot, q: SearchQuery) -> tuple:
     )
 
 
-def _visa_text(s: Snapshot) -> str:
-    text = VISA_LABELS.get(s.visa_rule, s.visa_rule)
-    if s.visa_days:
-        text += f", до {s.visa_days:.0f} дней"
-    return f"{text}. {s.visa_note}" if s.visa_note else text
+def visa_text(s: Snapshot) -> str:
+    if s.visa:
+        text = visa_sentence(s.visa)
+        if fee := fees().known(s.visa):
+            text += f" Сбор {fee.for_model()}."
+    else:
+        text = VISA_LABELS.get(s.visa_rule, s.visa_rule)
+        if s.visa_days:
+            text += f", до {s.visa_days:.0f} дней"
+    return f"{text} {s.visa_note}" if s.visa_note else text
+
+
+def visa_info(s: Snapshot) -> dict | None:
+    """The chip on a card: the rule for the traveller's passport, and its fee when already known."""
+    if s.visa is None:
+        return None
+    fee = fees().known(s.visa)
+    return {**visa_view(s.visa), "fee": fee.view() if fee else None}
 
 
 def _climate_view(values: dict[str, float]) -> dict:
@@ -371,7 +395,7 @@ def describe(s: Snapshot, month: int | None = None) -> dict:
         "flight": s.flights.view() if s.flights else None,
         "train_hours": _hours(s.train_min),
         "airport": place.airport,
-        "visa": _visa_text(s),
+        "visa": visa_text(s),
         "price": PRICE_LABELS[place.price_level],
         "kids": KIDS_LABELS[place.kids],
         "highlights": list(place.highlights),
@@ -414,8 +438,9 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "direct": s.direct,
         "flight": s.flights.view() if s.flights else None,
         "train_hours": _hours(s.train_min),
-        "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
+        "visa": visa_label(s.visa) if s.visa else VISA_LABELS.get(s.visa_rule, s.visa_rule),
         "visa_easy": s.visa_rule in EASY_VISA,
+        "visa_info": visa_info(s),
         # the team's estimates: a route-map city has none, so its card shows none rather than a default
         "price_level": place.price_level if place.verified else None,
         "price": PRICE_LABELS[place.price_level] if place.verified else None,

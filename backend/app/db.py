@@ -114,6 +114,16 @@ hotel_offers = Table(
 )
 
 
+# What a visa costs for a passport and country (app.visas.fees): found on the web, fee NULL for «not found».
+visa_fees = Table(
+    "visa_fees",
+    metadata,
+    Column("pair", Text, primary_key=True),  # «KZ-US»: passport, destination
+    Column("fee", JSON, nullable=True),
+    Column("checked_at", DateTime(timezone=True), nullable=False),
+)
+
+
 # A photo per place found live on Wikidata and Commons (app/photos.py); photo NULL is a miss, retried later.
 place_photos = Table(
     "place_photos",

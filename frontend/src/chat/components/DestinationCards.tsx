@@ -19,6 +19,7 @@ import { AirlineLogo, PriceChangeNote } from './ticket'
 import { hours, shortDate, stopsText, temp, travelText } from './ticketFormat'
 import { RouteCardView } from './RouteCard'
 import { TripArt } from './TripArt'
+import { VisaChip } from './VisaChip'
 
 const grid: Variants = {
   hidden: {},
@@ -233,9 +234,13 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
               билетов не нашлось
             </Fact>
           )}
-          <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
-            {card.visa}
-          </Fact>
+          {card.visa_info ? (
+            <VisaChip info={card.visa_info} />
+          ) : (
+            <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
+              {card.visa}
+            </Fact>
+          )}
           {withKids && card.kids && (
             <Fact icon={FaceSmileIcon} tone={card.kids_fit === 'poor' ? 'warn' : 'default'}>
               {card.kids}

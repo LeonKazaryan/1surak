@@ -13,6 +13,7 @@ import { Fact, PriceLevel, TicketStrip } from './DestinationCards'
 import { Section } from './DetailsPanel'
 import { temp, travelText } from './ticketFormat'
 import { TripArt } from './TripArt'
+import { VisaChip } from './VisaChip'
 
 function Weather({ climate }: { climate: DestinationClimate }) {
   const stats = [
@@ -70,9 +71,13 @@ export function PlaceDetails({ card }: { card: DestinationCard }) {
 
       <Section title="Коротко">
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
-            {card.visa}
-          </Fact>
+          {card.visa_info ? (
+            <VisaChip info={card.visa_info} />
+          ) : (
+            <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
+              {card.visa}
+            </Fact>
+          )}
           {card.price_level && card.price && (
             <li>
               <PriceLevel level={card.price_level} label={card.price} />

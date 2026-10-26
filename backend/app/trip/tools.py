@@ -43,6 +43,7 @@ from app.trip.routes import (
     route_card,
     route_for_model,
 )
+from app.visas import fees
 
 SLOT_TITLES: dict[Slot, str] = {
     "origin": "Откуда летите?",
@@ -332,6 +333,8 @@ def trip_tools(
         ]
         async with sessionmaker() as db:
             await ensure_photos(db, on_cards)
+        # visa fees already found come from the cache; the rest are looked up while the cards are read
+        await fees().warm(snapshots[p.id].visa for p in on_cards if p.id in snapshots)
         cards, unknown = [], []
         for pick in args.picks:
             if pick.route:

@@ -121,7 +121,11 @@ def test_should_fetch_a_cities_climate_once_and_search_it():
     tas = snapshots["city-tas"]
     assert tas.climate[7]["air_max"] == 24.0 and "sea" not in tas.place.kinds
     lima = snapshots["city-lim"]
-    assert "sea" in lima.place.kinds and lima.climate[1]["sea_temp"] == 21.0 and lima.visa_rule == "unknown"
+    assert "sea" in lima.place.kinds and lima.climate[1]["sea_temp"] == 21.0
+    assert (lima.visa_rule, lima.visa_days) == (
+        "visa_free",
+        180,
+    )  # Passport Index, for the Moscow default's passport
     assert "city-fru" not in snapshots  # no climate fetched for it: not offered yet
     # in July the fake Tashkent is 24 °C by day: it matches «20 °C or warmer», marked as from the route map
     tashkent = next(m for m in hot["matches"] if m["name"] == "Ташкент")

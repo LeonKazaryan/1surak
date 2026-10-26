@@ -13,6 +13,8 @@ from app.ground import NoGround
 from app.ground import configure as configure_ground
 from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
+from app.visas import NoFees
+from app.visas import configure as configure_fees
 
 
 class FakeLLM:
@@ -100,6 +102,14 @@ def no_real_ground():
     configure_ground(NoGround())
     yield
     configure_ground(NoGround())
+
+
+@pytest.fixture(autouse=True)
+def no_real_visa_fees():
+    """An app with a model and web search looks visa fees up on the web; no test may leave that switched on."""
+    configure_fees(NoFees())
+    yield
+    configure_fees(NoFees())
 
 
 @pytest.fixture
