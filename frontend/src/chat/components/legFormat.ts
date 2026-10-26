@@ -60,9 +60,25 @@ export function rideTimes(ride: GroundRide): string | null {
   return ride.dated && ride.departs.length > 5 ? `${shortDate(ride.departs)}, ${times}` : times
 }
 
-/** Where to buy it: the shop's name for the button. */
+/** Where the link leads, as «на …»: FlixBus, Туту.ру or Яндекс.Расписаниях. */
 export function rideShop(ride: GroundRide): string {
-  return ride.link.includes('flixbus') ? 'FlixBus' : 'Туту.ру'
+  if (ride.link.includes('flixbus')) return 'FlixBus'
+  if (ride.link.includes('rasp.yandex')) return 'Яндекс.Расписаниях'
+  return 'Туту.ру'
+}
+
+/** What the button to the ride says: FlixBus sells that very ride, Tutu its timetable with tickets, Yandex
+ * the timetable of the day. */
+export function rideAction(ride: GroundRide): string {
+  if (ride.link.includes('flixbus')) return 'Купить на FlixBus'
+  if (ride.link.includes('rasp.yandex')) return 'Расписание на Яндекс.Расписаниях'
+  return 'Расписание и билеты на Туту.ру'
+}
+
+/** The credit lines the legs' sources require, each once. */
+export function creditsOf(legs: RouteLeg[]): { text: string; link: string }[] {
+  const all = legs.flatMap(units).flatMap((p) => (p.ground?.credit ? [p.ground.credit] : []))
+  return [...new Map(all.map((c) => [c.text, c])).values()]
 }
 
 /** The city each leg brings you to, by the leg's `to_stop` (older cards without it count by order). */

@@ -96,6 +96,7 @@ def trains_from(
                 price_rub=int(cheapest["price"]) if cheapest else None,
                 fare=FARES.get(cheapest["type"], cheapest["type"]) if cheapest else None,
                 link=link,
+                number=number or None,
             )
         )
     return found

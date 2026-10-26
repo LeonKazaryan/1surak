@@ -20,6 +20,7 @@ from app.flights.connections import connect, hubs
 from app.flights.dictionary import city, distance_km, time_zone
 from app.flights.network import Network
 from app.ground import GroundOption, GroundRoute, transport
+from app.ground.model import priced_first
 from app.trip.legs import GROUND_MAX_KM, Leg, hop_hours, units
 
 PER_HOUR = 1_500  # roubles an hour of travel is worth
@@ -207,7 +208,7 @@ def _timed(found: GroundRoute, part: Leg, before: Ticket | None, after: Ticket |
     if not fits:
         return replace(found, picked=None, wait_min=0)
     worth = lambda o: (o.price_rub or 0) + 300 * o.minutes / 60 + WAIT_PER_HOUR * waits[id(o)] / 60
-    pick = min(fits, key=worth)
+    pick = min(priced_first(fits), key=worth)
     return replace(found, picked=pick, wait_min=round(waits[id(pick)]))
 
 

@@ -162,6 +162,8 @@ export interface GroundRide {
   options?: number
   /** Picked to fit the flight next to it: the hours at the station besides the transfer itself. */
   wait_hours?: number
+  /** The line the source's terms require next to its data (Yandex.Rasp). */
+  credit?: { text: string; link: string }
 }
 
 /** The direct flight a smarter way replaced, to show what it saves. */

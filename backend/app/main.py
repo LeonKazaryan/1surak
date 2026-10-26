@@ -18,6 +18,7 @@ from app.ground import GroundTransport
 from app.ground import configure as configure_ground
 from app.ground.flixbus import FlixBuses
 from app.ground.tutu import TutuTrains
+from app.ground.yandex import YandexRasp
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
@@ -89,7 +90,13 @@ def create_app(
             refresher = asyncio.create_task(flights.keep_fresh(every, settings.fare_refresh_budget))
         app.state.flights = flights
         if settings.ground_transport:
-            configure_ground(GroundTransport(TutuTrains(), FlixBuses() if settings.flixbus else None))
+            configure_ground(
+                GroundTransport(
+                    TutuTrains(),
+                    FlixBuses() if settings.flixbus else None,
+                    YandexRasp(settings.yandex_rasp_key) if settings.yandex_rasp_key else None,
+                )
+            )
         if tools is not None:
             app.state.tools = tools
         else:

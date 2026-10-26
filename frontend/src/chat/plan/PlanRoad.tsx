@@ -4,7 +4,8 @@ import { cn } from '@/components/ui/utils'
 import type { PlanCheck, PlanLeg, RouteLeg } from '@/types/api'
 import { CurrencyContext, formatMoney } from '../widgets'
 import { ModeIcon } from '../components/LegRow'
-import { fareOf, KIND_TONE, knownFare, legKind, rideShop, rideTimes, saving, units } from '../components/legFormat'
+import { Credit } from '../components/Credit'
+import { fareOf, KIND_TONE, knownFare, legKind, rideAction, rideShop, rideTimes, saving, units } from '../components/legFormat'
 import { AirlineLogo } from '../components/ticket'
 import { forPassengers, hours, stopsText } from '../components/ticketFormat'
 import { CheckRow, PlanSection } from './planParts'
@@ -66,9 +67,10 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
           aria-label={`${ride.mode === 'bus' ? 'Автобус' : 'Поезд'} ${leg.from} → ${leg.to} на ${rideShop(ride)}`}
           className={cn(BUY, 'bg-primary/40 text-[#2f6418] hover:bg-primary/60')}
         >
-          {ride.dated ? `Купить на ${rideShop(ride)}` : `Расписание и билеты на ${rideShop(ride)}`}
+          {rideAction(ride)}
           <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
         </a>
+        {ride.credit && <Credit credit={ride.credit} className="mt-1" />}
       </>
     )
   }

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Both are keyless; FlixBus is its website's undocumented API, so it has its own switch.
     ground_transport: bool = True
     flixbus: bool = True
+    # Yandex.Rasp: trains and buses on a given day, fares for much of Russia. A free key, developer.tech.yandex.ru.
+    yandex_rasp_key: str = ""
     travelpayouts_per_minute: float = 300.0  # our guess at a polite rate; lower it if Aviasales answers 429
     # Popular fares are refreshed before they expire: how often to look, and how many requests per look.
     fare_refresh_minutes: float = 10.0  # 0 turns it off

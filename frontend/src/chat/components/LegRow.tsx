@@ -5,6 +5,7 @@ import { cn } from '@/components/ui/utils'
 import type { GroundRide, RouteFlight, RouteLeg } from '@/types/api'
 import { CurrencyContext, formatMoney, plural } from '../widgets'
 import { fareOf, KIND_TONE, legKind, rideTimes, saving, units, type LegKind } from './legFormat'
+import { Credit } from './Credit'
 import { AirlineLogo } from './ticket'
 import { hours, shortDate, stopsText } from './ticketFormat'
 
@@ -164,6 +165,7 @@ function PlainLeg({ leg, index }: { leg: RouteLeg; index: number }) {
         </span>
         <LegPrice leg={leg} />
       </Linked>
+      {leg.ground?.credit && <Credit credit={leg.ground.credit} className="pb-1 pl-13" />}
     </motion.li>
   )
 }
@@ -294,6 +296,7 @@ function SmartLeg({ leg, index }: { leg: RouteLeg; index: number }) {
                   </span>
                   <LegPrice leg={part} small />
                 </Linked>
+                {part.ground?.credit && <Credit credit={part.ground.credit} className="pl-12" />}
               </motion.li>
             </Fragment>
           ))}

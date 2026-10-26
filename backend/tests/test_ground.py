@@ -8,7 +8,10 @@ import httpx
 from app.flights.dictionary import City
 from app.ground import GroundOption, GroundRoute, GroundTransport
 from app.ground.flixbus import FlixBuses, rides_from
+from app.ground.service import merged
 from app.ground.tutu import TutuTrains, trains_from
+from app.ground.yandex import YandexRasp
+from app.ground.yandex import rides_from as rides_from_yandex
 
 SAMARKAND = City("SKD", "Самарканд", "Узбекистан", 39.65, 66.96)
 TASHKENT = City("TAS", "Ташкент", "Узбекистан", 41.3, 69.24)
@@ -143,3 +146,99 @@ def test_should_ask_buses_only_where_the_trains_do_not_run():
     found = asyncio.run(ground.route(ISTANBUL, ANTALYA))
 
     assert found.best.price_rub == 2_977 and asked == ["Стамбул"]
+
+
+LASTOCHKA = {
+    "thread": {
+        "number": "7922",
+        "transport_type": "suburban",
+        "transport_subtype": {"title": "Ласточка «Экспресс»  - состав 5 вагонов"},
+    },
+    "departure": "2026-11-15T07:40:00+03:00",
+    "arrival": "2026-11-15T09:28:00+03:00",
+    "duration": 6480.0,
+    "tickets_info": {"places": [{"price": {"whole": 900, "cents": 0}, "currency": "RUB"}]},
+}
+NIGHT_123 = {
+    "thread": {"number": "123Ф", "transport_type": "train", "transport_subtype": {"title": None}},
+    "departure": "2026-11-15T00:33:00+05:00",
+    "arrival": "2026-11-15T04:48:00+05:00",
+    "duration": 15300.0,
+    "tickets_info": {"places": []},
+}
+PLANE = {
+    "thread": {"number": "KC 109", "transport_type": "plane"},
+    "departure": "2026-11-15T17:10:00+05:00",
+    "duration": 6900.0,
+}
+
+
+def test_should_read_yandex_rides_and_leave_the_planes_out():
+    rides = rides_from_yandex([LASTOCHKA, NIGHT_123, PLANE], "https://rasp.yandex.ru/search/", dated=True)
+
+    assert [(r.name, r.mode, r.minutes, r.price_rub, r.number) for r in rides] == [
+        ("Ласточка «Экспресс» 7922", "train", 108, 900, "7922"),
+        ("Поезд 123Ф", "train", 255, None, "123Ф"),
+    ]
+    assert rides[0].view()["credit"]["text"] == "Данные предоставлены сервисом Яндекс.Расписания"
+    typical = rides_from_yandex([NIGHT_123], "/", dated=False)
+    assert (typical[0].departs, typical[0].arrives, typical[0].dated) == ("00:33", "04:48", False)
+
+
+def yandex_answering(segments: list[dict], asked: list) -> YandexRasp:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "nearest_settlement" in str(request.url):
+            code = "c10334" if float(request.url.params["lat"]) < 40 else "c10335"
+            return httpx.Response(200, json={"type": "settlement", "code": code})
+        asked.append(request.url.params["date"])
+        return httpx.Response(200, json={"segments": segments})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return YandexRasp("key", client, today=lambda: date(2026, 10, 26))
+
+
+def test_should_ask_yandex_for_the_day_or_a_typical_one_past_its_timetables():
+    asked = []
+    rasp = yandex_answering([NIGHT_123], asked)
+
+    near = asyncio.run(rasp.route(SAMARKAND, TASHKENT, date(2026, 11, 15)))
+    far = asyncio.run(rasp.route(SAMARKAND, TASHKENT, date(2027, 5, 20)))
+
+    assert asked == ["2026-11-15", "2026-11-09"]  # May 2027 is not out yet: two weeks from today instead
+    assert near.best.dated and not far.best.dated
+    assert near.best.link == "https://rasp.yandex.ru/search/?fromId=c10334&toId=c10335&when=2026-11-15"
+
+
+def test_should_join_one_train_from_both_sources_and_add_the_rest():
+    # Tutu lists it as 124*Ф, Yandex as 123Ф: a train's number turns even where it changes direction
+    tutu = GroundOption(
+        "train", "tutu", "Поезд 123Ф", "00:33", "04:48", 240, 1_387, "плацкарт", "/tutu", number="124*Ф"
+    )
+    [night, lastochka] = rides_from_yandex([NIGHT_123, LASTOCHKA], "/yandex", dated=True)
+
+    joined = merged((tutu,), (night, lastochka))
+
+    assert len(joined) == 2
+    assert (joined[0].departs, joined[0].price_rub, joined[0].link) == (
+        "2026-11-15T00:33:00+05:00",
+        1_387,
+        "/tutu",
+    )
+    assert joined[0].source == "yandex"  # its times are Yandex's, so the card credits Yandex
+    assert joined[1].name == "Ласточка «Экспресс» 7922"
+
+
+def test_should_tidy_yandex_names_and_prefer_rides_with_a_fare():
+    express = {
+        **LASTOCHKA,
+        "thread": {
+            "number": "7001/7002/7004",
+            "transport_type": "suburban",
+            "transport_subtype": {"title": "экспресс (билеты c указанием мест)"},
+        },
+        "tickets_info": {"places": []},
+    }
+    rides = rides_from_yandex([express, NIGHT_123, LASTOCHKA], "/", dated=True)
+
+    assert rides[0].name == "Экспресс 7001" and rides[0].number == "7001"
+    assert GroundRoute(tuple(rides)).best.name == "Ласточка «Экспресс» 7922"  # the only one with a known fare

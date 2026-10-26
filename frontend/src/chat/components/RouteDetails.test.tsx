@@ -73,3 +73,21 @@ describe('RouteCardView', () => {
     expect(screen.getByText(/6 городов · 12/)).toBeInTheDocument()
   })
 })
+
+describe('Yandex.Rasp credit', () => {
+  const credit = { text: 'Данные предоставлены сервисом Яндекс.Расписания', link: 'https://rasp.yandex.ru/' }
+  const [out, there, home] = SMART_ROUTE.legs
+  const parts = there.parts!.map((p) => (p.ground ? { ...p, ground: { ...p.ground, credit, link: 'https://rasp.yandex.ru/search/?fromId=c10335&toId=c10334' } } : p))
+  const card: RouteCard = { ...SMART_ROUTE, legs: [out, { ...there, parts }, home] }
+
+  it('should credit Yandex right under the ride it gave and once on the card', () => {
+    render(<RouteDetails card={card} />)
+    const way = screen.getByRole('list', { name: 'Алматы → Самарканд через Ташкент' })
+    expect(within(way).getByRole('link', { name: credit.text })).toHaveAttribute('href', 'https://rasp.yandex.ru/')
+  })
+
+  it('should not credit Yandex where none of its data is shown', () => {
+    render(<RouteDetails card={SMART_ROUTE} />)
+    expect(screen.queryByRole('link', { name: credit.text })).toBeNull()
+  })
+})

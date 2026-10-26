@@ -30,6 +30,8 @@ docker compose up --build
 | `LLM_MODEL` | пусто | имя модели; без него отвечает заглушка |
 | `LLM_TIMEOUT_S` | `60` | таймаут запроса к модели, секунды |
 | `TRAVELPAYOUTS_TOKEN` | пусто | токен Aviasales Data API: реальные билеты из города пользователя; без него перелётов нет |
+| `YANDEX_RASP_KEY` | пусто | бесплатный ключ API Яндекс.Расписаний: поезда, электрички и автобусы на дату, цены по России; без него поезда только из Туту |
+| `FLIXBUS` | `true` | автобусы FlixBus по Европе и Турции (неофициальный API сайта); `false` выключает |
 | `OPENAI_API_KEY` | пусто | можно вместо `LLM_API_KEY` |
 | `SEARCH_PROVIDER` | `auto` | веб-поиск для базы знаний: Brave (если есть ключ), затем Tavily, затем поиск OpenAI; `none` выключает |
 | `BRAVE_API_KEY` | пусто | ключ Brave Search API (эндпоинт LLM Context) |

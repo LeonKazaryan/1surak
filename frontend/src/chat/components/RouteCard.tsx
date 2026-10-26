@@ -5,7 +5,8 @@ import { cn } from '@/components/ui/utils'
 import type { RouteCard as Route, RouteLeg } from '@/types/api'
 import { CurrencyContext, flagEmoji, formatMoney, keepPricesTogether, plural } from '../widgets'
 import { CountUp } from './CountUp'
-import { KIND_COLOR, legKind, saving, travelDays, units } from './legFormat'
+import { Credit } from './Credit'
+import { creditsOf, KIND_COLOR, legKind, saving, travelDays, units } from './legFormat'
 import { ModeIcon } from './LegRow'
 import { PriceChangeNote } from './ticket'
 import { sceneKinds } from './routeScenes'
@@ -265,7 +266,12 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
           ))}
         </ul>
 
-        <RouteTotal card={card} />
+        <div>
+          <RouteTotal card={card} />
+          {creditsOf(card.legs).map((credit) => (
+            <Credit key={credit.text} credit={credit} className="mt-1.5 px-1" />
+          ))}
+        </div>
 
         {card.tradeoff && (
           <p className="m-0 flex items-start gap-2 rounded-xl bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">

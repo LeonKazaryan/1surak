@@ -5,7 +5,15 @@ from typing import Literal, Protocol
 from app.flights.dictionary import City
 
 GroundMode = Literal["train", "bus"]
-SOURCES = {"tutu": "Туту.ру, расписание поездов", "flixbus": "FlixBus, рейсы на дату"}
+SOURCES = {
+    "tutu": "Туту.ру, расписание поездов",
+    "flixbus": "FlixBus, рейсы на дату",
+    "yandex": "Яндекс.Расписания",
+}
+# The line a source's terms require next to its data (Yandex.Rasp: yandex.ru/legal/timetable_api, 2.3.5).
+CREDITS = {
+    "yandex": {"text": "Данные предоставлены сервисом Яндекс.Расписания", "link": "https://rasp.yandex.ru/"}
+}
 
 
 @dataclass(frozen=True)
@@ -21,7 +29,8 @@ class GroundOption:
     price_rub: int | None
     fare: str | None  # the class the price is for: «сидячий», «купе»
     link: str
-    dated: bool = False  # a ride on that very day (FlixBus), not a timetable that may skip days
+    dated: bool = False  # a ride on that very day (FlixBus, Yandex), not a timetable that may skip days
+    number: str | None = None  # «123Ф»: the same train from two sources is one train
 
     def view(self) -> dict:
         view = {
@@ -35,8 +44,15 @@ class GroundOption:
             "fare": self.fare,
             "link": self.link,
             "dated": self.dated,
+            "credit": CREDITS.get(self.source),
         }
         return {k: v for k, v in view.items() if v is not None}
+
+
+def priced_first(options: "tuple[GroundOption, ...] | list[GroundOption]") -> list[GroundOption]:
+    """The options with a fare, or all of them when none has one: an unknown fare is not a free ride."""
+    priced = [o for o in options if o.price_rub is not None]
+    return priced or list(options)
 
 
 @dataclass(frozen=True)
@@ -62,7 +78,7 @@ class GroundRoute:
         much faster ride is worth it."""
         if self.picked:
             return self.picked
-        return min(self.options, key=lambda o: (o.price_rub or 0) + 300 * o.minutes / 60)
+        return min(priced_first(self.options), key=lambda o: (o.price_rub or 0) + 300 * o.minutes / 60)
 
     def view(self) -> dict:
         view = {**self.best.view(), "options": len(self.options)}
