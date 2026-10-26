@@ -16,9 +16,9 @@ from datetime import date, timedelta
 from typing import Literal
 
 from app.catalog.catalog import RAIL_ORIGIN, Catalog
-from app.flights.client import Flights, RouteFlights, Ticket
+from app.flights.client import Flights, RouteFlights, Ticket, merged
 from app.flights.connections import Connection, connect, hubs
-from app.flights.dictionary import City, cities, city
+from app.flights.dictionary import City, cities, city, distance_km
 from app.flights.network import Network
 
 Preference = Literal["cheapest", "balanced", "fastest"]
@@ -33,6 +33,9 @@ MAX_OPEN_STOPS = 5  # 5! = 120 orders and 30 fares; more would be slow for a cha
 TOP_PLANS = 3
 MIN_SAVING_RUB = 2_000  # a connection on separate tickets has to be worth the risk
 MIN_SAVING_SHARE = 0.15
+NIGHTS_SLACK = 1  # with nights per stop, a leg may leave a day earlier or later than they say
+FREE_GAP_DAYS = (1, 7)  # without nights: the next flight 1 to 7 days after the one before
+UNCHAINED_RUB = 5_000  # an order whose cheapest dates cannot be flown in a row ranks lower
 
 Mode = Literal["flight", "train", "none"]
 
@@ -77,6 +80,7 @@ class Leg:
     direct_on_map: bool = False
     train_min: int | None = None  # a train alternative to a flight
     exact_day: bool = False  # the ticket flies on `day`, not just some day that month
+    chained: bool = False  # `day` was picked so this flight leaves after the one before
     via: Connection | None = None  # a clearly better way through a hub, on separate tickets
 
     @property
@@ -93,7 +97,7 @@ class Leg:
             view["date"] = self.day.isoformat()
         if self.ticket:
             view["ticket"] = self.ticket.view()
-            if self.day:
+            if self.day and not self.chained:
                 view["exact_day"] = self.exact_day
             if self.route and self.route.direct and self.route.direct is not self.ticket:
                 view["direct_option"] = self.route.direct.view()
@@ -116,10 +120,14 @@ class Leg:
 class Plan:
     stops: tuple[Stop, ...]
     legs: list[Leg] = field(default_factory=list)
+    dates_chained: bool = False  # every flight leaves after the one before, as the nights say
 
     @property
     def score(self) -> float:
-        return sum(leg.score for leg in self.legs)
+        priced = sum(1 for leg in self.legs if leg.ticket)
+        return sum(leg.score for leg in self.legs) + (
+            UNCHAINED_RUB if priced > 1 and not self.dates_chained else 0
+        )
 
     @property
     def possible(self) -> bool:
@@ -136,12 +144,60 @@ class Plan:
                 f"{leg.origin.name} → {leg.destination.name}" for leg in self.legs if leg.mode == "none"
             ],
             "travel_hours": _hours(sum(minutes)) if minutes else None,
+            "dates_chained": self.dates_chained,
             "legs": [leg.view() for leg in self.legs],
         }
         if any(leg.via for leg in self.legs):
             best = [leg.best_price for leg in self.legs if leg.best_price is not None]
             view["total_with_connections_rub"] = sum(best)
         return view
+
+
+def _km(a: Stop, b: Stop) -> int | None:
+    one, two = city(a.code), city(b.code)
+    return round(distance_km(one, two)) if one and two else None
+
+
+def leg_card(leg: Leg) -> dict:
+    """One leg as the chat draws it: the ticket with its buy link, or how else to get there."""
+    view: dict = {
+        "from": leg.origin.name,
+        "to": leg.destination.name,
+        "mode": leg.mode,
+        "km": _km(leg.origin, leg.destination),
+    }
+    if leg.minutes is not None:
+        view["hours"] = _hours(leg.minutes)
+    if leg.ticket:
+        view["ticket"] = {**leg.ticket.view(), "direct_available": bool(leg.route and leg.route.direct)}
+    elif leg.mode == "train":
+        view["estimate"] = "поезд, цену уточним"
+    elif leg.mode == "none":
+        view["estimate"] = "нет ни рейса, ни поезда"
+    else:
+        view["estimate"] = "прямой рейс есть, билетов пока нет" if leg.direct_on_map else "билетов пока нет"
+    if leg.via:
+        view["via"] = {
+            **leg.via.view(),
+            "saves_rub": leg.price - leg.via.price if leg.price is not None else None,
+        }
+    return view
+
+
+def plan_card(chosen: Plan, home: Stop, return_home: bool, best: bool) -> dict:
+    names = [home.name, *(s.name for s in chosen.stops), *([home.name] if return_home else [])]
+    view = chosen.view()
+    return {
+        "id": "+".join(s.code or s.name for s in chosen.stops),
+        "name": " → ".join(names),
+        "best": best,
+        "legs": [leg_card(leg) for leg in chosen.legs],
+        "total_rub": view["total_price_rub"],
+        "total_complete": view["unpriced_legs"] == 0 and not view["impossible_legs"],
+        "total_with_connections_rub": view.get("total_with_connections_rub"),
+        "dates_chained": chosen.dates_chained,
+        "travel_hours": view["travel_hours"],
+    }
 
 
 FareKey = tuple[str, str, int | None]  # origin city, destination city, month
@@ -271,26 +327,95 @@ async def _fares(flights: Flights, keys: set[FareKey]) -> dict[FareKey, RouteFli
     }
 
 
+def _following(month: int | None) -> int | None:
+    return None if month is None else month % 12 + 1
+
+
 async def plan(request: Request, flights: Flights, network: Network) -> list[Plan]:
     """The best plans first: one for a fixed order, up to TOP_PLANS orders for an open one."""
     schedules = {order: _schedule(request, order) for order in _orders(request)}
-    keys = {
-        (a.code, b.code, m)
-        for legs in schedules.values()
-        for a, b, m, _ in legs
-        if a.code and b.code and a != b
-    }
+    # without a start date, later legs may leave next month (ten nights from 25 November is December)
+    spill = request.date_from is None and request.month is not None
+    keys = set()
+    for legs in schedules.values():
+        for i, (a, b, m, _) in enumerate(legs):
+            if a.code and b.code and a != b:
+                keys.add((a.code, b.code, m))
+                if spill and i:
+                    keys.add((a.code, b.code, _following(m)))
     fares = await _fares(flights, keys)
     plans = []
     for order, legs in schedules.items():
         result = Plan(order)
-        result.legs = [make_leg(a, b, m, d, fares, network, request.preference) for a, b, m, d in legs]
+        for i, (a, b, m, d) in enumerate(legs):
+            seen = fares
+            if spill and i and a.code and b.code:
+                both = merged(fares.get((a.code, b.code, m)), fares.get((a.code, b.code, _following(m))))
+                seen = {(a.code, b.code, m): both}
+            result.legs.append(make_leg(a, b, m, d, seen, network, request.preference))
+        chain_dates(result, request)
         plans.append(result)
     plans.sort(key=lambda p: p.score)
     plans = plans[:TOP_PLANS]
     if plans and plans[0].possible:
         await add_connections(plans[0], flights, network, request.preference)
     return plans
+
+
+def _gap_ok(gap: int, nights: int | None, legs_apart: int) -> bool:
+    if nights is not None:
+        return gap >= 0 and abs(gap - nights) <= NIGHTS_SLACK
+    low, high = FREE_GAP_DAYS
+    return low <= gap <= high * legs_apart
+
+
+def chain_dates(chosen: Plan, request: Request) -> None:
+    """Picks one ticket per flight leg so they can be flown in a row: the cheapest chain by score.
+    With a start date every leg is already on its day; then the plan is chained when all of them are."""
+    priced = [(i, leg) for i, leg in enumerate(chosen.legs) if leg.route]
+    if request.date_from is not None:
+        chosen.dates_chained = all(leg.exact_day for _, leg in priced)
+        return
+    if len(priced) < 2:
+        chosen.dates_chained = bool(priced)
+        return
+    score = _score(request.preference)
+    days = [[t for t in (leg.route.by_day or (leg.route.cheapest,)) if t.day] for _, leg in priced]
+    # best[k][n] = (cost of the cheapest chain ending with ticket n of priced leg k, index of the one before)
+    best: list[list[tuple[float, int] | None]] = [
+        [(score(t.price, t.duration_min, t.transfers), -1) for t in days[0]]
+    ]
+    for k in range(1, len(priced)):
+        (i_prev, _), (i_now, _) = priced[k - 1], priced[k]
+        stays = [chosen.legs[t].origin for t in range(i_prev + 1, i_now + 1)]
+        nights = sum(request.nights_at(s) for s in stays) if request.nights else None
+        row: list[tuple[float, int] | None] = []
+        for ticket in days[k]:
+            options = [
+                (prev[0] + score(ticket.price, ticket.duration_min, ticket.transfers), n)
+                for n, (prev, before) in enumerate(zip(best[-1], days[k - 1], strict=True))
+                if prev and _gap_ok((ticket.day - before.day).days, nights, i_now - i_prev)
+            ]
+            row.append(min(options) if options else None)
+        best.append(row)
+    ends = [(cost[0], n) for n, cost in enumerate(best[-1]) if cost]
+    if not ends:
+        chosen.dates_chained = False
+        return
+    _, n = min(ends)
+    for k in range(len(priced) - 1, -1, -1):
+        i, leg = priced[k]
+        ticket = days[k][n]
+        chosen.legs[i] = replace(
+            leg,
+            ticket=ticket,
+            minutes=ticket.duration_min,
+            day=ticket.day,
+            chained=True,
+            score=score(ticket.price, ticket.duration_min, ticket.transfers),
+        )
+        n = best[k][n][1]
+    chosen.dates_chained = True
 
 
 async def add_connections(chosen: Plan, flights: Flights, network: Network, preference: str) -> None:

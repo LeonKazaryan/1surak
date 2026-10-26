@@ -7,10 +7,12 @@ export interface ChatRequest {
   answers?: BriefAnswers
   /** Ask again in place of the last turn, when that turn failed. */
   retry?: boolean
+  /** False when the city could not be detected and is the Moscow fallback: the agent asks for it. */
+  origin_known?: boolean
 }
 
 export type TripKind = 'sea' | 'mountains' | 'city' | 'nature' | 'ski'
-export type ClarifySlot = 'vibe' | 'when' | 'travelers' | 'route' | 'budget'
+export type ClarifySlot = 'origin' | 'vibe' | 'when' | 'travelers' | 'route' | 'budget'
 
 /** What the user picked on the question cards; the server merges it into the trip brief. */
 export interface BriefAnswers {
@@ -26,6 +28,8 @@ export interface BriefAnswers {
   budget_total?: number
   budget_currency?: string
   multi_city?: boolean
+  /** IATA code of the departure city, when the user picked or confirmed it on the cards. */
+  origin?: string
 }
 
 /** The user's currency, picked by the server from the departure city. Prices stay in roubles until shown. */
@@ -52,6 +56,10 @@ export interface ClarifyPrefill {
   children_ages: number[]
   budget_level: number | null
   multi_city: boolean | null
+  /** The city the tickets fly from right now. */
+  origin?: { code: string; name: string } | null
+  /** The sum the user named, in their own currency. */
+  budget_total?: number | null
 }
 
 export interface ClarifyEvent {
@@ -174,6 +182,57 @@ export interface RouteCard {
 }
 
 export type DestinationsCard = DestinationCard | RouteCard
+
+/** Two tickets through a hub that cost less than the leg's own, with the wait between them. */
+export interface FlightConnection {
+  via: string
+  price_rub: number
+  hours: number
+  layover_hours: number
+  separate_tickets: boolean
+  saves_rub: number | null
+  tickets: FlightTicket[]
+}
+
+/** One leg of a trip through the cities the user named: a ticket to buy, a train, or no way yet. */
+export interface FlightPlanLeg {
+  from: string
+  to: string
+  mode: 'flight' | 'train' | 'none'
+  km: number | null
+  hours?: number
+  ticket?: RouteFlight
+  estimate?: string
+  via?: FlightConnection
+}
+
+export interface FlightPlan {
+  id: string
+  name: string
+  best: boolean
+  legs: FlightPlanLeg[]
+  total_rub: number | null
+  total_complete: boolean
+  total_with_connections_rub: number | null
+  /** Every flight leaves after the one before: the tickets make one trip. */
+  dates_chained: boolean
+  travel_hours: number | null
+}
+
+/** plan_route's answer: the user's cities in the best order(s), every leg priced, with links to buy. */
+export interface FlightPlanEvent {
+  type: 'flight_plan'
+  from: string
+  plans: FlightPlan[]
+  currency?: Currency
+}
+
+/** The agent now searches from another city (the user named it): the picker follows. */
+export interface OriginEvent {
+  type: 'origin'
+  code: string
+  name: string
+}
 
 export interface DestinationsEvent {
   type: 'destinations'
@@ -390,6 +449,8 @@ export type ChatStreamEvent =
   | DestinationsEvent
   | TripPlanEvent
   | BookingEvent
+  | FlightPlanEvent
+  | OriginEvent
   | ChatStreamDone
 
 export interface ChatMeta extends Partial<TripStatus> {

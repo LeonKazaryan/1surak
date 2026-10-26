@@ -1,7 +1,8 @@
-import { useId, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
+import { useEffect, useId, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { AnimatePresence, motion, type Variants } from 'motion/react'
-import { ArrowRightIcon, CheckIcon, FaceSmileIcon, UserGroupIcon, UserIcon, UsersIcon } from '@heroicons/react/20/solid'
+import { ArrowRightIcon, CheckIcon, FaceSmileIcon, MagnifyingGlassIcon, UserGroupIcon, UserIcon, UsersIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
+import { searchCities, type DepartureCity } from '@/lib/departureCity'
 import type { Currency, TripKind } from '@/types/api'
 import { TripArt } from '../components/TripArt'
 import { BUDGET_OPTIONS, KIND_OPTIONS, NIGHT_OPTIONS, RUB, budgetHint, nightsLabel, plural, upcomingMonths } from '../widgets'
@@ -245,14 +246,16 @@ export function AgeStep({ selected, onPick }: PickProps<number>) {
 
 interface BudgetStepProps {
   level: number | null
+  /** A sum the user already named: the card opens on it, to confirm or change. */
+  total?: number | null
   onLevel: (level: number) => void
   onTotal: (total: number) => void
   currency?: Currency
 }
 
-export function BudgetStep({ level, onLevel, onTotal, currency = RUB }: BudgetStepProps) {
-  const [custom, setCustom] = useState(false)
-  const [draft, setDraft] = useState<number | null>(null)
+export function BudgetStep({ level, total = null, onLevel, onTotal, currency = RUB }: BudgetStepProps) {
+  const [custom, setCustom] = useState(total !== null)
+  const [draft, setDraft] = useState<number | null>(total)
   const send = () => draft && onTotal(draft)
   return (
     <Options className="flex flex-col gap-2.5">
@@ -385,6 +388,72 @@ export function RouteStep({ selected, onPick }: PickProps<boolean>) {
         {caption('Несколько городов', 'маршрут на 2–3 города')}
         {selected === true && <CheckBadge className="absolute top-2.5 right-2.5" />}
       </motion.button>
+    </Options>
+  )
+}
+
+const SEARCH_DELAY_MS = 250
+
+/** Where the trip starts: the city we guessed as one tap, or any city Aviasales flies from. */
+export function OriginStep({ selected, guess, onPick }: PickProps<DepartureCity> & { guess: DepartureCity }) {
+  const pillId = useId()
+  const [term, setTerm] = useState('')
+  const [found, setFound] = useState<DepartureCity[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const query = term.trim()
+    if (query.length < 2) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      searchCities(query, controller.signal)
+        .then(setFound)
+        .catch(() => !controller.signal.aborted && setFailed(true))
+    }, SEARCH_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [term])
+
+  const searching = term.trim().length >= 2
+  return (
+    <Options className="flex flex-col gap-2.5">
+      <Chip selected={selected?.code === guess.code} onPick={() => onPick(guess)} pillId={pillId} className="text-left">
+        Из города {guess.name}
+      </Chip>
+      <motion.label variants={option} className="flex items-center gap-2 rounded-2xl border border-border bg-white px-3 py-2.5">
+        <MagnifyingGlassIcon className="h-4 w-4 text-faint" aria-hidden />
+        <input
+          value={term}
+          onChange={(e) => {
+            setTerm(e.target.value)
+            setFound(null)
+            setFailed(false)
+          }}
+          placeholder="Другой город"
+          aria-label="Поиск города вылета"
+          className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-faint"
+        />
+      </motion.label>
+      {searching && (
+        <div role="listbox" aria-label="Города вылета" className="flex flex-col gap-1.5">
+          {failed ? (
+            <p className="m-0 px-1 text-sm text-muted-foreground">Не получилось найти город, попробуйте ещё раз</p>
+          ) : found === null ? (
+            <p className="m-0 px-1 text-sm text-muted-foreground">Ищу…</p>
+          ) : found.length ? (
+            found.slice(0, 5).map((c) => (
+              <Chip key={c.code} selected={selected?.code === c.code} onPick={() => onPick(c)} pillId={pillId} className="text-left">
+                {c.name}
+                {c.country && <span className="text-muted-foreground"> · {c.country}</span>}
+              </Chip>
+            ))
+          ) : (
+            <p className="m-0 px-1 text-sm text-muted-foreground">Такого города не нашлось</p>
+          )}
+        </div>
+      )}
     </Options>
   )
 }

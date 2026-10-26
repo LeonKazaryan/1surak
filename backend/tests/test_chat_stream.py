@@ -155,7 +155,7 @@ def test_should_pass_the_departure_city_in_the_user_turn_not_the_system_prompt(c
     stream_events(client, {"query": "Хочу к морю", "origin": "  Казань "})
 
     system, *_, last = fake_llm.conversations[0]
-    assert last == {"role": "user", "content": "Хочу к морю\n\nГород вылета: Казань"}
+    assert last["role"] == "user" and last["content"].startswith("Хочу к морю\n\nГород вылета: Казань (")
     assert "Казань" not in system["content"]
 
 
@@ -205,7 +205,15 @@ def test_should_merge_card_answers_into_the_brief_and_not_ask_again(settings):
         trace = test_client.get(f"/api/chats/{chat_id}/messages").json()["messages"][1]["trace"]
 
     clarify = next(e for e in first if e["type"] == "clarify")
-    assert [q["slot"] for q in clarify["questions"]] == ["budget"]
+    # every card of a new trip, whatever the model listed
+    assert [q["slot"] for q in clarify["questions"]] == [
+        "origin",
+        "vibe",
+        "when",
+        "travelers",
+        "route",
+        "budget",
+    ]
     assert first[-1]["answer"] == "Уточню"
     assert any(e["type"] == "clarify" for e in trace)  # the cards come back when the chat is reopened
     brief = json.loads(llm.conversations[2][-1]["content"])

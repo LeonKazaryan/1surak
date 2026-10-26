@@ -1,10 +1,11 @@
 import { useContext } from 'react'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { PlanCheck, PlanLeg } from '@/types/api'
 import { CurrencyContext, formatMoney } from '../widgets'
 import { ModeIcon } from '../components/RouteCard'
 import { AirlineLogo } from '../components/ticket'
-import { hours, stopsText } from '../components/ticketFormat'
+import { forPassengers, hours, stopsText } from '../components/ticketFormat'
 import { CheckRow, PlanSection } from './planParts'
 import { clock, dayChip, dayText } from './planFormat'
 
@@ -33,14 +34,28 @@ function LegRow({ leg, seats }: { leg: PlanLeg; seats: number }) {
         <span className="block truncate text-[15px] leading-snug font-semibold text-foreground">{`${leg.from} → ${leg.to}`}</span>
         <span className="block text-[13px] leading-snug text-muted-foreground">{when(leg)}</span>
         {ticket ? (
-          <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
-            <AirlineLogo ticket={ticket} className="h-4 w-4" />
-            <span className="min-w-0">
-              {`${ticket.airline_name} ${ticket.flight_number} · `}
-              <span className={ticket.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(ticket)}</span>
-              {ticket.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(ticket.hours)}`}</span>}
+          <>
+            <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
+              <AirlineLogo ticket={ticket} className="h-4 w-4" />
+              <span className="min-w-0">
+                {`${ticket.airline_name} ${ticket.flight_number} · `}
+                <span className={ticket.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(ticket)}</span>
+                {ticket.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(ticket.hours)}`}</span>}
+              </span>
             </span>
-          </span>
+            {ticket.link && (
+              <a
+                href={forPassengers(ticket.link, seats)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
+                className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-full bg-highlight/10 px-2.5 text-[12px] font-medium text-highlight transition-colors hover:bg-highlight/20"
+              >
+                Купить на Aviasales
+                <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
+              </a>
+            )}
+          </>
         ) : (
           <span className="mt-1 block text-[12px] text-muted-foreground">
             {flight ? 'билетов пока нет' : `по земле, ${leg.km} км: поезд, автобус или такси`}

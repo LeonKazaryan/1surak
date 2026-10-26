@@ -25,3 +25,9 @@ export function travelText(card: DestinationCard): string | null {
 export function stopsText(t: FlightTicket): string {
   return t.transfers === 0 ? 'прямой' : `${t.transfers} ${plural(t.transfers, ['пересадка', 'пересадки', 'пересадок'])}`
 }
+
+/** An Aviasales search link for the whole party: «/search/NQZ3010KZN1» ends with the number of passengers. */
+export function forPassengers(link: string, seats: number): string {
+  if (seats < 2 || seats > 9) return link
+  return link.replace(/(\/search\/[A-Z]{3}\d{4}[A-Z]{3})1(?=[?#]|$)/, `$1${seats}`)
+}

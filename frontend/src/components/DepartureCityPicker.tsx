@@ -7,6 +7,7 @@ import {
   detectCity,
   getDepartureCity,
   nearbyCities,
+  onDepartureCityChange,
   saveDepartureCity,
   savedDepartureCity,
   searchCities,
@@ -56,9 +57,17 @@ function CityRow({ city, active, note, onPick }: { city: DepartureCity; active: 
   )
 }
 
+interface DepartureCityPickerProps {
+  /** Shown before the city: «Вылет:» on the question cards. */
+  prefix?: string
+  onChange?: (city: DepartureCity) => void
+  className?: string
+}
+
 /** Departure city: detected from the IP on the first visit, searchable across every city Aviasales flies from. */
-export function DepartureCityPicker() {
+export function DepartureCityPicker({ prefix, onChange, className }: DepartureCityPickerProps = {}) {
   const [city, setCity] = useState(getDepartureCity)
+  useEffect(() => onDepartureCityChange(setCity), [])
   const [here, setHere] = useState<DepartureCity | null>(null)
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
@@ -104,6 +113,7 @@ export function DepartureCityPicker() {
   const choose = (picked: DepartureCity) => {
     saveDepartureCity(picked)
     setCity(picked)
+    onChange?.(picked)
     setOpen(false)
     setTerm('')
     setFound(null)
@@ -116,9 +126,13 @@ export function DepartureCityPicker() {
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         aria-label={`Город вылета: ${city.name}`}
-        className="inline-flex h-8 items-center gap-1 rounded-full bg-secondary/60 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
+        className={cn(
+          'inline-flex h-8 items-center gap-1 rounded-full bg-secondary/60 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary',
+          className,
+        )}
       >
         <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-highlight" />
+        {prefix && <span className="text-faint">{prefix}</span>}
         {city.name}
       </Popover.Trigger>
       <Popover.Portal>

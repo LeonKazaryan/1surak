@@ -3,11 +3,12 @@ import { AnimatePresence, motion, useMotionValueEvent, useSpring, type Variants 
 import { ArrowLeftIcon, MapPinIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import { buildRoute } from '@/landing/route'
-import { getDepartureCity } from '@/lib/departureCity'
+import { getDepartureCity, saveDepartureCity } from '@/lib/departureCity'
 import type { BriefAnswers, ClarifyEvent } from '@/types/api'
 import { describeAnswers, plural } from '../widgets'
 import { buildSteps, knownFacts, partyOptions, planCards, progressAt, type Step } from './plan'
-import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, PartyStep, RouteStep, VibeStep } from './questions'
+import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, OriginStep, PartyStep, RouteStep, VibeStep } from './questions'
+import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { useClarifyAnswers, type ClarifyAnswers } from './useClarifyAnswers'
 
 const PLANE_PATH = 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z'
@@ -29,6 +30,7 @@ const START = ROUTE.at(0)
 const END = ROUTE.at(1)
 
 interface FlightRouteProps {
+  from: string
   progress: number
   stops: number
   remaining: number
@@ -36,7 +38,7 @@ interface FlightRouteProps {
 }
 
 /** One plane flies the route as the questions get answered; the trail behind it fills in lime. */
-function FlightRoute({ progress, stops, remaining, arriving }: FlightRouteProps) {
+function FlightRoute({ from, progress, stops, remaining, arriving }: FlightRouteProps) {
   const flown = useSpring(progress, { stiffness: 48, damping: 14, mass: 1 })
   const plane = useRef<SVGGElement>(null)
   const place = (p: number) => {
@@ -93,7 +95,7 @@ function FlightRoute({ progress, stops, remaining, arriving }: FlightRouteProps)
         </g>
       </svg>
       <div className="-mt-1 flex items-center justify-between text-[12px] font-medium">
-        <span className="text-muted-foreground">{getDepartureCity().name}</span>
+        <span className="text-muted-foreground">{from}</span>
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
             key={caption}
@@ -192,6 +194,18 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
   }
   const child = step.child ?? 0
   const body: Record<Step['kind'], () => ReactNode> = {
+    origin: () => (
+      <OriginStep
+        selected={answers.origin}
+        guess={getDepartureCity()}
+        onPick={(c) =>
+          pick(() => {
+            answers.setOrigin(c)
+            saveDepartureCity(c) // the picker follows, and the city counts as known from now on
+          })
+        }
+      />
+    ),
     vibe: () => <VibeStep selected={answers.kinds[0] ?? null} onPick={(k) => pick(() => answers.setKinds([k]))} />,
     month: () => <MonthStep selected={answers.month} onPick={(m) => pick(() => answers.setMonth(m))} />,
     nights: () => <NightsStep selected={answers.nights} extra={widget.prefill.nights} onPick={(n) => pick(() => answers.setNights(n))} />,
@@ -217,6 +231,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
     budget: () => (
       <BudgetStep
         level={answers.level}
+        total={answers.total}
         currency={widget.currency}
         onLevel={(l) => pick(() => answers.setLevel(l))}
         onTotal={(t) => pick(() => answers.setTotal(t))}
@@ -256,21 +271,24 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
           <img src="/mascot.png" alt="" draggable={false} className="h-14 w-14 shrink-0 object-contain" />
           <div className="min-w-0 rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 shadow-sm">
             <p className="m-0 text-[15px] leading-snug text-foreground">{intro || 'Уточню пару вещей, чтобы подобрать места.'}</p>
-            {facts.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold tracking-wider text-faint uppercase">Уже знаю</span>
-                {facts.map((fact) => (
-                  <span key={fact} className="rounded-full bg-accent px-2 py-0.5 text-[12px] font-medium text-foreground">
-                    {fact}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {facts.length > 0 && <span className="text-[11px] font-semibold tracking-wider text-faint uppercase">Уже знаю</span>}
+              {facts.map((fact) => (
+                <span key={fact} className="rounded-full bg-accent px-2 py-0.5 text-[12px] font-medium text-foreground">
+                  {fact}
+                </span>
+              ))}
+              {/* every ticket depends on it, so it is always in sight and one tap to change */}
+              {!slots.includes('origin') && (
+                <DepartureCityPicker prefix="Вылет:" onChange={answers.setOrigin} className="h-6 bg-accent px-2 text-[12px] font-medium text-foreground" />
+              )}
+            </div>
           </div>
         </motion.header>
 
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
           <FlightRoute
+            from={answers.home.name}
             progress={arriving ? 1 : progressAt(steps, current, slots)}
             stops={slots.length}
             remaining={slots.length - slots.indexOf(step.slot)}

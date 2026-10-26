@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
     chat_id: UUID | None = None
     origin: Origin | None = None
     origin_code: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")] | None = None  # IATA of the city
+    # False when the browser could not detect the city and fell back to Moscow: then the agent asks
+    origin_known: bool = True
     answers: BriefPatch | None = None  # what the user picked on the question cards
     retry: bool = False  # ask again in place of the last turn, when that turn failed
 

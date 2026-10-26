@@ -6,7 +6,7 @@ import { addMyChat } from '@/chat/chatStorage'
 import { createTextPump } from '@/chat/textPump'
 import { applyTraceEvent, isFailed, rehydrateTrace } from '@/chat/trace'
 import { isWidgetEvent, widgetFromTrace } from '@/chat/widgets'
-import { getDepartureCity } from '@/lib/departureCity'
+import { departureCityKnown, getDepartureCity, saveDepartureCity } from '@/lib/departureCity'
 import type { ChatLayoutContext, ChatTraceStep, WorkspaceChatMessage } from '@/chat/types'
 
 const MAX_RECENT_CHATS = 50
@@ -157,9 +157,22 @@ export function useChatSession(urlChatId: string | undefined) {
       const pump = createTextPump((shown) => patch({ content: shown }))
 
       sendChatStream(
-        { query, chat_id: run.chatId, origin: getDepartureCity().name, origin_code: getDepartureCity().code, answers, retry },
+        {
+          query,
+          chat_id: run.chatId,
+          origin: getDepartureCity().name,
+          origin_code: getDepartureCity().code,
+          origin_known: departureCityKnown(),
+          answers,
+          retry,
+        },
         (event) => {
           if (!isCurrent()) return
+          if (event.type === 'origin') {
+            // the user named another city in the message: the next one is sent from it too
+            saveDepartureCity({ code: event.code, name: event.name })
+            return
+          }
           if (event.type === 'assistant_token') {
             pump.push(event.text)
             setPhase('writing')

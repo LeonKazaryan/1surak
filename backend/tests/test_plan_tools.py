@@ -15,7 +15,10 @@ from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
 from tests.conftest import FakeFlights, fresh_database
 from tests.test_plan_assemble import flights
 
-COUPLE = merge(TripBrief(), BriefPatch(month=11, nights_min=7, nights_max=7, adults=2, budget_level=2))
+# after the question cards: building a trip before them is refused (see test_should_ask_before_building)
+COUPLE = merge(
+    TripBrief(asked=True), BriefPatch(month=11, nights_min=7, nights_max=7, adults=2, budget_level=2)
+)
 TICKETS = FakeFlights(
     {
         "AYT": flights(("2026-11-06T09:40:00+03:00", "AYT", 18_000, 240)),
@@ -48,6 +51,15 @@ def tools(state: TripState, sessionmaker) -> ToolRegistry:
 
 def call(registry: ToolRegistry, name: str, args: dict):
     return asyncio.run(registry.execute(name, json.dumps(args, ensure_ascii=False)))
+
+
+def test_should_ask_before_building(sessionmaker):
+    # «Казань на выходные вдвоём»: a named place, but the cards of a new trip come first
+    state = TripState(COUPLE.model_copy(update={"asked": False}))
+
+    built = call(tools(state, sessionmaker), "build_trip", {"id": "kazan"})
+
+    assert "ask_user" in json.loads(built.content)["error"]
 
 
 def test_should_build_the_trip_then_show_it_as_a_plan(sessionmaker):

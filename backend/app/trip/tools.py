@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
-from app.flights import Flights, NoFlights, city, current_origin
+from app.flights import Flights, NoFlights, city, currency_for, current_origin
+from app.flights.dictionary import find_city
 from app.money import current_currency
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
@@ -21,9 +22,11 @@ from app.trip.brief import (
     Slot,
     TripBrief,
     assumptions,
+    cards_first,
     chips,
     merge,
     missing,
+    per_night_budget,
     prefill,
     search_hint,
 )
@@ -37,6 +40,7 @@ from app.trip.routes import (
 )
 
 SLOT_TITLES: dict[Slot, str] = {
+    "origin": "Откуда летите?",
     "vibe": "Какой отдых хочется?",
     "when": "Когда и на сколько?",
     "travelers": "Кто едет?",
@@ -44,6 +48,7 @@ SLOT_TITLES: dict[Slot, str] = {
     "budget": "Какой бюджет?",
 }
 SLOT_NAMES: dict[Slot, str] = {
+    "origin": "город вылета",
     "vibe": "тип отдыха",
     "when": "когда",
     "travelers": "кто едет",
@@ -59,8 +64,9 @@ UPDATE_DESCRIPTION = (
     "with filters for search_destinations, and `named_place`: the catalogue id of the place the user named."
 )
 ASK_DESCRIPTION = (
-    "Show the user cards with the missing questions, all in one go. Only for slots listed in `missing`, "
-    "and only once per trip. Ends your turn: the user answers on the cards."
+    "Show the user the question cards, once per trip: every slot in `missing` is asked, prefilled with what "
+    "the user already said, so they confirm or fix it in one tap. Pass a question only to give it a hint tied "
+    "to the user's words. Ends your turn: the user answers on the cards."
 )
 SHOW_DESCRIPTION = (
     "Show destinations as cards: single places from search_destinations (pass `id`) and multi-city routes "
@@ -78,7 +84,8 @@ ROUTES_DESCRIPTION = (
 )
 
 
-INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan"}  # kept for the code, not the model
+# kept for the code, not the model
+INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan", "origin_over", "origin_guess"}
 
 
 @dataclass
@@ -105,7 +112,11 @@ class AskArgs(BaseModel):
     intro: str = Field(
         max_length=300, description="1-2 friendly sentences: what you understood, why you ask."
     )
-    questions: list[Question] = Field(min_length=1, max_length=4)
+    questions: list[Question] = Field(
+        default_factory=list,
+        max_length=6,
+        description="Only to word a card or give it a hint; all are asked.",
+    )
 
 
 class Pick(BaseModel):
@@ -128,6 +139,16 @@ class ShowArgs(BaseModel):
     picks: list[Pick] = Field(min_length=1, max_length=6)
 
 
+ORIGIN_FIELDS = ("origin", "origin_code", "origin_over", "origin_guess")
+
+
+def use_origin(code: str):
+    """Tickets and money of the rest of this turn come from this city; the chat service resets both after."""
+    current_origin.set(code)
+    current_currency.set(currency_for(code))
+    return city(code)
+
+
 def _update_preview(result: dict) -> str:
     understood = " · ".join(result["summary"]) or "пока ничего конкретного"
     gaps = [SLOT_NAMES[s] for s in result["missing"]]
@@ -145,9 +166,23 @@ def trip_tools(
     catalog = load_catalog()
     flights = flights or NoFlights()
 
-    async def update_trip_brief(args: UpdateArgs) -> dict:
+    async def update_trip_brief(args: UpdateArgs) -> dict | ToolReply:
         base = TripBrief() if args.new_trip else state.brief
-        state.brief = merge(base, BriefPatch.model_validate(args.model_dump(exclude={"new_trip"})))
+        if args.new_trip:  # a new trip keeps where the user flies from
+            base = base.model_copy(update={k: state.brief.__dict__[k] for k in ORIGIN_FIELDS})
+        before = current_origin.get()  # the city this turn has searched from so far
+        patch = BriefPatch.model_validate(args.model_dump(exclude={"new_trip"}))
+        if (
+            patch.origin
+            and not base.origin_code
+            and (found := find_city(patch.origin))
+            and found.code == before
+        ):
+            # the browser's city echoed back, not something the user said: the cards confirm it instead
+            patch = patch.model_copy(update={"origin": None})
+        if per_night_budget(patch):  # a hotel price per night is a wish, not what the whole trip may cost
+            patch = patch.model_copy(update={"budget_total": None, "budget_currency": None})
+        state.brief = merge(base, patch)
         brief = state.brief
         gaps = missing(brief)
         result = {
@@ -161,8 +196,19 @@ def trip_tools(
         }
         if gaps and brief.asked:
             result["assumptions"] = assumptions(brief)
+        elif gaps:
+            result["next"] = (
+                "Call ask_user now, before any search or build_trip: the user confirms on the cards."
+            )
         if brief.destination and (place := catalog.find(brief.destination)):
             result["named_place"] = place.id
+        if args.origin and find_city(args.origin) is None:
+            result["origin_unknown"] = f"No airport city {args.origin!r}: ask the user for a nearby one."
+        if brief.origin_code and brief.origin_code != before:
+            home = use_origin(brief.origin_code)
+            result["origin_changed"] = f"Tickets are now searched {home.from_text}."
+            # the picker in the browser follows, so the next message comes from the same city
+            return ToolReply(result=result, event={"type": "origin", "code": home.code, "name": home.name})
         return result
 
     async def ask_user(args: AskArgs) -> dict | ToolReply:
@@ -170,14 +216,20 @@ def trip_tools(
         if brief.asked:
             return {"error": "Already asked once. Do not ask again: go on with `assumptions` and say them."}
         gaps = missing(brief)
-        wanted = {q.slot: q for q in args.questions if q.slot in gaps}
-        if not wanted:
-            return {"error": f"Nothing to ask: missing is {gaps}. Search destinations right away."}
+        if not gaps:
+            return {"error": "Nothing to ask: missing is empty. Search destinations right away."}
+        # the code decides which cards: every slot in `missing`; the model only words them
+        worded = {q.slot: q for q in args.questions}
         questions = [
-            {"slot": slot, "title": wanted[slot].title or SLOT_TITLES[slot], "hint": wanted[slot].hint}
+            {
+                "slot": slot,
+                "title": (worded[slot].title if slot in worded else None) or SLOT_TITLES[slot],
+                "hint": worded[slot].hint if slot in worded else None,
+            }
             for slot in SLOTS
-            if slot in wanted
+            if slot in gaps
         ]
+        wanted = [q["slot"] for q in questions]
         state.brief = brief.model_copy(update={"asked": True})
         return ToolReply(
             result={"asked": list(wanted), "note": "The cards are on screen. Your turn is over."},
@@ -192,6 +244,8 @@ def trip_tools(
         )
 
     async def search_routes(query: RouteQuery) -> dict:
+        if refusal := cards_first(state.brief):
+            return refusal
         origin = city(current_origin.get())
         if query.nights is None:
             low, high = state.brief.nights_min, state.brief.nights_max
@@ -223,6 +277,8 @@ def trip_tools(
         return plan
 
     async def show_destinations(args: ShowArgs) -> dict | ToolReply:
+        if refusal := cards_first(state.brief):
+            return refusal
         async with sessionmaker() as db:
             loaded = await load_snapshots(db, catalog, now())
         picked = {p.id for pick in args.picks if pick.id and (p := catalog.find(pick.id))}

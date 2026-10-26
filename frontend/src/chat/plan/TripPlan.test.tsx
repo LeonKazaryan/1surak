@@ -53,6 +53,9 @@ describe('TripPlan', () => {
     expect(within(road).getByText(/09:40 → 13:40/)).toBeInTheDocument()
     expect(within(road).getAllByText(/Аэрофлот/)).toHaveLength(2)
     expect(within(road).getByText('Прилёт 13:40, заселение с 14:00')).toBeInTheDocument()
+    const buy = within(road).getAllByRole('link', { name: /Купить билет .* на Aviasales/ })
+    expect(buy.map((a) => a.getAttribute('href'))).toEqual(['https://www.aviasales.ru/t', 'https://www.aviasales.ru/t'])
+    buy.forEach((a) => expect(a).toHaveAttribute('target', '_blank'))
   })
 
   it('should explain the hotel pick, offer the alternative and say what it ruled out', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ClarifyEvent, ClarifyPrefill, ClarifySlot } from '@/types/api'
-import { buildSteps, knownFacts, partyOptions, progressAt, type StepState } from './plan'
+import { buildSteps, knownFacts, partyOptions, prefilledParty, progressAt, type StepState } from './plan'
 
 const EMPTY: ClarifyPrefill = { kinds: [], month: null, nights: null, adults: null, children: null, children_ages: [], budget_level: null, multi_city: null }
 const NOTHING_PICKED: StepState = { party: null, ages: [] }
@@ -12,8 +12,12 @@ function event(slots: ClarifySlot[], prefill: Partial<ClarifyPrefill> = {}): Cla
 const keys = (e: ClarifyEvent, state: StepState = NOTHING_PICKED) => buildSteps(e, state).map((s) => s.key)
 
 describe('buildSteps', () => {
-  it('should not ask again for the month the user already named', () => {
-    expect(keys(event(['when'], { month: 11 }))).toEqual(['nights'])
+  it('should ask where the trip starts first, when the city was only a guess', () => {
+    expect(keys(event(['origin', 'when']))).toEqual(['origin', 'month', 'nights'])
+  })
+
+  it('should show the month the user named too, so it is confirmed in one tap', () => {
+    expect(keys(event(['when'], { month: 11 }))).toEqual(['month', 'nights'])
     expect(keys(event(['when']))).toEqual(['month', 'nights'])
   })
 
@@ -30,10 +34,22 @@ describe('buildSteps', () => {
     expect(keys(e, { party: 'group', ages: [] })).toEqual(['party', 'adults', 'budget'])
   })
 
-  it('should only ask the ages when the party is known from the message', () => {
-    const steps = buildSteps(event(['travelers'], { adults: 2, children: 2, children_ages: [7] }), { party: null, ages: [7, null] })
+  it('should confirm the party from the message and ask only the ages it did not say', () => {
+    const e = event(['travelers'], { adults: 2, children: 2, children_ages: [7] })
+    const steps = buildSteps(e, { party: prefilledParty(e.prefill), ages: [7, null] })
 
-    expect(steps.map((s) => [s.key, s.title])).toEqual([['age-1', 'Сколько лет второму ребёнку?']])
+    expect(steps.map((s) => [s.key, s.title])).toEqual([
+      ['party', 'Кто едет?'],
+      ['age-1', 'Сколько лет второму ребёнку?'],
+    ])
+  })
+
+  it('should preselect the party the message described', () => {
+    expect(prefilledParty({ ...EMPTY, adults: 2, children: 0 })).toBe('couple')
+    expect(prefilledParty({ ...EMPTY, adults: 1 })).toBe('solo')
+    expect(prefilledParty({ ...EMPTY, adults: 2, children: 1 })).toBe('twoAdults')
+    expect(prefilledParty({ ...EMPTY, adults: 4 })).toBe('group')
+    expect(prefilledParty(EMPTY)).toBeNull()
   })
 
   it('should move the plane forward with every tap, never back', () => {

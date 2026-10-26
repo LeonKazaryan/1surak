@@ -12,19 +12,19 @@ export interface CardPlan {
   askCounts: boolean
 }
 
-export function planCards({ questions, prefill }: ClarifyEvent): CardPlan[] {
+export function planCards({ questions }: ClarifyEvent): CardPlan[] {
   return questions.map((q) => {
     const base = { slot: q.slot, hint: q.hint, askMonth: false, askNights: false, askCounts: false }
     switch (q.slot) {
+      case 'origin':
+        return { ...base, label: 'Откуда' }
       case 'vibe':
         return { ...base, label: 'Отдых' }
-      case 'when': {
-        const knowsMonth = prefill.month !== null
-        const knowsNights = prefill.nights !== null
-        return { ...base, label: 'Даты', askMonth: !knowsMonth || knowsNights, askNights: !knowsNights || knowsMonth }
-      }
+      // every card of the question is shown; what the message said comes preselected, to confirm in one tap
+      case 'when':
+        return { ...base, label: 'Даты', askMonth: true, askNights: true }
       case 'travelers':
-        return { ...base, label: 'Кто едет', askCounts: prefill.adults === null }
+        return { ...base, label: 'Кто едет', askCounts: true }
       case 'route':
         return { ...base, label: 'Маршрут' }
       case 'budget':
@@ -36,12 +36,21 @@ export function planCards({ questions, prefill }: ClarifyEvent): CardPlan[] {
 /** Who travels, picked with one tap; the ones with children know the kids from the message already. */
 export type Party = 'solo' | 'couple' | 'kids' | 'group' | 'oneAdult' | 'twoAdults'
 
+/** The party the message described, preselected on the card: «вдвоём» is a couple. */
+export function prefilledParty(prefill: ClarifyPrefill): Party | null {
+  const { adults, children } = prefill
+  if (children) return adults === 1 ? 'oneAdult' : adults ? 'twoAdults' : null
+  if (adults === 1) return 'solo'
+  if (adults === 2) return 'couple'
+  return adults && adults > 2 ? 'group' : null
+}
+
 export function partyOptions(prefill: ClarifyPrefill): Party[] {
   if (prefill.children) return ['oneAdult', 'twoAdults']
   return prefill.children === 0 ? ['solo', 'couple', 'group'] : ['solo', 'couple', 'kids', 'group']
 }
 
-export type StepKind = 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'route' | 'budget'
+export type StepKind = 'origin' | 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'route' | 'budget'
 
 /** One tap of the deck. A question can take a few: «С детьми» adds «Сколько детей?» and an age per child. */
 export interface Step {
@@ -76,6 +85,9 @@ export function buildSteps(event: ClarifyEvent, state: StepState): Step[] {
     const add = (step: Omit<Step, 'slot' | 'hint'>) =>
       steps.push({ ...step, slot: plan.slot, hint: steps.length === first ? plan.hint : null })
     switch (plan.slot) {
+      case 'origin':
+        add({ key: 'origin', kind: 'origin', title: 'Откуда летите?' })
+        break
       case 'vibe':
         add({ key: 'vibe', kind: 'vibe', title: 'Какой отдых хочется?' })
         break

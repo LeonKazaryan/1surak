@@ -108,7 +108,7 @@ def test_should_run_a_two_turn_case_and_record_tool_results(db_url):
     assert json.loads(transcript.calls[0].content)["from"] == "Москва"
     second_turn = llm.conversations[2]
     assert [m["role"] for m in second_turn[1:]] == ["user", "assistant", "user"]
-    assert second_turn[-1]["content"] == "а почему?\n\nГород вылета: Казань"
+    assert second_turn[-1]["content"].startswith("а почему?\n\nГород вылета: Казань (")
 
 
 def test_should_render_a_report_with_the_brief_metrics():

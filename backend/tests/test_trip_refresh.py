@@ -69,7 +69,7 @@ async def _scenario(
     engine = create_async_engine(db_url, poolclass=NullPool)
     await init_db(engine)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    state = TripState(merge(TripBrief(), BriefPatch(**fields)))
+    state = TripState(merge(TripBrief(asked=True), BriefPatch(**fields)))
     tools = ToolRegistry(trip_tools(state, maker, now=lambda: shown_at, flights=before))
     token = current_origin.set("NQZ")
     try:

@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.catalog.catalog import load_catalog
 from app.flights import Flights, city, current_origin, network
-from app.flights.dictionary import cities
-from app.flights.planner import MAX_OPEN_STOPS, Request, Stop, plan, resolve_stop
-from app.money import money
-from app.tools.registry import Tool
+from app.flights.dictionary import find_city
+from app.flights.planner import MAX_OPEN_STOPS, Request, Stop, plan, plan_card, resolve_stop
+from app.money import current_currency, money
+from app.tools.registry import Tool, ToolReply
 
 DESCRIPTION = (
     "Real Aviasales tickets for one route, from the user's departure city unless `origin` is given: the cheapest "
@@ -66,18 +66,11 @@ def plan_preview(result: dict) -> str:
         return result["error"]
     best = result["plans"][0]
     route = " → ".join([result["from"], *best["order"], *([result["from"]] if result["return_home"] else [])])
-    total = best["total_price_rub"]
-    return f"{route}: {'от ' + money(total) if total else 'цен нет'}"
+    return f"{route}: {'от ' + best['total'] if best['total'] else 'цен нет'}"
 
 
 def resolve(name: str | None):
-    if not name:
-        return None
-    found = city(name)
-    if found:
-        return found
-    needle = name.strip().casefold()
-    return next((c for c in cities().values() if c.name.casefold() == needle), None)
+    return find_city(name)
 
 
 def flight_tools(flights: Flights) -> list[Tool]:
@@ -103,7 +96,7 @@ def flight_tools(flights: Flights) -> list[Tool]:
 
     catalog = load_catalog()
 
-    async def plan_route(args: PlanArgs) -> dict:
+    async def plan_route(args: PlanArgs) -> dict | ToolReply:
         home_city = resolve(args.origin) if args.origin else city(current_origin.get())
         if home_city is None:
             return {"error": f"Unknown city: {args.origin!r}"}
@@ -125,13 +118,38 @@ def flight_tools(flights: Flights) -> list[Tool]:
         notes = ["Каждый перелёт — отдельный билет в одну сторону: пересадки между ними на свой риск."]
         if args.date_from:
             notes.append("exact_day: false — цена самая низкая за месяц вылета у Aviasales, не на эту дату.")
-        return {
+        elif plans and not plans[0].dates_chained:
+            notes.append(
+                "dates_chained: false — самые дешёвые даты не стыкуются, точные даты подберём при покупке."
+            )
+        views = []
+        for p in plans:
+            view = p.view()
+            # the model quotes prices as given: in the user's currency, not raw roubles
+            view["total"] = money(view.pop("total_price_rub")) if view["total_price_rub"] else None
+            if with_hubs := view.pop("total_with_connections_rub", None):
+                view["total_with_connections"] = money(with_hubs)
+            views.append(view)
+        result = {
             "from": home_city.name,
             "return_home": args.return_home,
             "order_was_chosen": not args.order_fixed and len(stops) > 1,
-            "plans": [p.view() for p in plans],
+            "plans": views,
             "notes": notes,
+            "next": "The route is on screen as a card with prices and buy links. Answer now in 2-4 sentences: "
+            "the best order, the total, the dates, cheaper_via if any; do not list every ticket. Do not call "
+            "build_trip or show_trip: this route is not one of the shown destinations.",
         }
+        if not plans:
+            return result
+        home = Stop.of_city(home_city)
+        event = {
+            "type": "flight_plan",
+            "from": home_city.name,
+            "plans": [plan_card(p, home, args.return_home, best=i == 0) for i, p in enumerate(plans)],
+            "currency": current_currency.get().view(),
+        }
+        return ToolReply(result=result, event=event)
 
     return [
         Tool(

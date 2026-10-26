@@ -65,6 +65,27 @@ def city(code: str | None) -> City | None:
     return cities().get(city_code(code))
 
 
+def _key(name: str) -> str:
+    return name.strip().casefold().replace("ё", "е")
+
+
+@cache
+def _by_name() -> dict[str, City]:
+    found: dict[str, City] = {}
+    for c in cities().values():
+        for name in (c.name, c.name_from):
+            if name:
+                found.setdefault(_key(name), c)
+    return found
+
+
+def find_city(name: str | None) -> City | None:
+    """A city by IATA code (city or airport) or by its Russian name: 'NQZ', 'svo', 'Астана', 'астаны'."""
+    if not name or not name.strip():
+        return None
+    return city(name) or _by_name().get(_key(name))
+
+
 def airline_name(code: str) -> str:
     return airlines().get(code, code)
 

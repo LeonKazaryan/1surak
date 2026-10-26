@@ -76,7 +76,14 @@ def test_should_price_every_leg_of_a_fixed_order():
     assert view["order"] == ["Стамбул", "Анталья"] and view["total_price_rub"] == 22_000
     assert [leg["to"] for leg in view["legs"]] == ["Стамбул", "Анталья", "Москва"]
     assert view["unpriced_legs"] == 0 and view["impossible_legs"] == []
-    assert len(flights.calls) == 3  # one call per departure city
+    # one call per departure city and month; later legs also look at next month in case the trip spills over
+    assert sorted((o, m) for o, m, _ in flights.calls) == [
+        ("AYT", 11),
+        ("AYT", 12),
+        ("IST", 11),
+        ("IST", 12),
+        ("MOW", 11),
+    ]
 
 
 def test_should_find_the_cheapest_order():
@@ -147,6 +154,11 @@ def test_should_cap_the_open_order_and_report_unknown_cities():
     result = asyncio.run(tool.handler(PlanArgs(stops=["Стамбул", "Нигдебург"])))
     assert result == {"error": "Unknown city: Нигдебург"}
 
-    ok = asyncio.run(tool.handler(PlanArgs(stops=["Стамбул"], month=11)))
+    reply = asyncio.run(tool.handler(PlanArgs(stops=["Стамбул"], month=11)))
+    ok = reply.result
     assert ok["from"] == "Москва" and ok["plans"][0]["order"] == ["Стамбул"]
     assert tool.preview(ok).startswith("Москва → Стамбул → Москва")
+    # the plan is also drawn as a card, and the agent's turn goes on
+    assert reply.event["type"] == "flight_plan" and not reply.ends_turn
+    [card] = reply.event["plans"]
+    assert card["name"] == "Москва → Стамбул → Москва" and card["best"] is True

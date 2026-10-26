@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { getDepartureCity, type DepartureCity } from '@/lib/departureCity'
 import type { BriefAnswers, ClarifyEvent, ClarifySlot, TripKind } from '@/types/api'
-import type { Party } from './plan'
+import { prefilledParty, type Party } from './plan'
 
 const PARTY_ADULTS: Record<Party, number> = { solo: 1, couple: 2, kids: 2, group: 3, oneAdult: 1, twoAdults: 2 }
 
@@ -9,18 +10,21 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
   const [kinds, setKinds] = useState<TripKind[]>(prefill.kinds)
   const [month, setMonth] = useState<number | null>(prefill.month)
   const [nights, setNights] = useState<[number, number] | null>(prefill.nights)
-  const [party, setParty] = useState<Party | null>(null)
+  const [party, setParty] = useState<Party | null>(() => prefilledParty(prefill))
   const [adults, setAdults] = useState(prefill.adults ?? 2)
   const [ages, setAges] = useState<(number | null)[]>(() =>
     Array.from({ length: prefill.children ?? 0 }, (_, i) => prefill.children_ages[i] ?? null),
   )
   const [level, setLevelState] = useState<number | null>(prefill.budget_level)
-  const [total, setTotalState] = useState<number | null>(null)
+  const [total, setTotalState] = useState<number | null>(prefill.budget_total ?? null)
   const [multiCity, setMultiCity] = useState<boolean | null>(prefill.multi_city)
+  // null until the user picks or confirms a city, on its card or on the «Вылет:» chip
+  const [origin, setOrigin] = useState<DepartureCity | null>(prefill.origin ?? null)
 
   const knowsParty = prefill.adults !== null || party !== null
   const knowsKids = party !== 'kids' || ages.length > 0
   const answered: Record<ClarifySlot, boolean> = {
+    origin: origin !== null,
     vibe: kinds.length > 0,
     when: month !== null && nights !== null,
     // a default of two adults is not an answer: only what was tapped or said counts
@@ -43,6 +47,7 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
       answers.children_ages = ages as number[]
     }
     if (asked.has('route') && multiCity !== null) answers.multi_city = multiCity
+    if (origin) answers.origin = origin.code
     if (asked.has('budget')) {
       if (total !== null) {
         answers.budget_total = total
@@ -68,6 +73,10 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
     total,
     multiCity,
     setMultiCity,
+    origin,
+    setOrigin,
+    /** The city the tickets fly from: the one picked here, or the current guess. */
+    home: origin ?? getDepartureCity(),
     choose: (picked: Party) => {
       setParty(picked)
       setAdults(PARTY_ADULTS[picked])

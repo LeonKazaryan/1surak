@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDepartureCity, saveDepartureCity } from './departureCity'
+import { departureCityKnown, getDepartureCity, onDepartureCityChange, saveDepartureCity } from './departureCity'
 
 beforeEach(() => {
   localStorage.clear()
@@ -29,5 +29,24 @@ describe('departureCity', () => {
     })
 
     expect(getDepartureCity().name).toBe('Москва')
+  })
+
+  it('should know when the city is only the Moscow fallback', () => {
+    expect(departureCityKnown()).toBe(false)
+
+    saveDepartureCity({ code: 'KZN', name: 'Казань' })
+
+    expect(departureCityKnown()).toBe(true)
+  })
+
+  it('should tell every picker when the city changes', () => {
+    const seen: string[] = []
+    const stop = onDepartureCityChange((city) => seen.push(city.code))
+
+    saveDepartureCity({ code: 'ALA', name: 'Алматы' })
+    stop()
+    saveDepartureCity({ code: 'KZN', name: 'Казань' })
+
+    expect(seen).toEqual(['ALA'])
   })
 })

@@ -14,7 +14,7 @@ from app.money import current_currency
 from app.plan.assemble import assemble
 from app.plan.trip import TripPlan
 from app.tools import Tool, ToolReply
-from app.trip.brief import chips
+from app.trip.brief import cards_first, chips
 from app.trip.tools import TripState
 
 MAX_STOPS = 3
@@ -77,6 +77,8 @@ def plan_tools(
     built: list[TripPlan] = []  # this turn's plan, for show_trip
 
     async def build_trip(args: BuildArgs) -> dict:
+        if refusal := cards_first(state.brief):
+            return refusal
         ids = [part.strip() for part in args.id.split("+") if part.strip()]
         places = [catalog.find(i) for i in ids]
         if not 0 < len(places) <= MAX_STOPS or None in places or len({p.id for p in places}) != len(places):

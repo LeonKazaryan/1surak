@@ -24,6 +24,7 @@ import { RouteDetails } from './components/RouteDetails'
 import { TripFreshness } from './components/TripFreshness'
 import { useChatSession } from './hooks/useChatSession'
 import { BookingCard } from './plan/BookingCard'
+import { FlightPlanCards } from './components/FlightPlanCard'
 import type { BookFn } from './plan/CheckoutSheet'
 import { TripPlan } from './plan/TripPlan'
 import { isFailed } from './trace'
@@ -110,6 +111,7 @@ function MessageBubble(props: MessageBubbleProps) {
         <TripPlan plan={widget} canAct={props.latestPlan && !busy} booking={props.booking} onAsk={props.onAsk} onBook={props.onBook} />
       )}
       {widget?.type === 'booking' && <BookingCard booking={widget} />}
+      {widget?.type === 'flight_plan' && <FlightPlanCards widget={widget} />}
     </div>
   )
 }
@@ -125,7 +127,9 @@ export default function ChatPage() {
   const lastMessageRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const busy = isLoading || chatLoading || refreshing
-  const hasCards = messages.some((m) => m.widget?.type === 'destinations' || m.widget?.type === 'trip_plan')
+  const hasCards = messages.some(
+    (m) => m.widget?.type === 'destinations' || m.widget?.type === 'trip_plan' || m.widget?.type === 'flight_plan',
+  )
   // a booking always buys the latest plan before it
   const { latestPlanId, bookings } = useMemo(() => {
     const booked = new Map<string, BookingEvent>()

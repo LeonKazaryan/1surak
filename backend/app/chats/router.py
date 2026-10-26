@@ -58,6 +58,7 @@ async def chat_stream(
         body.origin_code,
         flights,
         body.retry,
+        body.origin_known,
     )
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 

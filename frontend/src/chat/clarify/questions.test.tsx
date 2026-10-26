@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { BudgetStep, MonthStep } from './questions'
+import { BudgetStep, MonthStep, OriginStep } from './questions'
 
 const KZT = { code: 'KZT', sign: '₸', glyph: '₸', per_rub: 5.561828 }
 
@@ -22,6 +22,16 @@ describe('BudgetStep', () => {
     signs.forEach((sign) => expect(sign).toHaveClass('text-faintest'))
   })
 
+  it('should open on the sum the user already named, ready to confirm', async () => {
+    const onTotal = vi.fn()
+    render(<BudgetStep level={null} total={500000} onLevel={() => {}} onTotal={onTotal} currency={KZT} />)
+
+    expect(screen.getByRole('textbox', { name: 'Бюджет на всех, ₸' })).toHaveValue('500\u00a0000')
+    await userEvent.click(screen.getByRole('button', { name: 'Готово' }))
+
+    expect(onTotal).toHaveBeenCalledWith(500000)
+  })
+
   it('should take a custom total in the user currency', async () => {
     const onTotal = vi.fn()
     render(<BudgetStep level={null} onLevel={() => {}} onTotal={onTotal} currency={KZT} />)
@@ -40,5 +50,16 @@ describe('MonthStep', () => {
     const months = screen.getAllByRole('button')
     expect(months).toHaveLength(12)
     months.forEach((month) => expect(month).toHaveTextContent(/\d{4}$/))
+  })
+})
+
+describe('OriginStep', () => {
+  it('should keep the guessed city with one tap', async () => {
+    const onPick = vi.fn()
+    render(<OriginStep selected={null} guess={{ code: 'MOW', name: 'Москва' }} onPick={onPick} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
+
+    expect(onPick).toHaveBeenCalledWith({ code: 'MOW', name: 'Москва' })
   })
 })

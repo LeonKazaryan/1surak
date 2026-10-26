@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import type { BriefAnswers, ChatStreamEvent, Currency, TripKind } from '@/types/api'
+import { getDepartureCity } from '@/lib/departureCity'
 import type { ChatWidget } from './types'
 
 export const KIND_OPTIONS: { kind: TripKind; label: string }[] = [
@@ -120,11 +121,21 @@ export function describeAnswers(a: BriefAnswers, currency: Currency = RUB): stri
     if (option) parts.push(option.level ? `бюджет: ${option.label.toLowerCase()}` : 'бюджет не важен')
   }
   if (a.multi_city !== undefined) parts.push(a.multi_city ? 'несколько городов' : 'один город')
+  if (a.origin) {
+    const city = getDepartureCity()
+    parts.push(`вылет: ${city.code === a.origin ? city.name : a.origin}`)
+  }
   return parts.join(' · ')
 }
 
 export function isWidgetEvent(event: ChatStreamEvent | { type?: unknown }): event is ChatWidget {
-  return event.type === 'clarify' || event.type === 'destinations' || event.type === 'trip_plan' || event.type === 'booking'
+  return (
+    event.type === 'clarify' ||
+    event.type === 'destinations' ||
+    event.type === 'trip_plan' ||
+    event.type === 'booking' ||
+    event.type === 'flight_plan'
+  )
 }
 
 /** The cards of a saved assistant message, rebuilt from its persisted stream events. */

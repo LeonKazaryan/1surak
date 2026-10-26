@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { BookingEvent, ChatMeta, ClarifyEvent, DestinationsEvent, TripPlanEvent } from '@/types/api'
+import type { BookingEvent, ChatMeta, ClarifyEvent, DestinationsEvent, FlightPlanEvent, TripPlanEvent } from '@/types/api'
 
 /** One visible step of the agent's work: a tool call, a note, or an error. */
 export interface ChatTraceStep {
@@ -14,7 +14,7 @@ export interface ChatTraceStep {
 }
 
 /** What the agent shows under its message: questions, destinations, the trip plan, or a booking. */
-export type ChatWidget = ClarifyEvent | DestinationsEvent | TripPlanEvent | BookingEvent
+export type ChatWidget = ClarifyEvent | DestinationsEvent | TripPlanEvent | BookingEvent | FlightPlanEvent
 
 export interface WorkspaceChatMessage {
   id: string

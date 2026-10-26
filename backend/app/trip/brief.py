@@ -4,6 +4,7 @@ The model fills the brief from the user's words; the code alone decides what is 
 asks only what blocks the search, and only once. After that it goes on with stated assumptions.
 """
 
+import re
 from datetime import date, datetime
 from typing import Annotated, Literal
 
@@ -11,10 +12,12 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.catalog.catalog import KIND_LABELS, Catalog, Kind, load_catalog
 from app.catalog.search import MONTHS
+from app.flights import city, current_origin
+from app.flights.dictionary import find_city
 from app.money import CURRENCIES, CurrencyCode, current_currency
 
-Slot = Literal["vibe", "when", "travelers", "route", "budget"]
-SLOTS: tuple[Slot, ...] = ("vibe", "when", "travelers", "route", "budget")
+Slot = Literal["origin", "vibe", "when", "travelers", "route", "budget"]
+SLOTS: tuple[Slot, ...] = ("origin", "vibe", "when", "travelers", "route", "budget")
 MIN_ROUTE_NIGHTS = 5  # shorter trips stay in one place: moving eats the days
 
 # A region the user names, as the catalogue's countries, so «по Кавказу» filters the search right away.
@@ -42,6 +45,12 @@ class BriefPatch(BaseModel):
     destination: str | None = Field(
         None, max_length=80, description="Place or country the user named, nominative case: 'Турция'."
     )
+    origin: str | None = Field(
+        None,
+        max_length=80,
+        description="Departure city, only if the user named one ('из Алматы', 'летим из Казани'), "
+        "nominative case: 'Алматы'. Flights are then searched from it.",
+    )
     kinds: list[Kind] | None = Field(None, description="Kinds of trip the user asked for.")
     month: int | None = Field(None, ge=1, le=12, description="Travel month 1-12.")
     date_from: date | None = None
@@ -58,7 +67,8 @@ class BriefPatch(BaseModel):
         None,
         gt=0,
         le=10**10,
-        description="Budget for the whole trip and party, as the amount the user named.",
+        description="Budget for the whole trip and party, as the amount the user named. A price per night "
+        "('отель до 8000 за ночь') or per ticket is not the trip budget: put it in wishes in the user's words.",
     )
     budget_currency: CurrencyCode | None = Field(
         None,
@@ -84,10 +94,21 @@ class TripBrief(BriefPatch):
     priced_from: str | None = None  # IATA of the city the tickets on those cards fly from
     priced_at: datetime | None = None  # when those tickets were found
     plan: dict | None = None  # the last trip plan shown, in short, so the next one can say what changed
+    # IATA of the departure city the user named in the chat or picked on a card; it beats the IP guess
+    origin_code: str | None = None
+    origin_over: str | None = None  # the guess it replaced: the picker still says so until it syncs
+    origin_guess: bool = False  # set per turn: the city is the fallback, nobody picked or confirmed it
 
 
 def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:
     updates = patch.model_dump(exclude_none=True)
+    if "origin" in updates:
+        found = find_city(updates["origin"])
+        if found:  # an unknown name stays as text: the tool says it found no such city
+            if found.code != brief.origin_code:
+                updates["origin_over"] = current_origin.get()
+            updates["origin_code"] = found.code
+            updates["origin"] = found.name
     if "budget_total" in updates and "budget_currency" not in updates:
         updates["budget_currency"] = current_currency.get().code
     if "wishes" in updates:
@@ -123,8 +144,49 @@ def route_fits(b: TripBrief) -> bool:
     return not (b.destination and load_catalog().find(b.destination))
 
 
+# Shown on every new trip, prefilled with what the message said, so a misread is one tap to fix.
+CONFIRMED: tuple[Slot, ...] = ("origin", "when", "travelers", "budget")
+
+
 def missing(b: TripBrief) -> list[Slot]:
+    """What to ask. Before the one round of questions: every card, prefilled for a one-tap confirm
+    (the kind of trip only when no place was named). After it: only what still blocks the search."""
+    gaps = _gaps(b)
+    if b.asked:
+        return gaps
+    ask = {*CONFIRMED, *gaps}
+    if not b.destination:
+        ask.add("vibe")
+    return [s for s in SLOTS if s in ask]
+
+
+ASK_FIRST = (
+    "Ask first: call ask_user. On a new trip the user confirms the brief on the question cards before "
+    "anything is searched, built or shown."
+)
+
+
+def cards_first(b: TripBrief) -> dict | None:
+    """The refusal a tool gives while the cards of a new trip have not been shown yet."""
+    return {"error": ASK_FIRST} if not b.asked and missing(b) else None
+
+
+PER_NIGHT = re.compile(r"ноч|сутк|night", re.IGNORECASE)
+
+
+def per_night_budget(patch: "BriefPatch") -> bool:
+    """«отель до 8 000 ₽ за ночь» read as the trip budget: the same number sits in a per-night wish."""
+    if not patch.budget_total:
+        return False
+    digits = str(patch.budget_total)
+    return any(PER_NIGHT.search(w) and digits in re.sub(r"\D", "", w) for w in patch.wishes or [])
+
+
+def _gaps(b: TripBrief) -> list[Slot]:
     result: list[Slot] = []
+    # every ticket depends on it: asked only when the city is a fallback, never when it was detected
+    if b.origin_guess and not b.origin_code:
+        result.append("origin")
     if not b.destination and not b.kinds:
         result.append("vibe")
     if not (b.month or b.date_from) or night_range(b) == (None, None):
@@ -134,15 +196,17 @@ def missing(b: TripBrief) -> list[Slot]:
     if b.budget_level is None and b.budget_total is None:
         result.append("budget")
     # Rides along with other questions only: a request that says everything still gets zero questions.
-    if result and route_fits(b):
+    if any(s != "origin" for s in result) and route_fits(b):
         result.insert(len([s for s in result if SLOTS.index(s) < SLOTS.index("route")]), "route")
     return result
 
 
 def assumptions(b: TripBrief) -> list[str]:
     """What the agent goes on with after the one round of questions, said out loud to the user."""
-    gaps = set(missing(b))
+    gaps = set(_gaps(b))
     result = []
+    if "origin" in gaps and (home := city(current_origin.get())):
+        result.append(f"вылет {home.from_text}")
     if "vibe" in gaps:
         result.append("тип отдыха любой")
     if "when" in gaps:
@@ -172,6 +236,32 @@ def price_level(b: TripBrief) -> int | None:
     return None
 
 
+STOP_SEPARATORS = re.compile(
+    r"\s*(?:,|;|→|->|—|–|\s-\s|\sи\s|\sпотом\s|\sзатем\s|\sа потом\s)\s*", re.IGNORECASE
+)
+
+
+LEADING_WORDS = re.compile(r"^(?:а потом|потом|затем|и|а)\s+", re.IGNORECASE)
+
+
+def named_stops(destination: str | None, catalog: Catalog) -> list[str]:
+    """«Ташкент и Бишкек» > ['Ташкент', 'Бишкек']: two or more places, every one a known city or place."""
+    if not destination:
+        return []
+    parts = [LEADING_WORDS.sub("", part.strip(" .")) for part in STOP_SEPARATORS.split(destination)]
+    parts = [part for part in parts if part]
+    if len(parts) < 2:
+        return []
+    names = []
+    for part in parts:
+        place = next((p for p in catalog.places if p.name.casefold() == part.casefold()), None)
+        found = place.name if place else (c.name if (c := find_city(part)) else None)
+        if found is None:
+            return []
+        names.append(found)
+    return list(dict.fromkeys(names))
+
+
 def search_hint(b: TripBrief, catalog: Catalog) -> dict:
     """The filters that follow from the brief alone; the model adds its own reading (warm sea, short flight)."""
     hint: dict = {}
@@ -189,7 +279,9 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         region = next((names for key, names in REGION_COUNTRIES.items() if key in needle), None)
         if countries or region:
             hint["countries"] = countries or region
-    if b.multi_city:
+    if stops := named_stops(b.destination, catalog):
+        hint["plan_route"] = {"stops": stops}  # the user's own cities: priced as they are, not suggested
+    elif b.multi_city:
         hint["multi_city"] = True  # search_routes, not search_destinations
         _, nights = night_range(b)
         if nights:
@@ -245,8 +337,15 @@ def chips(b: TripBrief) -> list[str]:
         result.append(BUDGET_LABELS[b.budget_level])
     if b.multi_city:
         result.append("Несколько городов")
+    if b.origin_code and (home := city(b.origin_code)):
+        result.append(home.from_text[:1].upper() + home.from_text[1:])
     result.extend(b.wishes or [])
     return result
+
+
+def _in_user_currency(b: TripBrief) -> int:
+    rub = CURRENCIES[b.budget_currency or "RUB"].to_rub(b.budget_total)
+    return current_currency.get().from_rub(rub)
 
 
 def prefill(b: TripBrief) -> dict:
@@ -260,5 +359,8 @@ def prefill(b: TripBrief) -> dict:
         "children": b.children,
         "children_ages": list(b.children_ages or []),
         "budget_level": b.budget_level,
+        # the sum the user named, in their own currency: the cards show it ready to confirm
+        "budget_total": _in_user_currency(b) if b.budget_total else None,
         "multi_city": b.multi_city,
+        "origin": (home := city(current_origin.get())) and {"code": home.code, "name": home.name},
     }

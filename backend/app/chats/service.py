@@ -9,7 +9,7 @@ from app import agent
 from app.catalog.catalog import load_catalog
 from app.catalog.search import load_snapshots
 from app.chats import repository
-from app.flights import DEFAULT_ORIGIN, Flights, currency_for, current_origin
+from app.flights import DEFAULT_ORIGIN, Flights, city, currency_for, current_origin
 from app.llm import LLM
 from app.money import current_currency
 from app.plan.tools import plan_tools
@@ -101,6 +101,17 @@ async def refresh_prices(
     return saved
 
 
+def pick_origin(brief: TripBrief, requested: str | None, known: bool) -> tuple[TripBrief, str]:
+    """The city this turn flies from. A city named or picked in this chat wins over the browser's guess,
+    unless the user has since picked another one in the browser: then that one is the chat's city."""
+    stated = brief.origin_code
+    if stated and requested not in (None, stated, brief.origin_over):
+        brief = brief.model_copy(update={"origin_code": requested, "origin_over": None})
+        stated = requested
+    code = stated or requested or DEFAULT_ORIGIN
+    return brief.model_copy(update={"origin_guess": not stated and not known}), code
+
+
 def _final_answer(parts: list[str], failed: bool, finished: bool) -> str:
     if parts:
         return "".join(parts)
@@ -120,6 +131,7 @@ async def stream_reply(
     origin_code: str | None = None,
     flights: Flights | None = None,
     retry: bool = False,
+    origin_known: bool = True,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -131,10 +143,19 @@ async def stream_reply(
         await repository.add_message(db, chat_id, "user", query)
         await db.commit()
     # the tools search flights from this city and show money in its currency; reset when the turn ends
-    origin_token = current_origin.set(origin_code or DEFAULT_ORIGIN)
+    requested_code = origin_code
+    trip.brief, origin_code = pick_origin(trip.brief, origin_code, origin_known)
+    origin_token = current_origin.set(origin_code)
     currency_token = current_currency.set(currency_for(origin_code))
     if answers:
         trip.brief = merge(trip.brief, answers)
+        if trip.brief.origin_code and trip.brief.origin_code != origin_code:  # picked on the cards
+            origin_code = trip.brief.origin_code
+            current_origin.set(origin_code)
+            current_currency.set(currency_for(origin_code))
+    known_code = requested_code or trip.brief.origin_code
+    if known_code and (home := city(origin_code)) and origin and home.name != origin:
+        origin = home.name  # the agent is told the city its tickets really fly from
     tools = (tools or ToolRegistry()).extended(
         [*trip_tools(trip, sessionmaker, flights=flights), *plan_tools(trip, sessionmaker, flights=flights)]
     )

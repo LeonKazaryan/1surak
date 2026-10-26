@@ -24,16 +24,23 @@ def brief(**fields) -> TripBrief:
     return merge(TripBrief(), BriefPatch(**fields))
 
 
+def asked(b: TripBrief) -> TripBrief:
+    return b.model_copy(update={"asked": True})
+
+
 def test_should_miss_everything_for_a_vague_request():
-    assert missing(merge(TripBrief(), VAGUE)) == ["vibe", "when", "travelers", "route", "budget"]
+    assert missing(merge(TripBrief(), VAGUE)) == ["origin", "vibe", "when", "travelers", "route", "budget"]
 
 
-def test_should_miss_nothing_when_the_request_says_it_all():
-    assert missing(merge(TripBrief(), FULL)) == []
+def test_should_ask_every_card_on_a_new_trip_even_when_the_request_says_it_all():
+    # the user confirms what was understood in one tap: a misread budget or city is easy to fix
+    assert missing(merge(TripBrief(), FULL)) == ["origin", "when", "travelers", "budget"]
+    assert "vibe" in missing(brief(kinds=["sea"]))  # no place named: the kind of trip is asked too
+    assert missing(asked(merge(TripBrief(), FULL))) == []  # after the cards nothing is asked again
 
 
 def test_should_ask_for_the_party_when_a_child_has_no_age():
-    b = brief(kinds=["sea"], month=11, nights_min=7, adults=2, children=1, budget_level=1)
+    b = asked(brief(kinds=["sea"], month=11, nights_min=7, adults=2, children=1, budget_level=1))
 
     assert missing(b) == ["travelers"]
     assert missing(merge(b, BriefPatch(children_ages=[5]))) == []
@@ -43,7 +50,7 @@ def test_should_count_nights_from_dates_and_take_the_month_from_them():
     b = brief(date_from="2026-11-10", date_to="2026-11-17")
 
     assert b.month == 11
-    assert "when" not in missing(b)
+    assert "when" not in missing(asked(b))
     assert "7 ночей" in chips(b)[0]
 
 
@@ -158,19 +165,19 @@ def test_should_ask_only_missing_slots_once_and_end_the_turn(sessionmaker):
     registry = ToolRegistry(trip_tools(state, sessionmaker))
 
     update = call(registry, "update_trip_brief", {"kinds": ["sea"], "month": 11, "children": 1})
-    assert json.loads(update.content)["missing"] == ["when", "travelers", "budget"]
-    assert update.preview == "Понял: Море · Ноябрь · 1 ребёнок. Уточню: когда, кто едет, бюджет"
+    assert json.loads(update.content)["missing"] == ["origin", "vibe", "when", "travelers", "budget"]
+    assert update.preview == (
+        "Понял: Море · Ноябрь · 1 ребёнок. Уточню: город вылета, тип отдыха, когда, кто едет, бюджет"
+    )
 
-    questions = [
-        {"slot": "budget", "hint": "Вы написали «недорого»"},
-        {"slot": "vibe"},
-        {"slot": "travelers"},
-    ]
+    questions = [{"slot": "budget", "hint": "Вы написали «недорого»"}, {"slot": "travelers"}]
     asked = call(registry, "ask_user", {"intro": "Уточню пару моментов", "questions": questions})
 
     assert asked.ends_turn and asked.text == "Уточню пару моментов"
-    assert [q["slot"] for q in asked.event["questions"]] == ["travelers", "budget"]  # vibe is known
-    assert asked.event["questions"][1] == {
+    # every card is shown, even those the model left out; known answers come prefilled
+    assert [q["slot"] for q in asked.event["questions"]] == ["origin", "vibe", "when", "travelers", "budget"]
+    assert asked.event["prefill"]["kinds"] == ["sea"] and asked.event["prefill"]["month"] == 11
+    assert asked.event["questions"][4] == {
         "slot": "budget",
         "title": "Какой бюджет?",
         "hint": "Вы написали «недорого»",
@@ -183,13 +190,16 @@ def test_should_ask_only_missing_slots_once_and_end_the_turn(sessionmaker):
     assert json.loads(call(registry, "update_trip_brief", {}).content)["assumptions"]
 
 
-def test_should_refuse_to_ask_when_nothing_is_missing(sessionmaker):
+def test_should_prefill_every_card_from_a_request_that_says_it_all(sessionmaker):
     state = TripState(merge(TripBrief(), FULL))
     registry = ToolRegistry(trip_tools(state, sessionmaker))
 
-    result = call(registry, "ask_user", {"intro": "Вопрос", "questions": [{"slot": "budget"}]})
+    result = call(registry, "ask_user", {"intro": "Проверьте, всё ли верно", "questions": []})
 
-    assert result.event is None and "Nothing to ask" in json.loads(result.content)["error"]
+    assert [q["slot"] for q in result.event["questions"]] == ["origin", "when", "travelers", "budget"]
+    prefill = result.event["prefill"]
+    assert (prefill["month"], prefill["nights"], prefill["adults"], prefill["children"]) == (11, [7, 7], 2, 0)
+    assert prefill["budget_total"] == 250_000 and prefill["origin"]["code"] == "MOW"
 
 
 def test_should_start_over_for_a_new_trip(sessionmaker):
@@ -202,7 +212,7 @@ def test_should_start_over_for_a_new_trip(sessionmaker):
 
 
 def test_should_show_destination_cards_with_facts_for_the_month(sessionmaker):
-    state = TripState(brief(kinds=["sea"], month=11))
+    state = TripState(asked(brief(kinds=["sea"], month=11)))
     registry = ToolRegistry(
         trip_tools(state, sessionmaker, flights=FakeFlights({"HRG": route(330, price=12_775)}))
     )
@@ -227,7 +237,7 @@ def test_should_show_destination_cards_with_facts_for_the_month(sessionmaker):
 
 
 def test_should_report_unknown_destinations_to_the_model(sessionmaker):
-    registry = ToolRegistry(trip_tools(TripState(TripBrief()), sessionmaker))
+    registry = ToolRegistry(trip_tools(TripState(TripBrief(asked=True)), sessionmaker))
 
     result = call(registry, "show_destinations", {"intro": "Вот", "picks": [{"id": "atlantis", "why": "?"}]})
 
@@ -236,7 +246,9 @@ def test_should_report_unknown_destinations_to_the_model(sessionmaker):
 
 def test_should_find_routes_and_show_one_as_a_wide_card(sessionmaker):
     flights = FakeFlights({"EVN": route(240, price=30_000), "TBS": route(250), "MOW": route(200)})
-    state = TripState(brief(kinds=["city", "mountains"], month=10, nights_min=8, adults=2, multi_city=True))
+    state = TripState(
+        asked(brief(kinds=["city", "mountains"], month=10, nights_min=8, adults=2, multi_city=True))
+    )
     registry = ToolRegistry(trip_tools(state, sessionmaker, flights=flights))
 
     found = call(registry, "search_routes", {"month": 10, "kinds": ["city", "mountains"]})
@@ -258,7 +270,7 @@ def test_should_find_routes_and_show_one_as_a_wide_card(sessionmaker):
 
 
 def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):
-    registry = ToolRegistry(trip_tools(TripState(TripBrief()), sessionmaker))
+    registry = ToolRegistry(trip_tools(TripState(TripBrief(asked=True)), sessionmaker))
 
     result = call(registry, "show_destinations", {"intro": "?", "picks": [{"why": "?"}]})
 
@@ -266,7 +278,7 @@ def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):
 
 
 def test_should_name_the_catalogue_place_the_user_asked_for(sessionmaker):
-    registry = ToolRegistry(trip_tools(TripState(TripBrief()), sessionmaker))
+    registry = ToolRegistry(trip_tools(TripState(TripBrief(asked=True)), sessionmaker))
 
     named = json.loads(call(registry, "update_trip_brief", {"destination": "Анталья"}).content)
     country = json.loads(

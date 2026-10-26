@@ -89,7 +89,7 @@ def test_should_take_a_budget_without_a_currency_as_the_users_own(sessionmaker_t
 
 
 def test_should_draw_cards_and_questions_in_the_users_currency(sessionmaker_trip):
-    state = TripState(merge(TripBrief(), BriefPatch(kinds=["sea"], month=11)))
+    state = TripState(merge(TripBrief(asked=True), BriefPatch(kinds=["sea"], month=11)))
     flights = FakeFlights({"HRG": route(330, price=7_707)})
     registry = ToolRegistry(trip_tools(state, sessionmaker_trip, flights=flights))
     picks = {"intro": "Вот", "picks": [{"id": "hurghada", "why": "Тепло"}]}

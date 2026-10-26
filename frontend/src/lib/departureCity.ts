@@ -23,15 +23,33 @@ export function savedDepartureCity(): DepartureCity | null {
 }
 
 export function getDepartureCity(): DepartureCity {
-  return savedDepartureCity() ?? FALLBACK_CITY
+  return savedDepartureCity() ?? unsaved ?? FALLBACK_CITY
 }
+
+const CHANGED = '1surak:departure-city'
+let unsaved: DepartureCity | null = null // when storage is blocked, the choice still lasts until a reload
 
 export function saveDepartureCity(city: DepartureCity): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(city))
+    unsaved = null
   } catch {
     // Storage full or blocked (private mode): the choice lasts until the page reloads.
+    unsaved = city
   }
+  window.dispatchEvent(new CustomEvent<DepartureCity>(CHANGED, { detail: city }))
+}
+
+/** Every picker on the page follows a change made anywhere: another picker, or the agent. */
+export function onDepartureCityChange(listener: (city: DepartureCity) => void): () => void {
+  const handle = (e: Event) => listener((e as CustomEvent<DepartureCity>).detail)
+  window.addEventListener(CHANGED, handle)
+  return () => window.removeEventListener(CHANGED, handle)
+}
+
+/** False while the city is the Moscow fallback: nobody detected, picked or confirmed it. */
+export function departureCityKnown(): boolean {
+  return savedDepartureCity() !== null || unsaved !== null
 }
 
 // Aviasales (Travelpayouts) open endpoints: no key, CORS allowed, so the browser calls them directly
