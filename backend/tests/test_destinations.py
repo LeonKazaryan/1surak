@@ -261,3 +261,14 @@ def test_should_show_a_named_country_as_near_misses_when_the_budget_rules_it_out
     found = shortlist([frankfurt], SearchQuery(countries=["Германия"], max_price_level=1))
 
     assert found == [frankfurt]  # priced and shown with its reason, not dropped
+
+
+def test_should_look_at_a_named_countrys_main_cities_even_with_no_flight_from_home():
+    from app.destinations import candidates, country_cities
+
+    named = country_cities(["Эфиопия"], network())
+
+    assert named[0] == "ADD"  # Addis Ababa: the best connected airport first
+    assert "ADD" not in reachable(network(), "NQZ")  # no direct flight from Astana
+    assert candidates(named, network(), "NQZ")[0] == "ADD"
+    assert country_cities([f"страна {i}" for i in range(6)], network()) == []  # a region: live and map only

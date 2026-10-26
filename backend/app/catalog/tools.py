@@ -16,7 +16,7 @@ from app.catalog.search import (
     search,
     with_flights,
 )
-from app.destinations import candidates, in_countries, load_discovered, snapshots_by_id
+from app.destinations import candidates, country_cities, in_countries, load_discovered, snapshots_by_id
 from app.destinations.live import Directions, NoDirections
 from app.flights import Flights, NoFlights, city, current_origin
 from app.flights.network import network
@@ -101,7 +101,9 @@ def catalog_tools(
     async def search_destinations(query: SearchQuery) -> dict:
         origin = current_origin.get()
         live = await (directions or NoDirections()).destinations(origin)
-        reach = candidates(live, network(), origin)
+        # the countries the user named come first: their main cities, even with no flight from home
+        named = country_cities(query.countries, network())
+        reach = candidates([*named, *live], network(), origin)
         fetched = 0
         if climate:
             # the first cities of the asked region with no climate yet are fetched now, not on the next search

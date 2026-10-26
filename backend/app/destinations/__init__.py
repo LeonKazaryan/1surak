@@ -112,6 +112,37 @@ def candidates(live: list[str], network: Network, origin: str, limit: int = MAX_
     return [c for c in merged if c != home and c not in catalog_cities() and discovered_place(c)][:limit]
 
 
+NAMED_COUNTRIES = 5  # a search naming this few countries looks at their main cities, wherever they are
+CITIES_PER_COUNTRY = 3
+
+
+def country_cities(
+    names: list[str] | None, network: Network, per_country: int = CITIES_PER_COUNTRY
+) -> list[str]:
+    """The main cities of the countries the user named, whether or not anyone flies there from home:
+    «хочу в Эфиопию» from Astana is Addis Ababa with a change. The best connected airports come first."""
+    if not names or len(names) > NAMED_COUNTRIES:
+        return []
+    from app.flights.dictionary import cities
+
+    wanted = {n.casefold() for n in names}
+    by_country: dict[str, list[tuple[int, str]]] = {}
+    for c in cities().values():
+        if c.country.casefold() in wanted or (c.country_code and _catalog_name(c.country_code) in wanted):
+            by_country.setdefault(c.country_code or c.country, []).append(
+                (len(network.links_from(c.code)), c.code)
+            )
+    found = []
+    for ranked in by_country.values():
+        found += [code for links, code in sorted(ranked, reverse=True)[:per_country] if links]
+    return found
+
+
+def _catalog_name(code: str) -> str | None:
+    country = load_catalog().countries.get(code)
+    return country.name.casefold() if country else None
+
+
 def in_countries(codes: list[str], names: list[str] | None) -> list[str]:
     """The cities in the countries the search is limited to; all of them without a limit."""
     if not names:
