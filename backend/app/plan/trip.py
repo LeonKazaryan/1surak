@@ -8,6 +8,7 @@ from app.catalog.catalog import Place
 from app.catalog.search import Snapshot
 from app.flights.dictionary import airline_name
 from app.money import money
+from app.photos import place_photo
 from app.plan.checks import Check
 from app.plan.guide import Guide
 from app.plan.hotels import MEAL_LABELS, HotelChoice, HotelPick, Party
@@ -176,7 +177,7 @@ class StopPlan:
             "check_in": self.check_in.isoformat(),
             "check_out": self.check_out.isoformat(),
             "nights": self.nights,
-            "photo": guide.photo.view() if guide.photo else None,
+            "photo": place_photo(self.place.id),
             "source_url": guide.source_url,
             "hotel": choice_view(self.pick.best),
             "alternatives": [choice_view(a) for a in self.pick.alternatives],

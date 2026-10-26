@@ -101,7 +101,12 @@ interface PickProps<T> {
   onPick: (value: T) => void
 }
 
-export function VibeStep({ selected, onPick }: PickProps<TripKind>) {
+/** «Всего понемногу»: every kind but skiing, so the search mixes them and a route can cover several. */
+const MIX_KINDS: TripKind[] = ['sea', 'mountains', 'city', 'nature']
+
+export function VibeStep({ kinds, onPick }: { kinds: TripKind[]; onPick: (kinds: TripKind[]) => void }) {
+  const mix = kinds.length > 1
+  const selected = mix ? null : (kinds[0] ?? null)
   return (
     <Options className="grid grid-cols-2 gap-2.5 sm:grid-cols-6">
       {KIND_OPTIONS.map(({ kind, label }) => (
@@ -111,7 +116,7 @@ export function VibeStep({ selected, onPick }: PickProps<TripKind>) {
           variants={option}
           aria-pressed={selected === kind}
           aria-label={label}
-          onClick={() => onPick(kind)}
+          onClick={() => onPick([kind])}
           whileHover={{ y: -3 }}
           whileTap={{ scale: 0.97 }}
           className={cn(
@@ -129,6 +134,22 @@ export function VibeStep({ selected, onPick }: PickProps<TripKind>) {
           {selected === kind && <CheckBadge className="absolute top-2.5 right-2.5" />}
         </motion.button>
       ))}
+      <motion.button
+        type="button"
+        variants={option}
+        aria-pressed={mix}
+        aria-label="Всего понемногу"
+        onClick={() => onPick(MIX_KINDS)}
+        whileTap={{ scale: 0.98 }}
+        className={cn(
+          'relative col-span-2 flex h-14 items-center gap-3 rounded-2xl border px-4 text-left ring-offset-2 ring-offset-card transition-colors sm:col-span-6',
+          mix ? 'border-transparent bg-accent ring-[3px] ring-highlight' : 'border-border bg-white hover:border-highlight/30 hover:bg-accent/60',
+        )}
+      >
+        <span className="text-[15px] font-semibold text-foreground">Всего понемногу</span>
+        <span className="text-[12px] text-muted-foreground">море, горы и города в одной поездке</span>
+        {mix && <CheckBadge className="ml-auto" />}
+      </motion.button>
     </Options>
   )
 }
@@ -345,6 +366,25 @@ export function BudgetStep({ level, total = null, onLevel, onTotal, currency = R
 const PLANE = 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z'
 
 /** One base or a route of a few cities: the second tile is two scenes stitched by a dashed flight. */
+/** Whether a visa rules a place out: «только без визы», or every place with the visa ones marked. */
+export function VisaStep({ selected, onPick }: PickProps<boolean>) {
+  const id = useId()
+  const choices: [boolean, string, string][] = [
+    [true, 'Только без визы', 'или виза по прилёте'],
+    [false, 'Не важно', 'покажу всё, где нужна виза, отмечу'],
+  ]
+  return (
+    <Options className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      {choices.map(([value, label, sub]) => (
+        <Chip key={label} selected={selected === value} onPick={() => onPick(value)} pillId={`${id}-visa`} className="flex flex-col items-start px-4 py-3 text-left">
+          <span className="block font-semibold">{label}</span>
+          <span className="block text-[12px] font-normal opacity-70">{sub}</span>
+        </Chip>
+      ))}
+    </Options>
+  )
+}
+
 export function RouteStep({ selected, onPick }: PickProps<boolean>) {
   const tile = (on: boolean) =>
     cn('group relative h-40 overflow-hidden rounded-2xl text-left ring-offset-2 ring-offset-card', on && 'ring-[3px] ring-highlight')

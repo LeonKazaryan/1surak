@@ -53,7 +53,7 @@ def test_should_keep_asking_where_from_only_while_the_city_is_a_fallback():
         assert assumptions(guessed) == ["вылет из Москвы"]
         assert missing(TripBrief(**FULL, asked=True)) == []  # detected by IP
         assert missing(TripBrief(**FULL, origin_guess=True, origin_code="ALA", asked=True)) == []
-        assert missing(TripBrief(**FULL))[0] == "origin"  # a new trip always confirms the city
+        assert missing(TripBrief(**FULL)) == []  # a detected or picked city is not asked again
         assert prefill(TripBrief())["origin"] == {"code": "MOW", "name": "Москва"}
     finally:
         current_origin.reset(token)
@@ -221,3 +221,15 @@ def test_should_not_take_a_price_per_night_for_the_trip_budget():
     result, brief = asyncio.run(run())
     assert brief.budget_total is None and "до 8 000 ₽ за ночь" in brief.wishes
     assert "ask_user" in result["next"]  # a new trip: the cards come before any search
+
+
+def test_should_show_money_in_the_currency_the_user_picked_over_the_city_one():
+    from app.flights import currency_for
+    from app.money import chosen_currency
+
+    assert currency_for("NQZ").code == "KZT"  # Astana: tenge by the city
+    token = chosen_currency.set("RUB")
+    try:
+        assert currency_for("NQZ").code == "RUB"
+    finally:
+        chosen_currency.reset(token)

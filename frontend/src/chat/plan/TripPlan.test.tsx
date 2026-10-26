@@ -76,7 +76,10 @@ describe('TripPlan', () => {
 
     const stay = screen.getByRole('region', { name: 'Где живёте' })
     expect(within(stay).getByText('цена ориентировочная')).toBeInTheDocument()
-    expect(within(stay).getByText('Питание, отмену и оплату уточним при бронировании')).toBeInTheDocument()
+    // unknown terms are said once, by the badge, and no meal plan is promised
+    expect(within(stay).getByText('цена ориентировочная')).toHaveAttribute('title', expect.stringMatching(/условия уточним/))
+    const label = real.meal_label[0].toUpperCase() + real.meal_label.slice(1)
+    expect(within(stay).queryByText(label, { exact: true })).toBeNull()
     expect(within(stay).queryByText(/отзыв/)).toBeNull()
     expect(within(stay).getByRole('link', { name: 'Анна, CC BY 4.0' })).toBeInTheDocument()
     await userEvent.click(within(stay).getByRole('button', { name: 'Ещё отели' }))

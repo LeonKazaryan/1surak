@@ -77,6 +77,7 @@ function ItemRow({ item, last }: { item: PlanItem; last: boolean }) {
 }
 
 function Taste({ stop }: { stop: PlanStop }) {
+  const [open, setOpen] = useState(false)
   if (!stop.dishes.length && !stop.food_intro) return null
   return (
     <div className="flex flex-col gap-2 rounded-2xl bg-amber-50 p-4">
@@ -84,7 +85,15 @@ function Taste({ stop }: { stop: PlanStop }) {
         <FoodIcon className="h-4 w-4 text-amber-700" />
         Что попробовать
       </p>
-      {stop.food_intro && <p className="m-0 text-[13px] leading-snug text-muted-foreground">{stop.food_intro}</p>}
+      {stop.food_intro && (
+        <p
+          onClick={() => setOpen(true)}
+          className={cn('m-0 text-[13px] leading-snug text-muted-foreground', !open && 'line-clamp-2 cursor-pointer')}
+          title={open ? undefined : 'Показать целиком'}
+        >
+          {stop.food_intro}
+        </p>
+      )}
       {stop.dishes.length > 0 && (
         <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
           {stop.dishes.map((dish) => (

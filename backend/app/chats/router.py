@@ -65,6 +65,7 @@ async def chat_stream(
         body.retry,
         body.origin_known,
         hotels,
+        body.currency,
     )
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
 

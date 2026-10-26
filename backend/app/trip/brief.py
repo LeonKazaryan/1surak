@@ -17,8 +17,8 @@ from app.flights import city, current_origin
 from app.flights.dictionary import find_city
 from app.money import CURRENCIES, CurrencyCode, current_currency
 
-Slot = Literal["origin", "vibe", "when", "travelers", "route", "budget"]
-SLOTS: tuple[Slot, ...] = ("origin", "vibe", "when", "travelers", "route", "budget")
+Slot = Literal["origin", "vibe", "when", "travelers", "route", "budget", "visa"]
+SLOTS: tuple[Slot, ...] = ("origin", "vibe", "when", "travelers", "route", "budget", "visa")
 MIN_ROUTE_NIGHTS = 5  # shorter trips stay in one place: moving eats the days
 
 BUDGET_LABELS = {0: "Бюджет не важен", 1: "Экономно", 2: "Средний бюджет", 3: "Комфорт"}
@@ -72,6 +72,11 @@ class BriefPatch(BaseModel):
         description="True when the user wants to go by train or bus, not by plane: 'на поезде', "
         "'без самолётов', 'боюсь летать'.",
     )
+    visa_free_only: bool | None = Field(
+        None,
+        description="True when the user wants no visa hassle ('без визы', 'чтобы без визы'); False when the visa "
+        "does not matter to them.",
+    )
     wishes: list[Annotated[str, StringConstraints(max_length=80)]] | None = Field(
         None,
         max_length=MAX_WISHES,
@@ -91,6 +96,7 @@ class TripBrief(BriefPatch):
     origin_code: str | None = None
     origin_over: str | None = None  # the guess it replaced: the picker still says so until it syncs
     origin_guess: bool = False  # set per turn: the city is the fallback, nobody picked or confirmed it
+    currency: str | None = None  # picked by the user on the start screen; None follows the departure city
 
 
 def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:
@@ -134,23 +140,15 @@ def route_fits(b: TripBrief) -> bool:
         return False
     if b.kinds and set(b.kinds) <= {"ski"}:
         return False
+    if b.destination and country_names(b.destination.strip().casefold()):
+        return False  # a country: its cards show single cities and routes side by side, nothing to ask
     return not (b.destination and load_catalog().find(b.destination))
 
 
-# Shown on every new trip, prefilled with what the message said, so a misread is one tap to fix.
-CONFIRMED: tuple[Slot, ...] = ("origin", "when", "travelers", "budget")
-
-
 def missing(b: TripBrief) -> list[Slot]:
-    """What to ask. Before the one round of questions: every card, prefilled for a one-tap confirm
-    (the kind of trip only when no place was named). After it: only what still blocks the search."""
-    gaps = _gaps(b)
-    if b.asked:
-        return gaps
-    ask = {*CONFIRMED, *gaps}
-    if not b.destination:
-        ask.add("vibe")
-    return [s for s in SLOTS if s in ask]
+    """What to ask: only what the user has not said yet. What the message already says is never asked again,
+    so a request that says everything gets no questions at all."""
+    return _gaps(b)
 
 
 ASK_FIRST = (
@@ -191,6 +189,9 @@ def _gaps(b: TripBrief) -> list[Slot]:
     # Rides along with other questions only: a request that says everything still gets zero questions.
     if any(s != "origin" for s in result) and route_fits(b):
         result.insert(len([s for s in result if SLOTS.index(s) < SLOTS.index("route")]), "route")
+    # rides along too, and only for an open search: a place the user named is wanted whatever its visa
+    if any(s != "origin" for s in result) and not b.destination and b.visa_free_only is None:
+        result.append("visa")
     return result
 
 
@@ -216,6 +217,8 @@ def assumptions(b: TripBrief) -> list[str]:
         result.append("бюджет не ограничен")
     if "route" in gaps:
         result.append("один город, без переездов")
+    if "visa" in gaps:
+        result.append("визы не учитываю: места с визой будут с пометкой")
     return result
 
 
@@ -274,6 +277,14 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         region = None if countries else countries_in(needle)
         if countries or region:
             hint["countries"] = countries or region
+        if countries and b.multi_city is None and _route_length(b):
+            hint["also_routes"] = True  # «хочу в Турцию»: one city or a few of them, both on the cards
+    if b.kinds and len(b.kinds) >= VARIETY_KINDS and b.multi_city is None and _route_length(b):
+        hint["also_routes"] = True  # «всего понемногу»: a route covers several kinds, a single place rarely
+    if b.visa_free_only:
+        hint["visa"] = (
+            "easy"  # no visa or one on arrival; otherwise every place shows, the card says «нужна виза»
+        )
     if b.by_land:
         hint["by_land"] = True  # search_routes: trains and buses on every hop where they run
     if stops := named_stops(b.destination, catalog):
@@ -289,6 +300,15 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         if nights:
             hint["nights"] = nights
     return hint
+
+
+VARIETY_KINDS = 3  # this many kinds of trip at once is «всего понемногу»
+
+
+def _route_length(b: TripBrief) -> bool:
+    """Long enough for a few cities and not with children: moving tires them."""
+    _, high = night_range(b)
+    return not b.children and (high is None or high >= MIN_ROUTE_NIGHTS)
 
 
 def plural(n: int, forms: tuple[str, str, str]) -> str:
@@ -339,6 +359,8 @@ def chips(b: TripBrief) -> list[str]:
         result.append(BUDGET_LABELS[b.budget_level])
     if b.multi_city:
         result.append("Несколько городов")
+    if b.visa_free_only:
+        result.append("Без визы")
     if b.origin_code and (home := city(b.origin_code)):
         result.append(home.from_text[:1].upper() + home.from_text[1:])
     result.extend(b.wishes or [])
@@ -361,6 +383,7 @@ def prefill(b: TripBrief) -> dict:
         "children": b.children,
         "children_ages": list(b.children_ages or []),
         "budget_level": b.budget_level,
+        "visa_free_only": b.visa_free_only,
         # the sum the user named, in their own currency: the cards show it ready to confirm
         "budget_total": _in_user_currency(b) if b.budget_total else None,
         "multi_city": b.multi_city,

@@ -9,10 +9,12 @@ export interface ChatRequest {
   retry?: boolean
   /** False when the city could not be detected and is the Moscow fallback: the agent asks for it. */
   origin_known?: boolean
+  /** The currency picked on the start screen; omitted to follow the departure city. */
+  currency?: string
 }
 
 export type TripKind = 'sea' | 'mountains' | 'city' | 'nature' | 'ski'
-export type ClarifySlot = 'origin' | 'vibe' | 'when' | 'travelers' | 'route' | 'budget'
+export type ClarifySlot = 'origin' | 'vibe' | 'when' | 'travelers' | 'route' | 'budget' | 'visa'
 
 /** What the user picked on the question cards; the server merges it into the trip brief. */
 export interface BriefAnswers {
@@ -28,6 +30,8 @@ export interface BriefAnswers {
   budget_total?: number
   budget_currency?: string
   multi_city?: boolean
+  /** True: only places without a visa; false: every place, the ones needing a visa marked. */
+  visa_free_only?: boolean
   /** IATA code of the departure city, when the user picked or confirmed it on the cards. */
   origin?: string
 }
@@ -56,6 +60,7 @@ export interface ClarifyPrefill {
   children_ages: number[]
   budget_level: number | null
   multi_city: boolean | null
+  visa_free_only?: boolean | null
   /** The city the tickets fly from right now. */
   origin?: { code: string; name: string } | null
   /** The sum the user named, in their own currency. */
@@ -113,10 +118,11 @@ export interface DestinationCard {
   train_hours?: number | null
   visa: string
   visa_easy: boolean
-  price_level: number
-  price: string
-  kids: string
-  kids_fit: 'good' | 'ok' | 'poor'
+  /** The team's estimates; null for a city from the route map, which nobody has checked. */
+  price_level: number | null
+  price: string | null
+  kids: string | null
+  kids_fit: 'good' | 'ok' | 'poor' | null
   climate: DestinationClimate | null
   flight?: RouteFlight | null
   highlights: string[]
@@ -226,7 +232,7 @@ export interface RouteCard {
   dates_chained: boolean
   match: number
   interests: RouteInterest[]
-  kids: string
+  kids: string | null
   why: string
   tradeoff?: string | null
   price_change?: PriceChange
@@ -317,6 +323,8 @@ export interface OriginEvent {
 export interface DestinationsEvent {
   type: 'destinations'
   summary: string[]
+  /** Children travel: only then the cards say how a place suits them. */
+  with_kids?: boolean
   cards: DestinationsCard[]
   currency?: Currency
 }

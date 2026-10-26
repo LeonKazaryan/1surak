@@ -66,7 +66,8 @@ export function billLines(plan: TripPlanEvent): BillLine[] {
   for (const stop of plan.stops) {
     lines.push({
       label: `Отель «${stop.hotel.name}»`,
-      note: `${nightsText(stop.hotel.nights)}, ${stop.hotel.meal_label}`,
+      // an estimated meal plan is not promised on the bill either
+      note: stop.hotel.terms_known === false ? nightsText(stop.hotel.nights) : `${nightsText(stop.hotel.nights)}, ${stop.hotel.meal_label}`,
       rub: stop.hotel.total_rub,
     })
   }

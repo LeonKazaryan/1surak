@@ -5,6 +5,7 @@ import { getMyChats } from '@/chat/chatStorage'
 import type { ChatMeta } from '@/types/api'
 import { CardNav } from '@/components/CardNav'
 import { DepartureCityPicker } from '@/components/DepartureCityPicker'
+import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { Footer } from '@/components/Footer'
 import { HeroBackground } from '@/components/HeroBackground'
 import { ScrollRow } from '@/components/ScrollRow'
@@ -40,7 +41,14 @@ export default function LandingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <CardNav action={<DepartureCityPicker />}>
+      <CardNav
+        action={
+          <span className="flex items-center gap-1.5">
+            <DepartureCityPicker />
+            <CurrencyPicker />
+          </span>
+        }
+      >
         <TripsMenu hasTrips={tripIds.length > 0} trips={trips} />
       </CardNav>
 

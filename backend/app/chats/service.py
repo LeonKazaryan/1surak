@@ -12,7 +12,7 @@ from app.destinations import snapshots_by_id
 from app.flights import DEFAULT_ORIGIN, Flights, city, currency_for, current_origin
 from app.hotels import HotelSource
 from app.llm import LLM
-from app.money import current_currency
+from app.money import chosen_currency, current_currency
 from app.plan.tools import plan_tools
 from app.tools import ToolRegistry
 from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
@@ -80,7 +80,9 @@ async def refresh_prices(
         shown = [c.get("id", "") for c in found[1].get("cards", [])]
         snapshots = await snapshots_by_id(db, load_catalog(), moment, shown)
     _, event = found
+    chosen = chosen_currency.set(brief.currency)
     currency = currency_for(brief.priced_from)
+    chosen_currency.reset(chosen)
     token = current_currency.set(currency)
     try:
         cards = await reprice(event["cards"], brief, snapshots, flights)
@@ -135,6 +137,7 @@ async def stream_reply(
     retry: bool = False,
     origin_known: bool = True,
     hotels: HotelSource | None = None,
+    currency: str | None = None,
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -147,6 +150,9 @@ async def stream_reply(
         await db.commit()
     # the tools search flights from this city and show money in its currency; reset when the turn ends
     requested_code = origin_code
+    if currency:
+        trip.brief = trip.brief.model_copy(update={"currency": currency})
+    chosen_token = chosen_currency.set(trip.brief.currency)
     trip.brief, origin_code = pick_origin(trip.brief, origin_code, origin_known)
     origin_token = current_origin.set(origin_code)
     currency_token = current_currency.set(currency_for(origin_code))
@@ -188,6 +194,7 @@ async def stream_reply(
     finally:
         current_origin.reset(origin_token)
         current_currency.reset(currency_token)
+        chosen_currency.reset(chosen_token)
         answer = _final_answer(answer_parts, failed, finished)
         # Starlette cancels the stream when the client disconnects; the shield lets the reply still be saved.
         with anyio.CancelScope(shield=True):

@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
-from app.destinations import snapshots_by_id
+from app.destinations import country_cities, load_discovered, snapshots_by_id
 from app.destinations.gateway import fill_missing
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
 from app.flights.dictionary import find_city
 from app.flights.network import network
 from app.money import current_currency
+from app.photos import ensure_photos
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
     SLOTS,
@@ -50,6 +51,7 @@ SLOT_TITLES: dict[Slot, str] = {
     "travelers": "Кто едет?",
     "route": "Один город или несколько?",
     "budget": "Какой бюджет?",
+    "visa": "Учитывать визы?",
 }
 SLOT_NAMES: dict[Slot, str] = {
     "origin": "город вылета",
@@ -58,6 +60,7 @@ SLOT_NAMES: dict[Slot, str] = {
     "travelers": "кто едет",
     "route": "маршрут",
     "budget": "бюджет",
+    "visa": "визы",
 }
 
 UPDATE_DESCRIPTION = (
@@ -79,7 +82,8 @@ SHOW_DESCRIPTION = (
     "their words and `tradeoff` names what they give up. Ends your turn."
 )
 ROUTES_DESCRIPTION = (
-    "Multi-city routes of 2 to 7 places from our catalogue for when the user wants several cities in one trip "
+    "Multi-city routes of 2 to 7 places (our catalogue, plus the main airports of the countries you pass in "
+    "`countries`) for when the user wants several cities in one trip "
     "(multi_city in the brief, or words like 'по Европе', 'Ереван и Тбилиси', 'большой тур'). The code chains "
     "places that are close to each other and fit the filters, orders them without zigzags, scores how well "
     "each route covers the user's interests (`kinds`), splits the nights and prices every leg with real "
@@ -95,8 +99,10 @@ ROUTES_DESCRIPTION = (
 )
 
 
+ROUTE_CITIES_PER_COUNTRY = 8  # a country's best connected airports a route may pass through
+
 # kept for the code, not the model
-INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan", "origin_over", "origin_guess"}
+INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan", "origin_over", "origin_guess", "currency"}
 
 
 @dataclass
@@ -269,6 +275,11 @@ def trip_tools(
             query = query.model_copy(update={"by_land": True})
         async with sessionmaker() as db:
             snapshots = await load_snapshots(db, catalog, now())
+            if query.countries and not query.places:
+                # the named country's own airports join the catalogue's places: «по Турции» can reach
+                # Cappadocia (Nevşehir, Kayseri) even though the team never curated it
+                named = country_cities(query.countries, network(), per_country=ROUTE_CITIES_PER_COUNTRY)
+                snapshots += await load_discovered(db, named, now(), need_climate=False)
         if query.places:
             places = [catalog.find(name) for name in query.places]
             if unknown := [n for n, p in zip(query.places, places, strict=True) if p is None]:
@@ -313,6 +324,11 @@ def trip_tools(
         # the same answers the search gave where the cache has no ticket: cached, so no new requests
         await fill_missing(chosen, current_origin.get(), flights, network(), state.brief.month)
         snapshots = {s.place.id: s for s in loaded}
+        on_cards = [
+            p for pick in args.picks for i in (pick.route or [pick.id]) if i and (p := catalog.find(i))
+        ]
+        async with sessionmaker() as db:
+            await ensure_photos(db, on_cards)
         cards, unknown = [], []
         for pick in args.picks:
             if pick.route:
@@ -338,6 +354,7 @@ def trip_tools(
             event={
                 "type": "destinations",
                 "summary": chips(state.brief),
+                "with_kids": bool(state.brief.children),
                 "cards": cards,
                 "currency": current_currency.get().view(),
             },

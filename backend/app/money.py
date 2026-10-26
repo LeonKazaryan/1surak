@@ -59,6 +59,8 @@ BY_COUNTRY = {
 
 # The currency of the request being answered, set next to current_origin by the chat service.
 current_currency: ContextVar[Currency] = ContextVar("current_currency", default=RUB)
+# The currency the user picked on the start screen: it beats the one of the departure city.
+chosen_currency: ContextVar[str | None] = ContextVar("chosen_currency", default=None)
 
 
 def currency_of(country: str | None) -> Currency:

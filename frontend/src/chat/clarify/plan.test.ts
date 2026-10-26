@@ -16,8 +16,9 @@ describe('buildSteps', () => {
     expect(keys(event(['origin', 'when']))).toEqual(['origin', 'month', 'nights'])
   })
 
-  it('should show the month the user named too, so it is confirmed in one tap', () => {
-    expect(keys(event(['when'], { month: 11 }))).toEqual(['month', 'nights'])
+  it('should not ask again what the message said: a named month asks only the nights', () => {
+    expect(keys(event(['when'], { month: 11 }))).toEqual(['nights'])
+    expect(keys(event(['when'], { nights: [7, 7] }))).toEqual(['month'])
     expect(keys(event(['when']))).toEqual(['month', 'nights'])
   })
 
@@ -34,14 +35,11 @@ describe('buildSteps', () => {
     expect(keys(e, { party: 'group', ages: [] })).toEqual(['party', 'adults', 'budget'])
   })
 
-  it('should confirm the party from the message and ask only the ages it did not say', () => {
+  it('should ask only the ages the message did not say, not the party it described', () => {
     const e = event(['travelers'], { adults: 2, children: 2, children_ages: [7] })
     const steps = buildSteps(e, { party: prefilledParty(e.prefill), ages: [7, null] })
 
-    expect(steps.map((s) => [s.key, s.title])).toEqual([
-      ['party', 'Кто едет?'],
-      ['age-1', 'Сколько лет второму ребёнку?'],
-    ])
+    expect(steps.map((s) => [s.key, s.title])).toEqual([['age-1', 'Сколько лет второму ребёнку?']])
   })
 
   it('should preselect the party the message described', () => {

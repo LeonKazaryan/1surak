@@ -114,6 +114,16 @@ hotel_offers = Table(
 )
 
 
+# A photo per place found live on Wikidata and Commons (app/photos.py); photo NULL is a miss, retried later.
+place_photos = Table(
+    "place_photos",
+    metadata,
+    Column("place_id", Text, primary_key=True),
+    Column("photo", JSON),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+)
+
+
 # The knowledge base the agent keeps growing with web search (docs/09-living-knowledge-base.md).
 # The integer id is what the agent cites («kb:42»).
 kb_entries = Table(

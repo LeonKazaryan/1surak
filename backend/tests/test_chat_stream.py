@@ -205,20 +205,24 @@ def test_should_merge_card_answers_into_the_brief_and_not_ask_again(settings):
         trace = test_client.get(f"/api/chats/{chat_id}/messages").json()["messages"][1]["trace"]
 
     clarify = next(e for e in first if e["type"] == "clarify")
-    # every card of a new trip, whatever the model listed
+    # every missing card, whatever the model listed; the detected city is not asked
     assert [q["slot"] for q in clarify["questions"]] == [
-        "origin",
         "vibe",
         "when",
         "travelers",
         "route",
         "budget",
+        "visa",
     ]
     assert first[-1]["answer"] == "Уточню"
     assert any(e["type"] == "clarify" for e in trace)  # the cards come back when the chat is reopened
     brief = json.loads(llm.conversations[2][-1]["content"])
-    assert brief["missing"] == ["route", "budget"] and brief["already_asked"] is True
-    assert brief["assumptions"] == ["бюджет не ограничен", "один город, без переездов"]
+    assert brief["missing"] == ["route", "budget", "visa"] and brief["already_asked"] is True
+    assert brief["assumptions"] == [
+        "бюджет не ограничен",
+        "один город, без переездов",
+        "визы не учитываю: места с визой будут с пометкой",
+    ]
     assert second[-1]["answer"] == "Ищу"
 
 

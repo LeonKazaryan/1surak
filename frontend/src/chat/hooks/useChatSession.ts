@@ -7,6 +7,7 @@ import { createTextPump } from '@/chat/textPump'
 import { applyTraceEvent, isFailed, rehydrateTrace } from '@/chat/trace'
 import { isWidgetEvent, widgetFromTrace } from '@/chat/widgets'
 import { departureCityKnown, getDepartureCity, saveDepartureCity } from '@/lib/departureCity'
+import { getCurrencyChoice } from '@/lib/currency'
 import type { ChatLayoutContext, ChatTraceStep, WorkspaceChatMessage } from '@/chat/types'
 
 const MAX_RECENT_CHATS = 50
@@ -163,6 +164,7 @@ export function useChatSession(urlChatId: string | undefined) {
           origin: getDepartureCity().name,
           origin_code: getDepartureCity().code,
           origin_known: departureCityKnown(),
+          currency: getCurrencyChoice() ?? undefined,
           answers,
           retry,
         },

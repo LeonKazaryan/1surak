@@ -29,10 +29,12 @@ function Rating({ hotel }: { hotel: PlanHotel }) {
 }
 
 function Pros({ hotel }: { hotel: PlanHotel }) {
-  if (!hotel.reasons.length && !hotel.misses.length) return null
+  // «в центре» already stands under the name as the area: said once
+  const reasons = hotel.reasons.filter((text) => text !== hotel.area)
+  if (!reasons.length && !hotel.misses.length) return null
   return (
     <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="Почему этот отель">
-      {hotel.reasons.map((text) => (
+      {reasons.map((text) => (
         <li key={text} className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-[12px] font-medium text-foreground">
           <CheckIcon aria-hidden className="h-3.5 w-3.5 text-[#4c9a2a]" />
           {text}
@@ -79,11 +81,9 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
   const currency = useContext(CurrencyContext)
   const where = [hotel.area, hotel.beach_m !== null && `до пляжа ${hotel.beach_m} м`].filter(Boolean).join(' · ')
   const unknownTerms = hotel.terms_known === false
+  // check-in times live in «Дорога» next to the flights, unknown terms in the badge's title: said once
   const facts = [
-    ...(unknownTerms
-      ? ['питание, отмену и оплату уточним при бронировании']
-      : [hotel.meal_label, cancelText(hotel), hotel.pay_at_hotel ? 'оплата в отеле' : 'оплата при бронировании']),
-    `заселение ${hotel.real ? 'обычно ' : ''}с ${hotel.check_in}, выезд до ${hotel.check_out}`,
+    ...(unknownTerms ? [] : [hotel.meal_label, cancelText(hotel), hotel.pay_at_hotel ? 'оплата в отеле' : 'оплата при бронировании']),
     hotel.rooms > 1 && `${hotel.rooms} ${plural(hotel.rooms, ['номер', 'номера', 'номеров'])}`,
     transferText,
   ].filter((fact): fact is string => Boolean(fact))
@@ -108,6 +108,7 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
         <Rating hotel={hotel} />
       </div>
       <Pros hotel={hotel} />
+      {facts.length > 0 && (
       <ul className="m-0 grid list-none grid-cols-1 gap-x-4 gap-y-1 p-0 text-[13px] text-foreground sm:grid-cols-2">
         {facts.map((fact) => (
           <li key={fact} className="flex items-start gap-2 leading-snug">
@@ -116,6 +117,7 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
           </li>
         ))}
       </ul>
+      )}
       <div className="flex items-baseline justify-between gap-3 border-t border-border pt-3">
         <span className="text-[12px] text-muted-foreground">
           {nightsText(hotel.nights)} · {hotel.price_estimate && hotel.real ? 'около ' : ''}

@@ -73,12 +73,16 @@ export function PlaceDetails({ card }: { card: DestinationCard }) {
           <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
             {card.visa}
           </Fact>
-          <li>
-            <PriceLevel level={card.price_level} label={card.price} />
-          </li>
-          <Fact icon={FaceSmileIcon} tone={card.kids_fit === 'poor' ? 'warn' : 'default'}>
-            {card.kids}
-          </Fact>
+          {card.price_level && card.price && (
+            <li>
+              <PriceLevel level={card.price_level} label={card.price} />
+            </li>
+          )}
+          {card.kids && (
+            <Fact icon={FaceSmileIcon} tone={card.kids_fit === 'poor' ? 'warn' : 'default'}>
+              {card.kids}
+            </Fact>
+          )}
         </ul>
       </Section>
 

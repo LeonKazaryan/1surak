@@ -12,7 +12,7 @@ export interface CardPlan {
   askCounts: boolean
 }
 
-export function planCards({ questions }: ClarifyEvent): CardPlan[] {
+export function planCards({ questions, prefill }: ClarifyEvent): CardPlan[] {
   return questions.map((q) => {
     const base = { slot: q.slot, hint: q.hint, askMonth: false, askNights: false, askCounts: false }
     switch (q.slot) {
@@ -20,15 +20,17 @@ export function planCards({ questions }: ClarifyEvent): CardPlan[] {
         return { ...base, label: 'Откуда' }
       case 'vibe':
         return { ...base, label: 'Отдых' }
-      // every card of the question is shown; what the message said comes preselected, to confirm in one tap
+      // only the part the message did not say: «в ноябре» asks just how many nights
       case 'when':
-        return { ...base, label: 'Даты', askMonth: true, askNights: true }
+        return { ...base, label: 'Даты', askMonth: !prefill.month, askNights: !prefill.nights }
       case 'travelers':
-        return { ...base, label: 'Кто едет', askCounts: true }
+        return { ...base, label: 'Кто едет', askCounts: prefill.adults === null }
       case 'route':
         return { ...base, label: 'Маршрут' }
       case 'budget':
         return { ...base, label: 'Бюджет' }
+      case 'visa':
+        return { ...base, label: 'Визы' }
     }
   })
 }
@@ -50,7 +52,7 @@ export function partyOptions(prefill: ClarifyPrefill): Party[] {
   return prefill.children === 0 ? ['solo', 'couple', 'group'] : ['solo', 'couple', 'kids', 'group']
 }
 
-export type StepKind = 'origin' | 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'route' | 'budget'
+export type StepKind = 'origin' | 'vibe' | 'month' | 'nights' | 'party' | 'kids' | 'adults' | 'age' | 'route' | 'budget' | 'visa'
 
 /** One tap of the deck. A question can take a few: «С детьми» adds «Сколько детей?» and an age per child. */
 export interface Step {
@@ -116,6 +118,9 @@ export function buildSteps(event: ClarifyEvent, state: StepState): Step[] {
       case 'budget':
         add({ key: 'budget', kind: 'budget', title: 'Какой бюджет?' })
         break
+      case 'visa':
+        add({ key: 'visa', kind: 'visa', title: 'Учитывать визы?' })
+        break
     }
   }
   return steps
@@ -143,5 +148,6 @@ export function knownFacts(prefill: ClarifyPrefill): string[] {
   const budget = BUDGET_OPTIONS.find((o) => o.level === prefill.budget_level)
   if (budget) facts.push(budget.level ? `Бюджет: ${budget.label.toLowerCase()}` : 'Бюджет не важен')
   if (prefill.multi_city !== null) facts.push(prefill.multi_city ? 'Несколько городов' : 'Один город')
+  if (prefill.visa_free_only) facts.push('Без визы')
   return facts
 }

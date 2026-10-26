@@ -7,7 +7,7 @@ import { getDepartureCity, saveDepartureCity } from '@/lib/departureCity'
 import type { BriefAnswers, ClarifyEvent } from '@/types/api'
 import { describeAnswers, plural } from '../widgets'
 import { buildSteps, knownFacts, partyOptions, planCards, progressAt, type Step } from './plan'
-import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, OriginStep, PartyStep, RouteStep, VibeStep } from './questions'
+import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, OriginStep, PartyStep, RouteStep, VibeStep, VisaStep } from './questions'
 import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { useClarifyAnswers, type ClarifyAnswers } from './useClarifyAnswers'
 
@@ -206,7 +206,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
         }
       />
     ),
-    vibe: () => <VibeStep selected={answers.kinds[0] ?? null} onPick={(k) => pick(() => answers.setKinds([k]))} />,
+    vibe: () => <VibeStep kinds={answers.kinds} onPick={(k) => pick(() => answers.setKinds(k))} />,
     month: () => <MonthStep selected={answers.month} onPick={(m) => pick(() => answers.setMonth(m))} />,
     nights: () => <NightsStep selected={answers.nights} extra={widget.prefill.nights} onPick={(n) => pick(() => answers.setNights(n))} />,
     party: () => <PartyStep choices={partyOptions(widget.prefill)} selected={answers.party} onPick={(p) => pick(() => answers.choose(p))} />,
@@ -228,6 +228,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
     ),
     age: () => <AgeStep selected={answers.ages[child] ?? null} onPick={(a) => pick(() => answers.setAge(child, a))} />,
     route: () => <RouteStep selected={answers.multiCity} onPick={(v) => pick(() => answers.setMultiCity(v))} />,
+    visa: () => <VisaStep selected={answers.visaFreeOnly} onPick={(v) => pick(() => answers.setVisaFreeOnly(v))} />,
     budget: () => (
       <BudgetStep
         level={answers.level}

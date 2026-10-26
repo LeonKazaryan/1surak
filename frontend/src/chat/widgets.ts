@@ -104,7 +104,8 @@ function travelersText(a: BriefAnswers): string | null {
 /** The answers as the user's own chat message, so the conversation reads naturally and the model sees it. */
 export function describeAnswers(a: BriefAnswers, currency: Currency = RUB): string {
   const parts: string[] = []
-  if (a.kinds?.length) {
+  if (a.kinds && a.kinds.length >= 3) parts.push('Всего понемногу')
+  else if (a.kinds?.length) {
     const labels = a.kinds.map((k) => KIND_OPTIONS.find((o) => o.kind === k)?.label ?? k)
     parts.push(labels.join(', ').toLowerCase().replace(/^./, (c) => c.toUpperCase()))
   }
@@ -121,6 +122,7 @@ export function describeAnswers(a: BriefAnswers, currency: Currency = RUB): stri
     if (option) parts.push(option.level ? `бюджет: ${option.label.toLowerCase()}` : 'бюджет не важен')
   }
   if (a.multi_city !== undefined) parts.push(a.multi_city ? 'несколько городов' : 'один город')
+  if (a.visa_free_only !== undefined) parts.push(a.visa_free_only ? 'только без визы' : 'визы не важны')
   if (a.origin) {
     const city = getDepartureCity()
     parts.push(`вылет: ${city.code === a.origin ? city.name : a.origin}`)

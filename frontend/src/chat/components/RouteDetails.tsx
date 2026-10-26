@@ -101,7 +101,7 @@ export function RouteDetails({ card }: { card: RouteCard }) {
               {`${s.country}: ${s.visa}`}
             </Fact>
           ))}
-          <Fact icon={FaceSmileIcon}>{card.kids}</Fact>
+          {card.kids && <Fact icon={FaceSmileIcon}>{card.kids}</Fact>}
         </ul>
       </Section>
 

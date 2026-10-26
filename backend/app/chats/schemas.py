@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from app.money import CurrencyCode
 from app.trip import BriefPatch
 
 MAX_QUERY_CHARS = 12_000
@@ -25,7 +26,10 @@ class ChatRequest(BaseModel):
     # False when the browser could not detect the city and fell back to Moscow: then the agent asks
     origin_known: bool = True
     answers: BriefPatch | None = None  # what the user picked on the question cards
-    retry: bool = False  # ask again in place of the last turn, when that turn failed
+    retry: bool = False
+    currency: CurrencyCode | None = (
+        None  # picked on the start screen; None follows the departure city  # ask again in place of the last turn, when that turn failed
+    )
 
 
 class ChatMeta(BaseModel):

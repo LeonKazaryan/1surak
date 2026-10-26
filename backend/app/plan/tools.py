@@ -14,6 +14,7 @@ from app.flights import Flights, NoFlights, city, current_origin
 from app.hotels import HotelSource
 from app.hotels.directory import listed
 from app.money import current_currency, money
+from app.photos import ensure_photos
 from app.plan.assemble import _start, assemble, party_of
 from app.plan.hotels import MEAL_LABELS, Hotel, cheapest_rate, hotels_for, party_night
 from app.plan.trip import TripPlan
@@ -139,6 +140,7 @@ def plan_tools(
             return {"error": f"Unknown id {args.id!r}: pass a place id or a route id from shown_before."}
         async with sessionmaker() as db:
             snapshots = await snapshots_by_id(db, catalog, now(), [p.id for p in places])
+            await ensure_photos(db, places)
         asked = {}
         for wanted in args.hotels or []:
             found = _hotel_id(wanted, places)

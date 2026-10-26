@@ -42,7 +42,8 @@ const chip: Variants = {
 /** The real ticket as a strip: airline, stops, time in the air, date, price; opens it on Aviasales. */
 export function TicketStrip({ flight, change }: { flight: RouteFlight; change?: PriceChange }) {
   const currency = useContext(CurrencyContext)
-  const direct = flight.direct_option
+  // the direct option only when it differs from the ticket above: same flight twice is noise
+  const direct = flight.transfers > 0 ? flight.direct_option : null
   return (
     <div className="flex flex-col gap-1.5">
       <a
@@ -153,7 +154,7 @@ interface CardProps {
   onDetails: () => void
 }
 
-function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails }: CardProps) {
+function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, withKids }: CardProps & { withKids: boolean }) {
   const travel = travelText(card)
   const kind = card.kinds[0] ?? 'sea'
 
@@ -216,7 +217,6 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
           <p className="m-0 mt-0.5 text-[13px] font-medium text-white/85">
             <span className="mr-1">{flagEmoji(card.country_code)}</span>
             {card.country}
-            {card.climate && <span className="text-white/70"> · погода в {card.climate.month_in}</span>}
           </p>
         </div>
       </div>
@@ -225,7 +225,8 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
         <p className="m-0 text-[14px] leading-relaxed text-foreground">{keepPricesTogether(card.why)}</p>
         {card.flight && <TicketStrip flight={card.flight} change={card.price_change} />}
         {!card.flight && (card.flight_via || card.search_link) && <NoCachedTicket card={card} />}
-        <ul className="m-0 grid list-none grid-cols-2 gap-x-3 gap-y-2 p-0">
+        {/* only what tells the places apart: the price level and kids live in «Подробнее» */}
+        <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0">
           {!card.flight && travel && <Fact icon={PaperAirplaneIcon}>{travel}</Fact>}
           {!card.flight && !travel && !card.search_link && (
             <Fact icon={PaperAirplaneIcon} tone="warn">
@@ -235,12 +236,11 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
           <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
             {card.visa}
           </Fact>
-          <li>
-            <PriceLevel level={card.price_level} label={card.price} />
-          </li>
-          <Fact icon={FaceSmileIcon} tone={card.kids_fit === 'poor' ? 'warn' : 'default'}>
-            {card.kids}
-          </Fact>
+          {withKids && card.kids && (
+            <Fact icon={FaceSmileIcon} tone={card.kids_fit === 'poor' ? 'warn' : 'default'}>
+              {card.kids}
+            </Fact>
+          )}
         </ul>
         {card.tradeoff && (
           <p className="m-0 flex items-start gap-2 rounded-xl bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">
@@ -331,7 +331,7 @@ export function DestinationCards({ widget, canPick, onPick, detailsId = null, on
             return card.type === 'route' ? (
               <RouteCardView key={card.id} card={card} {...props} />
             ) : (
-              <Card key={card.id} card={card} {...props} />
+              <Card key={card.id} card={card} withKids={Boolean(widget.with_kids)} {...props} />
             )
           })}
         </motion.div>

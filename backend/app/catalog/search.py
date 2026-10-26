@@ -24,7 +24,7 @@ from app.facts.resolve import Resolution
 from app.facts.service import Resolved, resolve_entities
 from app.flights import City, Flights, RouteFlights, city, current_origin
 from app.money import current_currency, money
-from app.plan.guide import place_photo
+from app.photos import place_photo
 
 MONTHS = [
     "январь",
@@ -416,10 +416,11 @@ def card(s: Snapshot, month: int | None = None) -> dict:
         "train_hours": _hours(s.train_min),
         "visa": VISA_LABELS.get(s.visa_rule, s.visa_rule),
         "visa_easy": s.visa_rule in EASY_VISA,
-        "price_level": place.price_level,
-        "price": PRICE_LABELS[place.price_level],
-        "kids": KIDS_LABELS[place.kids],
-        "kids_fit": place.kids,
+        # the team's estimates: a route-map city has none, so its card shows none rather than a default
+        "price_level": place.price_level if place.verified else None,
+        "price": PRICE_LABELS[place.price_level] if place.verified else None,
+        "kids": KIDS_LABELS[place.kids] if place.verified else None,
+        "kids_fit": place.kids if place.verified else None,
         "climate": _card_climate(climate, month) if climate else None,
         "highlights": list(place.highlights),
         "watch_out": list(place.watch_out),

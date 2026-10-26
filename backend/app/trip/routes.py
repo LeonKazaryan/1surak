@@ -23,7 +23,7 @@ from app.flights.dictionary import city
 from app.flights.network import network
 from app.ground import transport
 from app.money import money
-from app.plan.guide import place_photo
+from app.photos import place_photo
 from app.trip.brief import TripBrief
 from app.trip.legs import (  # re-exported: the trip plan imports them from here
     FLIGHT_FROM_KM,
@@ -707,7 +707,8 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
                 "photo": place_photo(s.place.id),
             }
         )
-    kids = min((s.place.kids for s in plan.stops), key=["poor", "ok", "good"].index)
+    checked = [s.place.kids for s in plan.stops if s.place.verified]  # a route-map city has no kids rating
+    kids = min(checked, key=["poor", "ok", "good"].index) if checked else None
     return {
         "type": "route",
         "id": plan.id,
@@ -721,7 +722,7 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
         "dates_chained": plan.dates_chained,
         "match": plan.match,
         "interests": plan.interests,
-        "kids": KIDS_LABELS[kids],
+        "kids": KIDS_LABELS[kids] if kids else None,
         "why": why,
         "tradeoff": tradeoff,
     }

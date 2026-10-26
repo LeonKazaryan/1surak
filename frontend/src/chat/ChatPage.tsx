@@ -28,6 +28,8 @@ import { FlightPlanCards } from './components/FlightPlanCard'
 import { HotelOptionsCards } from './components/HotelOptions'
 import type { BookFn } from './plan/CheckoutSheet'
 import { TripPlan } from './plan/TripPlan'
+import { DepartureCityPicker } from '@/components/DepartureCityPicker'
+import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { isFailed } from './trace'
 import type { WorkspaceChatMessage } from './types'
 
@@ -289,6 +291,10 @@ export default function ChatPage() {
                 </div>
                 {errorBanner}
                 {composer}
+                <div className="-mt-2 flex items-center justify-center gap-1.5">
+                  <DepartureCityPicker prefix="Вылет:" />
+                  <CurrencyPicker />
+                </div>
                 <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
                   {EXAMPLE_TRIPS.map((trip) => (
                     <button

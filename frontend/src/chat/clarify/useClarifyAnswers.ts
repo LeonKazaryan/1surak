@@ -18,6 +18,7 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
   const [level, setLevelState] = useState<number | null>(prefill.budget_level)
   const [total, setTotalState] = useState<number | null>(prefill.budget_total ?? null)
   const [multiCity, setMultiCity] = useState<boolean | null>(prefill.multi_city)
+  const [visaFreeOnly, setVisaFreeOnly] = useState<boolean | null>(prefill.visa_free_only ?? null)
   // null until the user picks or confirms a city, on its card or on the «Вылет:» chip
   const [origin, setOrigin] = useState<DepartureCity | null>(prefill.origin ?? null)
 
@@ -31,6 +32,7 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
     travelers: knowsParty && knowsKids && ages.every((a) => a !== null),
     route: multiCity !== null,
     budget: total !== null || level !== null,
+    visa: visaFreeOnly !== null,
   }
 
   const collect = (): BriefAnswers => {
@@ -47,6 +49,7 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
       answers.children_ages = ages as number[]
     }
     if (asked.has('route') && multiCity !== null) answers.multi_city = multiCity
+    if (asked.has('visa') && visaFreeOnly !== null) answers.visa_free_only = visaFreeOnly
     if (origin) answers.origin = origin.code
     if (asked.has('budget')) {
       if (total !== null) {
@@ -73,6 +76,8 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
     total,
     multiCity,
     setMultiCity,
+    visaFreeOnly,
+    setVisaFreeOnly,
     origin,
     setOrigin,
     /** The city the tickets fly from: the one picked here, or the current guess. */
