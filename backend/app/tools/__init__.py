@@ -12,6 +12,7 @@ def build_registry(
     flights=None,
     embedder=None,
     climate=None,
+    directions=None,
 ) -> ToolRegistry:
     """The tools the agent can call. Hotels and the rest get added here.
     `web` is the web search for the knowledge base; None keeps research to the stored base.
@@ -26,7 +27,7 @@ def build_registry(
 
     flights = flights or NoFlights()
     tools = [
-        *catalog_tools(sessionmaker, flights=flights, climate=climate),
+        *catalog_tools(sessionmaker, flights=flights, climate=climate, directions=directions),
         *flight_tools(flights),
         research_tool(sessionmaker, web, embedder=embedder),
     ]

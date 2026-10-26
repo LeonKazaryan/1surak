@@ -136,7 +136,7 @@ def test_should_hint_routes_when_the_user_wants_several_cities():
 
     assert hint["multi_city"] is True and hint["nights"] == 9
     caucasus = search_hint(brief(destination="Кавказ", multi_city=True), load_catalog())
-    assert caucasus["countries"] == ["Грузия", "Армения", "Азербайджан"]
+    assert sorted(caucasus["countries"]) == ["Азербайджан", "Армения", "Грузия"]
     assert chips(brief(kinds=["city"], multi_city=True))[-1] == "Несколько городов"
 
 

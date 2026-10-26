@@ -104,6 +104,22 @@ def find(key: str) -> Place | None:
     return discovered_place(found.code) if found else None
 
 
+def candidates(live: list[str], network: Network, origin: str, limit: int = MAX_CANDIDATES) -> list[str]:
+    """Live destinations first (where people fly now, with a change or not), then the route map's direct ones;
+    only cities the catalogue does not cover and that we can place."""
+    home = city_code(origin)
+    merged = dict.fromkeys([*live, *reachable(network, origin, limit=10_000)])
+    return [c for c in merged if c != home and c not in catalog_cities() and discovered_place(c)][:limit]
+
+
+def in_countries(codes: list[str], names: list[str] | None) -> list[str]:
+    """The cities in the countries the search is limited to; all of them without a limit."""
+    if not names:
+        return codes
+    wanted = {n.casefold() for n in names}
+    return [c for c in codes if (p := discovered_place(c)) and p.country.name.casefold() in wanted]
+
+
 def reachable(network: Network, origin: str, limit: int = MAX_CANDIDATES) -> list[str]:
     """Cities with a direct flight from the origin that the catalogue does not cover, nearest first."""
     home = city_code(origin)

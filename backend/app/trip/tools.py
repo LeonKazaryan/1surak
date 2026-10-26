@@ -272,7 +272,11 @@ def trip_tools(
             plans = await find_routes(snapshots, query, flights, origin)
         state.routes.update({p.id: p for p in plans})
         if not plans:
-            return {"routes": [], "note": "No route fits. Offer single places from search_destinations."}
+            again = {"countries": query.countries} if query.countries else {}
+            note = "No route fits. Offer single places: call search_destinations with the same month"
+            if again:  # the region the user asked for stays: without it the search drifts to other countries
+                note += f" and countries={query.countries}"
+            return {"routes": [], "note": note + "."}
         return {
             "from": origin.name if origin else None,
             "routes": [route_for_model(p, query.month) for p in plans],

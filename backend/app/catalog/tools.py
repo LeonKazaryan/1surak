@@ -16,7 +16,8 @@ from app.catalog.search import (
     search,
     with_flights,
 )
-from app.destinations import load_discovered, reachable, snapshots_by_id
+from app.destinations import candidates, in_countries, load_discovered, snapshots_by_id
+from app.destinations.live import Directions, NoDirections
 from app.flights import Flights, NoFlights, city, current_origin
 from app.flights.network import network
 from app.tools.registry import Tool
@@ -64,6 +65,8 @@ def _search_preview(result: dict) -> str:
     return f"Точных совпадений нет, близко: {', '.join(near)}" if near else "Ничего не подошло"
 
 
+SEARCH_TIMEOUT_S = 45.0  # live destinations, a few climates and the tickets
+FETCH_NOW = 8  # route-map cities of the asked region whose climate a search fetches before answering
 MAX_PRICED = 12  # route-map cities that get real tickets in one search, the closest that fit everything else
 TICKET_MISSES = {"flight", "direct", "ticket", "train"}
 
@@ -80,24 +83,33 @@ def catalog_tools(
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     flights: Flights | None = None,
     climate: "ClimateFetcher | None" = None,
+    directions: Directions | None = None,
 ) -> list[Tool]:
     catalog = load_catalog()
     flights = flights or NoFlights()
 
     async def search_destinations(query: SearchQuery) -> dict:
         origin = current_origin.get()
-        reach = reachable(network(), origin)
+        live = await (directions or NoDirections()).destinations(origin)
+        reach = candidates(live, network(), origin)
+        fetched = 0
+        if climate:
+            # the first cities of the asked region with no climate yet are fetched now, not on the next search
+            missing = await climate.missing(in_countries(reach, query.countries))
+            fetched = await climate.fetch_now(missing[:FETCH_NOW])
         async with sessionmaker() as db:
             snapshots = await load_snapshots(db, catalog, now())
             discovered = await load_discovered(db, reach, now())
-        pending = await climate.ensure(reach) if climate else 0  # their climate arrives for the next search
+        pending = await climate.ensure(reach) if climate else 0  # the rest arrive for the next search
         snapshots = await with_flights(
             [*snapshots, *shortlist(discovered, query)], flights, origin, query.month, query
         )
         result = search(snapshots, query, city(origin))
         result["route_map"] = {
-            "cities_with_direct_flights": len(reach),
+            "destinations_from_your_city": len(reach),
+            "live_from_aviasales": len(live),
             "looked_at": len(discovered),
+            "climate_fetched_now": fetched,
             "climate_still_loading": pending,
         }
         return result
@@ -121,6 +133,7 @@ def catalog_tools(
             handler=search_destinations,
             preview=_search_preview,
             then="show_destinations",
+            timeout_s=SEARCH_TIMEOUT_S,
         ),
         Tool(
             name="get_destination",

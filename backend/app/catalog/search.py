@@ -22,7 +22,7 @@ from app.catalog.catalog import (
 )
 from app.facts.resolve import Resolution
 from app.facts.service import Resolved, resolve_entities
-from app.flights import City, Flights, RouteFlights
+from app.flights import City, Flights, RouteFlights, city, current_origin
 from app.money import current_currency, money
 from app.plan.guide import place_photo
 
@@ -96,7 +96,9 @@ class SearchQuery(BaseModel):
         None, description="Children's ages if the user named them. Leave empty when they didn't: don't guess."
     )
     max_price_level: int | None = Field(None, ge=1, le=3, description="1 budget, 2 mid-range, 3 expensive.")
-    region: Literal["any", "russia", "abroad"] = "any"
+    region: Literal["any", "russia", "abroad"] = Field(
+        "any", description="russia: within the user's own country (the departure city's); abroad: outside it."
+    )
     countries: list[str] | None = Field(
         None, description="Only these countries, names in Russian as the user said them: ['Турция']."
     )
@@ -205,6 +207,12 @@ def _hours(minutes: float | None) -> float | None:
     return None if minutes is None else round(minutes / 60 * 2) / 2  # nearest half hour
 
 
+def home_country() -> str:
+    """The user's own country, from the departure city: «abroad» from Astana means outside Kazakhstan."""
+    home = city(current_origin.get())
+    return home.country_code if home and home.country_code else "RU"
+
+
 def in_scope(s: Snapshot, q: SearchQuery) -> bool:
     """The kind of trip and the region define what the user asked for, so a miss here is not a near miss."""
     place = s.place
@@ -212,7 +220,7 @@ def in_scope(s: Snapshot, q: SearchQuery) -> bool:
         return False
     if q.min_sea_temp is not None and "sea" not in place.kinds:  # a sea temperature implies a sea trip
         return False
-    if q.region != "any" and place.domestic != (q.region == "russia"):
+    if q.region != "any" and (place.country.code == home_country()) != (q.region == "russia"):
         return False
     if q.countries and place.country.name.casefold() not in {c.strip().casefold() for c in q.countries}:
         return False
@@ -413,15 +421,26 @@ def card(s: Snapshot, month: int | None = None) -> dict:
     }
 
 
+def mixed(matches: list[Snapshot], limit: int, rank) -> list[Snapshot]:
+    """The best matches, but with up to half the places from the route map when it has matches: the
+    catalogue's nearby resorts would otherwise fill every slot and the wider world would never show."""
+    extra = [s for s in matches if not s.place.verified]
+    share = min(len(extra), (limit + 1) // 2)
+    picked = [s for s in matches if s.place.verified][: limit - share] + extra[:share]
+    picked += [s for s in matches if s not in picked][: limit - len(picked)]
+    return sorted(picked, key=rank)
+
+
 def search(snapshots: list[Snapshot], q: SearchQuery, origin: City | None = None) -> dict:
     origin_text = origin.from_text if origin else "из вашего города"
     candidates = [s for s in snapshots if in_scope(s, q)]
     checked = [(s, failures(s, q, origin_text)) for s in candidates]
     matches = sorted((s for s, why in checked if not why), key=lambda s: _rank(s, q))
+    shown = mixed(matches, q.limit, lambda s: _rank(s, q))
     return {
         "from": origin.name if origin else None,
         "month": MONTHS[q.month - 1] if q.month else None,
-        "matches": [describe(s, q.month) for s in matches[: q.limit]],
+        "matches": [describe(s, q.month) for s in shown],
         "more_matches": max(0, len(matches) - q.limit),
         "near_misses": near_misses(checked, q),
         "checked": len(candidates),

@@ -30,6 +30,9 @@ WINDOW_FROM, WINDOW_TO = 8, 21  # two weeks in the middle of every month: one ca
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 CALLS_PER_MINUTE = 60  # well under the free 600 a minute and 5,000 an hour
+NOW_GAP_S = 0.05  # a search's few cities at once: a burst well inside 600 a minute
+NOW_TIMEOUT_S = 15.0
+BURST = 20  # requests in flight at once
 SOURCE = "open-meteo-2025"
 
 
@@ -88,6 +91,7 @@ class ClimateFetcher:
         self._order = 0
         self._queued: set[str] = set()
         self._worker: asyncio.Task | None = None
+        self._burst = asyncio.Semaphore(BURST)
         self.fetched = 0
 
     async def missing(self, codes: Iterable[str]) -> list[str]:
@@ -132,29 +136,46 @@ class ClimateFetcher:
                 self._queued.discard(code)
                 self._queue.task_done()
 
-    async def _get(self, url: str, params: dict) -> dict:
-        await asyncio.sleep(self._gap)  # a steady pace keeps every limit of the free tier
-        response = await self._client.get(url, params=params)
+    async def fetch_now(self, codes: list[str], timeout_s: float = NOW_TIMEOUT_S) -> int:
+        """Fetches these cities right away, side by side, for a search that would otherwise show nothing new;
+        whatever does not finish in time goes to the background queue. Returns how many arrived."""
+        tasks = [asyncio.create_task(self.fetch(code, gap=NOW_GAP_S)) for code in codes]
+        done, pending = await asyncio.wait(tasks, timeout=timeout_s) if tasks else (set(), set())
+        for task in pending:
+            task.cancel()
+        if pending:
+            await self.ensure(codes)
+        return sum(1 for task in done if not task.exception())
+
+    async def _many(self, url: str, params: list[dict], gap: float | None) -> list[dict]:
+        """Several windows: one after another at the background pace, or side by side for a search."""
+        if gap is None:
+            return [await self._get(url, p) for p in params]
+        return list(await asyncio.gather(*(self._get(url, p, gap) for p in params)))
+
+    async def _get(self, url: str, params: dict, gap: float | None = None) -> dict:
+        await asyncio.sleep(self._gap if gap is None else gap)  # a steady pace keeps the free tier's limits
+        async with self._burst:  # a search's cities side by side, but never more than this many at once
+            response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
-    async def fetch(self, code: str) -> list[Fact]:
+    async def fetch(self, code: str, gap: float | None = None) -> list[Fact]:
         """Every fact for one city: monthly air and rain, sea when it has one, elevation, coastal."""
         c = city(code)
         now = self._clock()
         point = {"latitude": c.lat, "longitude": c.lon, "timezone": "auto"}
         air_vars = ["temperature_2m_max", "temperature_2m_min", "precipitation_sum"]
-        air = [
-            await self._get(
-                ARCHIVE_URL, {**point, "start_date": a, "end_date": b, "daily": ",".join(air_vars)}
-            )
-            for a, b in windows()
-        ]
+        air = await self._many(
+            ARCHIVE_URL,
+            [{**point, "start_date": a, "end_date": b, "daily": ",".join(air_vars)} for a, b in windows()],
+            gap,
+        )
         payload = merged(air, air_vars)
         facts = [_retag(f) for f in open_meteo.monthly_climate(qid(code), payload, now)]
         if payload.get("elevation") is not None:
             facts.append(_marker(code, "elevation", round(payload["elevation"]), "m", now))
-        sea = await self._sea(point, now, code)
+        sea = await self._sea(point, now, code, gap)
         facts += sea
         facts.append(_marker(code, "coastal", bool(sea), None, now))
         async with self._sessionmaker() as db:
@@ -162,19 +183,23 @@ class ClimateFetcher:
             await db.commit()
         return facts
 
-    async def _sea(self, point: dict, now: datetime, code: str) -> list[Fact]:
+    async def _sea(self, point: dict, now: datetime, code: str, gap: float | None = None) -> list[Fact]:
         variable = open_meteo_marine.VARIABLE
         spots = windows()
         probe = await self._get(
-            MARINE_URL, {**point, "start_date": spots[6][0], "end_date": spots[6][1], "daily": variable}
+            MARINE_URL, {**point, "start_date": spots[6][0], "end_date": spots[6][1], "daily": variable}, gap
         )
         if not any(v is not None for v in (probe.get("daily") or {}).get(variable) or []):
             return []  # inland: no sea, and no eleven more calls
-        rest = [
-            await self._get(MARINE_URL, {**point, "start_date": a, "end_date": b, "daily": variable})
-            for i, (a, b) in enumerate(spots)
-            if i != 6
-        ]
+        rest = await self._many(
+            MARINE_URL,
+            [
+                {**point, "start_date": a, "end_date": b, "daily": variable}
+                for i, (a, b) in enumerate(spots)
+                if i != 6
+            ],
+            gap,
+        )
         payload = merged([*rest[:6], probe, *rest[6:]], [variable])
         try:
             return [_retag(f) for f in open_meteo_marine.monthly_sea_temp(qid(code), payload, now)]

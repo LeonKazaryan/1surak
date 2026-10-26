@@ -13,6 +13,7 @@ from app.config import Settings
 from app.db import init_db
 from app.destinations import reachable
 from app.destinations.climate import ClimateFetcher
+from app.destinations.live import LiveDirections
 from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
@@ -102,6 +103,9 @@ def create_app(
                 hotel_offers.keep_fresh(every, settings.fare_refresh_budget)
             )
         climate = ClimateFetcher(app.state.sessionmaker) if settings.destination_climate else None
+        # where people fly from each city now, from Aviasales; the stale route map only fills the gaps
+        token = settings.travelpayouts_token
+        directions = LiveDirections(token) if token and settings.destination_climate else None
         if climate:
             # the cities people fly to from the usual departure cities: their climate loads in the background
             for origin in filter(None, settings.destination_prefetch.split(",")):
@@ -113,7 +117,9 @@ def create_app(
         else:
             web = web_search_for(settings, app.state.llm)
             pages = page_tools_for(settings, app.state.llm) if web is not None else None
-            app.state.tools = build_registry(app.state.sessionmaker, web, pages, flights, embedder, climate)
+            app.state.tools = build_registry(
+                app.state.sessionmaker, web, pages, flights, embedder, climate, directions
+            )
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield

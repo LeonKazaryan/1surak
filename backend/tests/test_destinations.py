@@ -126,7 +126,7 @@ def test_should_fetch_a_cities_climate_once_and_search_it():
     # in July the fake Tashkent is 24 °C by day: it matches «20 °C or warmer», marked as from the route map
     tashkent = next(m for m in hot["matches"] if m["name"] == "Ташкент")
     assert tashkent["from_route_map"] and tashkent["id"] == "city-tas"
-    assert hot["route_map"]["cities_with_direct_flights"] > 0 and hot["route_map"]["looked_at"] >= 1
+    assert hot["route_map"]["destinations_from_your_city"] > 0 and hot["route_map"]["looked_at"] >= 1
 
 
 def test_should_plan_a_whole_trip_to_a_route_map_city(sessionmaker):  # noqa: F811
@@ -137,3 +137,116 @@ def test_should_plan_a_whole_trip_to_a_route_map_city(sessionmaker):  # noqa: F8
 
     assert built["name"] == "Ташкент" and built["stops"][0]["hotel"]["name"]
     assert built["days"]
+
+
+def test_should_read_a_region_as_every_country_in_it():
+    from app.destinations.regions import countries_in, country_names
+
+    europe = countries_in("хочу по Европе")
+    assert {"Германия", "Франция", "Италия", "Сербия"} <= set(europe)
+    assert "Россия" not in europe and "Турция" not in europe  # Antalya is in Asia
+    assert countries_in("юго-восточная азия") and "Китай" not in countries_in("юго-восточная азия")
+    assert country_names("Германия") == ["Германия"] and countries_in("Турция") is None
+
+
+class LiveAnswers:
+    def __init__(self, fail=False):
+        self.calls = 0
+        self.fail = fail
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        if self.fail:
+            return httpx.Response(500)
+        if "city-directions" in str(request.url):
+            return httpx.Response(
+                200, json={"data": {"PAR": {"destination": "PAR"}, "IST": {"destination": "IST"}}}
+            )
+        rows = [
+            {"destination": "VIE", "value": 30000},
+            {"destination": "HAM", "value": 25000},
+            {"destination": "VIE", "value": 28000},
+        ]
+        return httpx.Response(200, json={"data": rows})
+
+
+def test_should_list_where_people_fly_now_and_cache_it():
+    from app.destinations.live import LiveDirections
+
+    answers = LiveAnswers()
+    live = LiveDirections("token", httpx.AsyncClient(transport=httpx.MockTransport(answers)))
+
+    async def run():
+        return await live.destinations("NQZ"), await live.destinations("NQZ")
+
+    first, again = asyncio.run(run())
+    assert first == ["PAR", "IST", "HAM", "VIE"] and again == first and answers.calls == 2  # cheapest first
+    broken = LiveDirections("token", httpx.AsyncClient(transport=httpx.MockTransport(LiveAnswers(fail=True))))
+    assert asyncio.run(broken.destinations("NQZ")) == []
+
+
+class FixedDirections:
+    async def destinations(self, origin):
+        return ["VIE", "PAR"]
+
+
+async def _europe_scenario(db_url: str):
+    engine = create_async_engine(db_url, poolclass=NullPool)
+    await init_db(engine)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    await load_catalog_facts(maker)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(climate_answer))
+    fetcher = ClimateFetcher(maker, client, per_minute=60_000, clock=lambda: NOW)
+    tools = ToolRegistry(
+        catalog_tools(maker, now=lambda: NOW, flights=TICKETS, climate=fetcher, directions=FixedDirections())
+    )
+    from app.destinations.regions import countries_in
+
+    token = current_origin.set("NQZ")
+    try:
+        result = await tools.execute(
+            "search_destinations", json.dumps({"month": 7, "countries": countries_in("Европа"), "limit": 10})
+        )
+        await fetcher.drain()
+        return json.loads(result.content)
+    finally:
+        current_origin.reset(token)
+        await engine.dispose()
+
+
+def test_should_offer_european_cities_people_fly_to_on_the_first_search():
+    found = asyncio.run(_europe_scenario(fresh_database("europe")))
+
+    names = [m["name"] for m in found["matches"]]
+    assert "Вена" in names and "Париж" in names  # live destinations, climate fetched before answering
+    assert all(m.get("from_route_map") for m in found["matches"] if m["name"] in ("Вена", "Париж"))
+    assert found["route_map"]["live_from_aviasales"] == 2 and found["route_map"]["climate_fetched_now"] >= 2
+
+
+def test_should_give_the_route_map_up_to_half_of_the_results():
+    from app.catalog.search import mixed
+
+    class P:
+        def __init__(self, name, verified):
+            self.place = type("Place", (), {"verified": verified, "name": name})()
+
+    near = [P(f"каталог {i}", True) for i in range(6)]
+    far = [P(f"город {i}", False) for i in range(3)]
+    order = near + far  # the catalogue's resorts are nearer, so they rank first
+
+    shown = mixed(order, 5, order.index)
+    assert [p.place.name for p in shown] == ["каталог 0", "каталог 1", "город 0", "город 1", "город 2"]
+    assert mixed(near, 5, near.index) == near[:5]  # nothing from the route map: the catalogue as before
+
+
+def test_should_read_abroad_from_the_users_own_country():
+    from app.catalog.search import SearchQuery, Snapshot, in_scope
+
+    kostanay, tashkent = Snapshot(discovered_place("KSN")), Snapshot(discovered_place("TAS"))
+    token = current_origin.set("NQZ")
+    try:
+        abroad, home = SearchQuery(region="abroad"), SearchQuery(region="russia")
+        assert not in_scope(kostanay, abroad) and in_scope(tashkent, abroad)
+        assert in_scope(kostanay, home) and not in_scope(tashkent, home)
+    finally:
+        current_origin.reset(token)
