@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { MessageContent } from './MessageContent'
 
@@ -33,8 +33,9 @@ describe('MessageContent', () => {
 
     expect(screen.getByText(/ярмарка на Кремлёвской набережной/)).toBeInTheDocument()
     const sources = screen.getByRole('list', { name: 'Источники' })
-    expect(sources).toHaveTextContent('Wikivoyage, 2024-05-10')
+    expect(sources).toHaveTextContent('Wikivoyage')
     expect(sources).not.toHaveTextContent('https://')
+    expect(screen.getByRole('link', { name: /Wikivoyage/ })).toHaveAttribute('title', expect.stringContaining('2024-05-10'))
     expect(screen.getByRole('link', { name: /Visit Kazan/ })).toHaveAttribute('href', 'https://visit-kazan.ru/winter')
   })
 
@@ -55,6 +56,36 @@ describe('MessageContent', () => {
     render(<MessageContent text={'Ответ\n\nИсточники:\n- [Клик](javascript:alert(1))'} />)
 
     expect(screen.queryByRole('link', { name: /Клик/ })).toBeNull()
+  })
+
+  it('should turn sources written into the sentence into short badges', () => {
+    const text =
+      'Считаю 14 ночей из Алматы. Черногория без визы только до 1 ноября. Источники: Aviasales.kz, проверено ' +
+      '26.10.2026, https://www.aviasales.kz/demalys/article/kz-bezviz; evisa.kz, проверено 26.10.2026, ' +
+      'https://evisa.kz/news/puteshestvuyte-bez-ogranicheniy-29-stran-bez-viz-dlya-kazahstancev'
+    render(<MessageContent text={text} />)
+
+    expect(screen.getByText(/Черногория без визы только до 1 ноября\.$/)).toBeInTheDocument()
+    const sources = screen.getByRole('list', { name: 'Источники' })
+    expect(within(sources).getAllByRole('link').map((a) => a.textContent?.slice(1))).toEqual(['Aviasales.kz', 'evisa.kz'])
+    expect(screen.getByRole('link', { name: /Aviasales\.kz/ })).toHaveAttribute(
+      'href',
+      'https://www.aviasales.kz/demalys/article/kz-bezviz',
+    )
+    expect(document.body).not.toHaveTextContent('https://')
+  })
+
+  it('should leave the word in an ordinary sentence alone', () => {
+    render(<MessageContent text="Источники: местные жители советуют рынок." />)
+
+    expect(screen.queryByRole('list', { name: 'Источники' })).toBeNull()
+  })
+
+  it('should show a bare address in the text as the site name', () => {
+    render(<MessageContent text="Правила на https://evisa.kz/news/rules, проверьте перед поездкой." />)
+
+    expect(screen.getByRole('link', { name: 'evisa.kz' })).toHaveAttribute('href', 'https://evisa.kz/news/rules')
+    expect(screen.getByText(/проверьте перед поездкой/)).toBeInTheDocument()
   })
 
   it('should keep a price on one line', () => {
