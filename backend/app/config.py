@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     # Real flight prices (Aviasales Data API). Without a token the agent has no flights and says so.
     travelpayouts_token: str = ""
+    # Trains (Tutu.ru timetable through Travelpayouts) and buses (FlixBus) between the cities of a route.
+    # Both are keyless; FlixBus is its website's undocumented API, so it has its own switch.
+    ground_transport: bool = True
+    flixbus: bool = True
     travelpayouts_per_minute: float = 300.0  # our guess at a polite rate; lower it if Aviasales answers 429
     # Popular fares are refreshed before they expire: how often to look, and how many requests per look.
     fare_refresh_minutes: float = 10.0  # 0 turns it off

@@ -142,7 +142,38 @@ export interface RouteStop {
   photo?: Photo | null
 }
 
-/** One leg of a route: a real ticket when it flies, an estimate by distance when it goes by land. */
+/** A real train (Tutu timetable) or bus (FlixBus ride on the day) for a hop by land. */
+export interface GroundRide {
+  mode: 'train' | 'bus'
+  /** «Туту.ру, расписание поездов» */
+  source: string
+  /** «Афросиаб 768Ф», «FlixBus» */
+  name: string
+  /** «16:49» from a timetable, or an ISO date-time for a ride on that day. */
+  departs?: string
+  arrives?: string
+  hours: number
+  price_rub?: number
+  /** The class the price is for: «плацкарт», «сидячий». */
+  fare?: string
+  link: string
+  dated?: boolean
+  /** How many trains or buses run between the two. */
+  options?: number
+  /** Picked to fit the flight next to it: the hours at the station besides the transfer itself. */
+  wait_hours?: number
+}
+
+/** The direct flight a smarter way replaced, to show what it saves. */
+export interface LegDetour {
+  price_rub: number
+  transfers: number
+  hours: number
+  airline: string
+}
+
+/** One leg of a route: a real ticket when it flies, a real train or bus (or an estimate) by land, or a smarter
+ * way made of parts: train to Tashkent, then a direct flight home. */
 export interface RouteLeg {
   from: string
   to: string
@@ -150,7 +181,19 @@ export interface RouteLeg {
   km: number
   hours: number
   ticket?: RouteFlight
+  ground?: GroundRide
   estimate?: string
+  /** A hop by land without a train or bus found: a fare by distance. */
+  estimate_rub?: number
+  /** Index of the route's city the leg leaves or reaches; null for home. */
+  from_stop?: number | null
+  to_stop?: number | null
+  parts?: RouteLeg[]
+  /** The city a smart way changes in. */
+  via?: string
+  /** The parts together, per person; null while one of them has no fare. */
+  price_rub?: number | null
+  instead?: LegDetour
 }
 
 export interface RouteInterest {

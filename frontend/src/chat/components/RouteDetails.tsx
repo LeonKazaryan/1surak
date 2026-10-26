@@ -1,10 +1,13 @@
 import { Fragment } from 'react'
 import { CheckBadgeIcon, FaceSmileIcon, IdentificationIcon, MinusIcon } from '@heroicons/react/20/solid'
+import { cn } from '@/components/ui/utils'
 import type { RouteCard, RouteStop } from '@/types/api'
 import { flagEmoji, keepPricesTogether, plural } from '../widgets'
 import { Fact } from './DestinationCards'
 import { Section } from './DetailsPanel'
-import { LegRow, RouteTotal } from './RouteCard'
+import { stopIndexAfter } from './legFormat'
+import { LegRow } from './LegRow'
+import { RouteTotal } from './RouteCard'
 import { sceneKinds } from './routeScenes'
 import { temp } from './ticketFormat'
 import { TripArt } from './TripArt'
@@ -17,7 +20,14 @@ function Banner({ card }: { card: RouteCard }) {
         <div key={stop.id} className="relative min-w-0 flex-1">
           <TripArt kind={scenes[i]} seed={stop.id} photo={stop.photo} still className="absolute inset-0" />
           <span className="pointer-events-none absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent" />
-          <p className="absolute right-3 bottom-2.5 left-3 m-0 truncate text-[13px] font-semibold text-white">{stop.name}</p>
+          <p
+            className={cn(
+              'absolute bottom-2.5 m-0 font-semibold text-white',
+              card.stops.length > 4 ? 'right-1.5 left-1.5 line-clamp-2 text-[11px] leading-tight break-words hyphens-auto' : 'right-3 left-3 truncate text-[13px]',
+            )}
+          >
+            {stop.name}
+          </p>
         </div>
       ))}
     </div>
@@ -57,7 +67,7 @@ function StopRow({ stop, index }: { stop: RouteStop; index: number }) {
   )
 }
 
-/** The whole route day by day: each flight or drive, then the city it brings you to. */
+/** The whole route in order: each flight, train or smarter way, then the city it brings you to. */
 export function RouteDetails({ card }: { card: RouteCard }) {
   const countries = [...new Map(card.stops.map((s) => [s.country, s])).values()]
   return (
@@ -68,12 +78,15 @@ export function RouteDetails({ card }: { card: RouteCard }) {
 
       <Section title="Маршрут">
         <ol aria-label="Маршрут" className="m-0 flex list-none flex-col gap-1 p-0">
-          {card.legs.map((leg, i) => (
-            <Fragment key={`${i}-${leg.from}-${leg.to}`}>
-              <LegRow leg={leg} index={i} />
-              {card.stops[i] && <StopRow stop={card.stops[i]} index={i} />}
-            </Fragment>
-          ))}
+          {card.legs.map((leg, i) => {
+            const at = stopIndexAfter(leg, i, card.stops.length)
+            return (
+              <Fragment key={`${i}-${leg.from}-${leg.to}`}>
+                <LegRow leg={leg} index={i} />
+                {at !== null && card.stops[at] && <StopRow stop={card.stops[at]} index={at} />}
+              </Fragment>
+            )
+          })}
         </ol>
       </Section>
 

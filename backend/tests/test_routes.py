@@ -5,7 +5,7 @@ import asyncio
 from app.catalog.catalog import Country, Place
 from app.catalog.search import Snapshot
 from app.flights import City
-from app.trip.routes import RouteQuery, candidate_routes, find_routes, price_route, split_nights
+from app.trip.routes import RouteQuery, candidate_routes, find_routes, named_route, price_route, split_nights
 from tests.conftest import FakeFlights, route
 
 OCT = 10
@@ -190,3 +190,59 @@ def test_should_leave_on_the_day_the_user_named():
 
     assert chained
     assert (there.ticket.day.isoformat(), back.ticket.day.isoformat()) == ("2026-10-20", "2026-10-27")
+
+
+def line(n: int, country: Country = GEORGIA) -> list:
+    """n cities in a row 200 km apart, all by land."""
+    return [snap(place(f"c{i}", country, 41.0, 40.0 + 2.4 * i, ("city",))) for i in range(n)]
+
+
+def test_should_grow_a_tour_of_five_cities_without_zigzags():
+    plans = candidate_routes(line(5), RouteQuery(month=OCT, nights=14, min_stops=5), ASTANA)
+
+    assert plans and all(len(p.stops) == 5 for p in plans)
+    order = [s.place.id for s in plans[0].stops]
+    assert order in (["c0", "c1", "c2", "c3", "c4"], ["c4", "c3", "c2", "c1", "c0"])
+
+
+def test_should_cap_a_tour_at_two_nights_a_city_and_seven_cities():
+    squeezed = candidate_routes(line(6), RouteQuery(month=OCT, nights=7, min_stops=5), ASTANA)
+    assert squeezed and max(len(p.stops) for p in squeezed) == 3  # 7 nights hold 3 cities, not the 5 asked
+    many = candidate_routes(line(9), RouteQuery(month=OCT, nights=30, min_stops=7), ASTANA)
+    assert many and max(len(p.stops) for p in many) == 7
+
+
+def test_should_not_cross_a_border_by_a_long_road_or_fly_where_nothing_flies():
+    erevan = snap(place("erevan", ARMENIA, 40.18, 44.51, ("city",), airport="EVN"))
+    baku = snap(
+        place("baku", Country("AZ", "Азербайджан", "evisa", 30, ""), 40.41, 49.87, ("city",), airport="GYD")
+    )
+
+    assert candidate_routes([erevan, baku], RouteQuery(month=OCT, nights=8), ASTANA) == []
+
+
+def test_should_build_the_users_own_cities_in_the_order_with_the_cheaper_way_home():
+    from tests.test_smart import PairFlights, fare
+
+    flights = PairFlights(
+        {
+            ("NQZ", "IST"): fare(20_000, 0, 420, "2026-10-05T08:00:00+05:00"),
+            ("IST", "BUS"): fare(5_000, 0, 120, "2026-10-09T08:00:00+03:00"),
+            ("BUS", "NQZ"): fare(80_000, 2, 1_400, "2026-10-13T08:00:00+04:00"),  # home from Batumi is dear
+            ("NQZ", "BUS"): fare(30_000, 0, 360, "2026-10-05T08:00:00+05:00"),
+            ("BUS", "IST"): fare(5_000, 0, 120, "2026-10-09T08:00:00+04:00"),
+            ("IST", "NQZ"): fare(20_000, 0, 400, "2026-10-13T08:00:00+03:00"),
+        }
+    )
+
+    plan = asyncio.run(named_route([ISTANBUL, BATUMI], RouteQuery(month=OCT, nights=8), flights, ASTANA))
+
+    assert plan.name == "Batumi → Istanbul" and plan.total_rub == 55_000
+
+
+def test_should_keep_the_users_order_when_they_gave_it():
+    query = RouteQuery(month=OCT, nights=8, order_fixed=True)
+
+    plan = asyncio.run(named_route([ISTANBUL, BATUMI], query, FakeFlights(), ASTANA))
+
+    assert plan.name == "Istanbul → Batumi"

@@ -1,9 +1,10 @@
 import { useContext } from 'react'
-import { ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid'
+import { ArrowTopRightOnSquareIcon, SparklesIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import type { PlanCheck, PlanLeg } from '@/types/api'
+import type { PlanCheck, PlanLeg, RouteLeg } from '@/types/api'
 import { CurrencyContext, formatMoney } from '../widgets'
-import { ModeIcon } from '../components/RouteCard'
+import { ModeIcon } from '../components/LegRow'
+import { fareOf, KIND_TONE, knownFare, legKind, rideShop, rideTimes, saving, units } from '../components/legFormat'
 import { AirlineLogo } from '../components/ticket'
 import { forPassengers, hours, stopsText } from '../components/ticketFormat'
 import { CheckRow, PlanSection } from './planParts'
@@ -16,65 +17,129 @@ function when(leg: PlanLeg): string {
   return `${day.weekday}, ${dayText(leg.departs)} · ${times}`
 }
 
-function LegRow({ leg, seats }: { leg: PlanLeg; seats: number }) {
-  const currency = useContext(CurrencyContext)
+const BUY = 'mt-1.5 inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-colors'
+
+/** The airline or the train, and where to buy it. */
+function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
   const ticket = leg.ticket
-  const flight = leg.mode === 'flight'
+  const ride = leg.ground
+  if (ticket) {
+    return (
+      <>
+        <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
+          <AirlineLogo ticket={ticket} className="h-4 w-4" />
+          <span className="min-w-0">
+            {`${ticket.airline_name} ${ticket.flight_number} · `}
+            <span className={ticket.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(ticket)}</span>
+            {ticket.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(ticket.hours)}`}</span>}
+          </span>
+        </span>
+        {ticket.link && (
+          <a
+            href={forPassengers(ticket.link, seats)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
+            className={cn(BUY, 'bg-highlight/10 text-highlight hover:bg-highlight/20')}
+          >
+            Купить на Aviasales
+            <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
+          </a>
+        )}
+      </>
+    )
+  }
+  if (ride) {
+    const times = rideTimes(ride)
+    return (
+      <>
+        <span className="mt-1 block text-[12px] leading-snug text-muted-foreground">
+          {ride.name}
+          {times && <span className="whitespace-nowrap tabular-nums">{` · ${times}`}</span>}
+          <span className="whitespace-nowrap">{` · ${hours(ride.hours)}`}</span>
+          {ride.fare && ` · ${ride.fare}`}
+        </span>
+        <a
+          href={ride.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${ride.mode === 'bus' ? 'Автобус' : 'Поезд'} ${leg.from} → ${leg.to} на ${rideShop(ride)}`}
+          className={cn(BUY, 'bg-primary/40 text-[#2f6418] hover:bg-primary/60')}
+        >
+          {ride.dated ? `Купить на ${rideShop(ride)}` : `Расписание и билеты на ${rideShop(ride)}`}
+          <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
+        </a>
+      </>
+    )
+  }
+  return (
+    <span className="mt-1 block text-[12px] text-muted-foreground">
+      {leg.mode === 'flight' ? 'билетов пока нет' : `по земле, ${leg.km} км: поезд, автобус или такси`}
+    </span>
+  )
+}
+
+function Price({ rub, note, estimate }: { rub: number; note: string; estimate?: boolean }) {
+  const currency = useContext(CurrencyContext)
+  return (
+    <span className="shrink-0 text-right">
+      <span className="block text-[15px] font-semibold text-foreground tabular-nums">
+        {estimate && '~'}
+        {formatMoney(rub, currency)}
+      </span>
+      <span className="block text-[11px] text-faint">{note}</span>
+    </span>
+  )
+}
+
+function Badge({ leg, size = 'h-9 w-9' }: { leg: RouteLeg; size?: string }) {
+  const kind = legKind(leg)
+  return (
+    <span className={cn('mt-0.5 flex shrink-0 items-center justify-center rounded-full', size, KIND_TONE[kind])}>
+      <ModeIcon mode={kind} className="h-4 w-4" />
+    </span>
+  )
+}
+
+/** A smarter way: the parts, each with its own ticket or train, and what it saves against the direct way. */
+function SmartParts({ leg, seats }: { leg: PlanLeg; seats: number }) {
+  const currency = useContext(CurrencyContext)
+  const saved = saving(leg)
+  return (
+    <>
+      <span className="mt-1 flex items-center gap-1 text-[12px] font-medium text-[#3f7d22]">
+        <SparklesIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {`Умный путь через ${leg.via}`}
+        {saved && <span className="ml-1 rounded-full bg-[#4c9a2a] px-1.5 text-[11px] text-white tabular-nums">−{formatMoney(saved, currency)}</span>}
+      </span>
+      <ol className="m-0 mt-2 flex list-none flex-col gap-3 border-l-2 border-dashed border-[#4c9a2a]/30 p-0 pl-3">
+        {units(leg).map((part) => (
+          <li key={`${part.from}-${part.to}`} className="flex items-start gap-2.5">
+            <Badge leg={part} size="h-7 w-7" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium text-foreground">{`${part.from} → ${part.to}`}</span>
+              <UnitInfo leg={part} seats={seats} />
+            </span>
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+function LegRow({ leg, seats }: { leg: PlanLeg; seats: number }) {
+  const smart = Boolean(leg.parts?.length)
+  const fare = smart ? (leg.price_rub ?? knownFare(leg)) : fareOf(leg)
+  const each = seats > 1 ? `× ${seats}` : smart ? 'вместе' : 'за билет'
   return (
     <li className="flex items-start gap-3">
-      <span
-        className={cn(
-          'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-          flight ? 'bg-highlight/10 text-highlight' : 'bg-primary/40 text-[#3f7d22]',
-        )}
-      >
-        <ModeIcon mode={leg.mode} className="h-4 w-4" />
-      </span>
+      <Badge leg={smart ? units(leg)[0] : leg} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] leading-snug font-semibold text-foreground">{`${leg.from} → ${leg.to}`}</span>
         <span className="block text-[13px] leading-snug text-muted-foreground">{when(leg)}</span>
-        {ticket ? (
-          <>
-            <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
-              <AirlineLogo ticket={ticket} className="h-4 w-4" />
-              <span className="min-w-0">
-                {`${ticket.airline_name} ${ticket.flight_number} · `}
-                <span className={ticket.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(ticket)}</span>
-                {ticket.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(ticket.hours)}`}</span>}
-              </span>
-            </span>
-            {ticket.link && (
-              <a
-                href={forPassengers(ticket.link, seats)}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
-                className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-full bg-highlight/10 px-2.5 text-[12px] font-medium text-highlight transition-colors hover:bg-highlight/20"
-              >
-                Купить на Aviasales
-                <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
-              </a>
-            )}
-          </>
-        ) : (
-          <span className="mt-1 block text-[12px] text-muted-foreground">
-            {flight ? 'билетов пока нет' : `по земле, ${leg.km} км: поезд, автобус или такси`}
-          </span>
-        )}
+        {smart ? <SmartParts leg={leg} seats={seats} /> : <UnitInfo leg={leg} seats={seats} />}
       </span>
-      <span className="shrink-0 text-right">
-        {ticket ? (
-          <>
-            <span className="block text-[15px] font-semibold text-foreground tabular-nums">{formatMoney(ticket.price_rub, currency)}</span>
-            <span className="block text-[11px] text-faint">{seats > 1 ? `× ${seats}` : 'за билет'}</span>
-          </>
-        ) : leg.ground_rub ? (
-          <>
-            <span className="block text-[15px] font-semibold text-foreground tabular-nums">~{formatMoney(leg.ground_rub, currency)}</span>
-            <span className="block text-[11px] text-faint">на человека</span>
-          </>
-        ) : null}
-      </span>
+      {fare ? <Price rub={fare} note={each} /> : leg.ground_rub ? <Price rub={leg.ground_rub} note="на человека" estimate /> : null}
     </li>
   )
 }

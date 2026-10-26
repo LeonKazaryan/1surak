@@ -14,6 +14,10 @@ from app.db import init_db
 from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
+from app.ground import GroundTransport
+from app.ground import configure as configure_ground
+from app.ground.flixbus import FlixBuses
+from app.ground.tutu import TutuTrains
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
 from app.kb.seed import backfill_embeddings, load_kb_seed
@@ -84,6 +88,8 @@ def create_app(
             every = timedelta(minutes=settings.fare_refresh_minutes)
             refresher = asyncio.create_task(flights.keep_fresh(every, settings.fare_refresh_budget))
         app.state.flights = flights
+        if settings.ground_transport:
+            configure_ground(GroundTransport(TutuTrains(), FlixBuses() if settings.flixbus else None))
         if tools is not None:
             app.state.tools = tools
         else:

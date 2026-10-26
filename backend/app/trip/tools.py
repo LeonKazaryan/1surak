@@ -34,6 +34,7 @@ from app.trip.routes import (
     RoutePlan,
     RouteQuery,
     find_routes,
+    named_route,
     rebuild_route,
     route_card,
     route_for_model,
@@ -75,12 +76,18 @@ SHOW_DESCRIPTION = (
     "their words and `tradeoff` names what they give up. Ends your turn."
 )
 ROUTES_DESCRIPTION = (
-    "Multi-city routes of 2-3 places from our catalogue for when the user wants several cities in one trip "
-    "(multi_city in the brief, or words like 'по Европе', 'Ереван и Тбилиси'). The code chains places that "
-    "are close to each other and fit the filters, scores how well each route covers the user's interests "
-    "(`kinds`), splits the nights, and prices every leg with real Aviasales tickets; short hops are a ground "
-    "estimate by distance. Pass the same filters as for search_destinations plus `nights`. Do not offer "
-    "routes to families with small children unless they asked for one."
+    "Multi-city routes of 2 to 7 places from our catalogue for when the user wants several cities in one trip "
+    "(multi_city in the brief, or words like 'по Европе', 'Ереван и Тбилиси', 'большой тур'). The code chains "
+    "places that are close to each other and fit the filters, orders them without zigzags, scores how well "
+    "each route covers the user's interests (`kinds`), splits the nights and prices every leg with real "
+    "Aviasales tickets. A bad flight (transfers, no ticket) gets a smarter way: a hub, or a train or bus to a "
+    "neighbouring airport (legs with `parts` and `via`; `instead` is the flight it replaced, so you can name "
+    "the saving). Hops by land carry real trains (Tutu) or buses (FlixBus) when found (`ground`), else an "
+    "estimate. Pass the same filters as for search_destinations plus `nights`; for a big tour pass "
+    "min_stops (4-5, or the number the user named, also as max_stops). When the user named the cities "
+    "themselves (route_places in the hint), pass them as `places` (order_fixed if they gave the order): the "
+    "route is built from exactly those, in the better order. Do not offer routes to families with small "
+    "children unless they asked for one."
 )
 
 
@@ -122,7 +129,7 @@ class AskArgs(BaseModel):
 class Pick(BaseModel):
     id: str | None = Field(None, description="A single place: its id from search_destinations.")
     route: list[str] | None = Field(
-        None, min_length=2, max_length=3, description="A route from search_routes: city ids in travel order."
+        None, min_length=2, max_length=7, description="A route from search_routes: city ids in travel order."
     )
     why: str = Field(max_length=240, description="Why it fits this user, 1-2 short sentences.")
     tradeoff: str | None = Field(None, max_length=140, description="Main downside or risk, one short phrase.")
@@ -250,20 +257,26 @@ def trip_tools(
         if query.nights is None:
             low, high = state.brief.nights_min, state.brief.nights_max
             query = query.model_copy(update={"nights": high or low})
+        if query.month is None and state.brief.month:
+            query = query.model_copy(update={"month": state.brief.month})
         async with sessionmaker() as db:
             snapshots = await load_snapshots(db, catalog, now())
-        plans = await find_routes(snapshots, query, flights, origin)
+        if query.places:
+            places = [catalog.find(name) for name in query.places]
+            if unknown := [n for n, p in zip(query.places, places, strict=True) if p is None]:
+                return {"error": f"Not in the catalogue: {unknown}. Use plan_route for these cities."}
+            by_id = {s.place.id: s for s in snapshots}
+            plans = [await named_route([by_id[p.id] for p in places], query, flights, origin)]
+        else:
+            plans = await find_routes(snapshots, query, flights, origin)
         state.routes.update({p.id: p for p in plans})
         if not plans:
-            return {
-                "routes": [],
-                "note": "No 2-3 city route fits. Offer single places from search_destinations.",
-            }
+            return {"routes": [], "note": "No route fits. Offer single places from search_destinations."}
         return {
             "from": origin.name if origin else None,
             "routes": [route_for_model(p, query.month) for p in plans],
-            "note": "Tickets are the cheapest of the month; the dates of the legs get checked when the trip is "
-            "booked. Ground hops are an estimate by distance.",
+            "note": "Tickets follow the nights of each city where the dates chain. A hop by land shows a real "
+            "train or bus when one was found (ground), else an estimate by distance.",
         }
 
     async def _route(ids: list[str], snapshots: dict) -> RoutePlan | None:

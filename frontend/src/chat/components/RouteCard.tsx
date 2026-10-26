@@ -1,40 +1,26 @@
 import { useContext, useState } from 'react'
 import { motion, type Variants } from 'motion/react'
-import { CheckIcon, ChevronRightIcon, MinusIcon } from '@heroicons/react/20/solid'
+import { CheckIcon, ChevronRightIcon, MinusIcon, SparklesIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { RouteCard as Route, RouteLeg } from '@/types/api'
 import { CurrencyContext, flagEmoji, formatMoney, keepPricesTogether, plural } from '../widgets'
-import { AirlineLogo, PriceChangeNote } from './ticket'
+import { CountUp } from './CountUp'
+import { KIND_COLOR, legKind, saving, travelDays, units } from './legFormat'
+import { ModeIcon } from './LegRow'
+import { PriceChangeNote } from './ticket'
 import { sceneKinds } from './routeScenes'
-import { hours, shortDate, stopsText, temp } from './ticketFormat'
+import { hours, temp } from './ticketFormat'
 import { TripArt } from './TripArt'
 
-const PLANE = 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z'
 const SPRING = { type: 'spring', stiffness: 230, damping: 26 } as const
 const MERGE_AFTER_MS = 140 // the stop cards land first, then close up into one route
+const DENSE_FROM = 4 // cities in the banner from which the panels get narrow and the text small
+const TIGHT_FROM = 6
 
 /** The route rises like any card, but as separate city cards: they merge once it has landed. */
 const routeRise: Variants = {
   hidden: { opacity: 0, y: 32 },
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 220, damping: 24 } },
-}
-
-export function ModeIcon({ mode, className }: { mode: RouteLeg['mode']; className?: string }) {
-  if (mode === 'flight') {
-    return (
-      <svg viewBox="0 0 24 24" className={cn('rotate-90', className)} aria-hidden>
-        <path fill="currentColor" d={PLANE} />
-      </svg>
-    )
-  }
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <rect x="4" y="4" width="16" height="13" rx="3" />
-      <path d="M4 11h16M8 20v-3M16 20v-3" />
-      <circle cx="8" cy="14" r="0.6" fill="currentColor" />
-      <circle cx="16" cy="14" r="0.6" fill="currentColor" />
-    </svg>
-  )
 }
 
 /** How well the route covers what the user wants, as a ring that fills in once the card is whole. */
@@ -64,97 +50,88 @@ function MatchRing({ value, on }: { value: number; on: boolean }) {
   )
 }
 
-export function LegRow({ leg, index }: { leg: RouteLeg; index: number }) {
-  const currency = useContext(CurrencyContext)
-  const ticket = leg.ticket
-  const body = (
-    <>
-      <span
-        className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-          leg.mode === 'flight' ? 'bg-highlight/10 text-highlight' : 'bg-primary/40 text-[#3f7d22]',
-        )}
-      >
-        <ModeIcon mode={leg.mode} className="h-4 w-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold text-foreground">
-          {leg.from} → {leg.to}
-        </span>
-        <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          {ticket ? (
-            <>
-              <AirlineLogo ticket={ticket} className="h-4 w-4" />
-              <span className="truncate">
-                {ticket.airline_name} ·{' '}
-                <span className={ticket.transfers === 0 ? 'font-medium text-[#4c9a2a]' : undefined}>{stopsText(ticket)}</span>
-                {ticket.hours > 0 && ` · ${hours(ticket.hours)}`}
-              </span>
-            </>
-          ) : (
-            <span className="truncate">
-              {leg.mode === 'ground' ? `по земле ~${hours(leg.hours)}, ${leg.km} км` : `~${hours(leg.hours)} лёту`}
-              <span className="text-faint"> · {leg.mode === 'ground' ? 'оценка' : 'билетов пока нет'}</span>
-            </span>
-          )}
-        </span>
-      </span>
-      {ticket && (
-        <span className="shrink-0 text-right">
-          <span className="block text-[11px] text-faint">{shortDate(ticket.departure)}, от</span>
-          <span className="block text-[14px] font-semibold text-foreground tabular-nums">{formatMoney(ticket.price_rub, currency)}</span>
-        </span>
-      )}
-    </>
-  )
-  return (
-    <motion.li
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ ...SPRING, delay: 0.35 + index * 0.07 }}
-      className="list-none"
-    >
-      {ticket ? (
-        <a
-          href={ticket.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${leg.from} → ${leg.to}, ${ticket.airline_name}`}
-          className="flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-accent/60"
-        >
-          {body}
-        </a>
-      ) : (
-        <div className="flex items-center gap-3 px-2 py-1.5">{body}</div>
-      )}
-    </motion.li>
-  )
-}
-
-/** What the whole route costs in tickets, and whether the cheapest dates follow one another. */
+/** What the whole route costs in tickets, what the trains and the smarter ways saved, and whether the dates
+ * follow one another. */
 export function RouteTotal({ card }: { card: Route }) {
   const currency = useContext(CurrencyContext)
-  const flightDays = card.legs.flatMap((leg) => (leg.ticket ? [shortDate(leg.ticket.departure)] : []))
+  const days = travelDays(card.legs)
+  const saved = card.legs.reduce((sum, leg) => sum + (saving(leg) ?? 0), 0)
+  const byLand = card.legs
+    .flatMap(units)
+    .reduce((sum, part) => sum + (part.mode === 'ground' ? (part.ground?.price_rub ?? 0) : 0), 0)
   return (
     <div className="rounded-2xl bg-inset px-4 py-3">
       <p className="m-0 text-[12px] text-muted-foreground">Билеты на весь маршрут, на человека</p>
       <p className="m-0 text-lg font-semibold text-foreground tabular-nums">
-        {card.total_rub ? `от ${formatMoney(card.total_rub, currency)}` : 'цены уточню'}
+        {card.total_rub ? (
+          <>
+            от <CountUp value={card.total_rub} format={(n) => formatMoney(n, currency)} />
+          </>
+        ) : (
+          'цены уточню'
+        )}
         {card.total_rub && !card.total_complete && (
           <span className="ml-2 text-[12px] font-normal text-muted-foreground">без плеч, где билетов пока нет</span>
         )}
       </p>
+      {byLand > 0 && (
+        <p className="m-0 text-[12px] text-muted-foreground">в том числе поезда и автобусы на {formatMoney(byLand, currency)}</p>
+      )}
       {card.price_change && <PriceChangeNote change={card.price_change} className="block" />}
-      {flightDays.length > 1 && (
+      {saved > 0 && (
+        <motion.p
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...SPRING, delay: 0.6 }}
+          className="m-0 mt-0.5 flex items-center gap-1 text-[12px] font-medium text-[#3f7d22]"
+        >
+          <SparklesIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {`Умные пересадки сберегли ${formatMoney(saved, currency)} против рейсов с пересадками`}
+        </motion.p>
+      )}
+      {days.length > 1 && (
         <p className={cn('m-0 mt-0.5 flex items-center gap-1 text-[12px]', card.dates_chained ? 'text-[#3f7d22]' : 'text-amber-600')}>
-          {card.dates_chained ? <CheckIcon className="h-3.5 w-3.5" aria-hidden /> : <MinusIcon className="h-3.5 w-3.5" aria-hidden />}
+          {card.dates_chained ? <CheckIcon className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <MinusIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />}
           {card.dates_chained
-            ? `Даты состыкованы: ${flightDays.join(' → ')}`
+            ? `Даты состыкованы: ${days.join(' → ')}`
             : 'Самые дешёвые даты не стыкуются, соберу точнее при бронировании'}
         </p>
       )}
     </div>
   )
+}
+
+/** A joint of the banner: how you get from one city to the next. A smarter way shows each of its means and
+ * a green ring. */
+function Seam({ leg, at, order, merged, tight }: { leg: RouteLeg; at: number; order: number; merged: boolean; tight: boolean }) {
+  const kinds = [...new Set(units(leg).map(legKind))]
+  const smart = Boolean(leg.parts?.length)
+  return (
+    <motion.span
+      initial={false}
+      animate={merged ? { scale: 1, opacity: 1 } : { scale: 0.4, opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 22, delay: merged ? 0.25 + order * 0.08 : 0 }}
+      style={{ left: `${at * 100}%` }}
+      title={smart ? `Умный путь через ${leg.via}` : undefined}
+      className={cn(
+        'absolute top-[38%] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white py-1 text-[11px] font-semibold whitespace-nowrap text-foreground shadow-md',
+        tight ? 'px-1.5' : 'px-2.5',
+        smart && 'ring-2 ring-primary',
+      )}
+    >
+      {kinds.map((kind) => (
+        <ModeIcon key={kind} mode={kind} className={cn('h-3.5 w-3.5', KIND_COLOR[kind])} />
+      ))}
+      <span className={cn(tight && 'hidden sm:inline')}>{hours(leg.ticket?.hours || leg.hours)}</span>
+    </motion.span>
+  )
+}
+
+/** Where a seam sits along the banner: between the city a leg leaves and the one it reaches. */
+function seamAt(leg: RouteLeg, index: number, stops: number): number | null {
+  if (leg.from_stop === undefined || leg.to_stop === undefined) return index > 0 && index < stops ? index / stops : null
+  if (leg.from_stop === null || leg.to_stop === null) return null // home → first and last → home are not seams
+  return (Math.min(leg.from_stop, leg.to_stop) + 1) / stops
 }
 
 interface RouteCardProps {
@@ -171,9 +148,14 @@ interface RouteCardProps {
 /** A multi-city route across two cells of the grid: its cities arrive as separate cards and merge into one. */
 export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails }: RouteCardProps) {
   const [merged, setMerged] = useState(false)
-  const between = card.legs.slice(1, -1) // home → first and last → home are not seams of the banner
+  const seams = card.legs.flatMap((leg, i) => {
+    const at = seamAt(leg, i, card.stops.length)
+    return at === null ? [] : [{ leg, at }]
+  })
   const nights = card.stops.reduce((sum, s) => sum + s.nights, 0)
   const scenes = sceneKinds(card.stops)
+  const dense = card.stops.length >= DENSE_FROM
+  const tight = card.stops.length >= TIGHT_FROM
 
   return (
     <motion.article
@@ -191,26 +173,42 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
       )}
     >
       <div className="relative h-44 sm:h-52">
-        <motion.div className="absolute inset-0 flex" initial={false} animate={{ gap: merged ? 0 : 14 }} transition={SPRING}>
+        <motion.div className="absolute inset-0 flex" initial={false} animate={{ gap: merged ? 0 : dense ? 8 : 14 }} transition={SPRING}>
           {card.stops.map((stop, i) => (
             <motion.div
               key={stop.id}
               initial={false}
-              animate={merged ? { borderRadius: 0, rotate: 0, scale: 1 } : { borderRadius: 24, rotate: i % 2 ? 1.6 : -1.6, scale: 0.95 }}
+              animate={merged ? { borderRadius: 0, rotate: 0, scale: 1 } : { borderRadius: dense ? 18 : 24, rotate: i % 2 ? 1.6 : -1.6, scale: 0.95 }}
               transition={{ ...SPRING, delay: merged ? i * 0.04 : 0 }}
               className="relative min-w-0 flex-1 overflow-hidden shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)]"
             >
               <TripArt kind={scenes[i]} seed={stop.id} photo={stop.photo} still className="absolute inset-0" />
               <span className="pointer-events-none absolute inset-0 bg-linear-to-t from-slate-950/70 via-slate-950/10 to-transparent" />
-              <div className="absolute right-3 bottom-3 left-3 sm:right-4 sm:left-4">
-                <span className="mb-1.5 inline-flex rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-foreground">
-                  {stop.nights} {plural(stop.nights, ['ночь', 'ночи', 'ночей'])}
-                  {stop.day !== null && <span className="ml-1.5 font-medium text-muted-foreground">{temp(stop.day)}</span>}
+              <div className={cn('absolute bottom-3', dense ? 'right-2 left-2 sm:right-3 sm:left-3' : 'right-3 left-3 sm:right-4 sm:left-4')}>
+                <span
+                  className={cn(
+                    'mb-1.5 inline-flex rounded-full bg-white/90 font-semibold text-foreground',
+                    dense ? 'px-1.5 py-0.5 text-[10px] sm:text-[11px]' : 'px-2 py-0.5 text-[11px]',
+                  )}
+                >
+                  {stop.nights}
+                  {tight ? <span className="sm:hidden">&nbsp;н.</span> : null}
+                  <span className={cn(tight && 'hidden sm:inline')}>&nbsp;{plural(stop.nights, ['ночь', 'ночи', 'ночей'])}</span>
+                  {stop.day !== null && (
+                    <span className={cn('ml-1.5 font-medium text-muted-foreground', dense && 'hidden sm:inline')}>{temp(stop.day)}</span>
+                  )}
                 </span>
-                <h3 className="m-0 truncate text-lg leading-tight font-semibold text-white sm:text-[22px]">{stop.name}</h3>
-                <p className="m-0 mt-0.5 truncate text-[12px] font-medium text-white/85">
-                  <span className="mr-1">{flagEmoji(stop.country_code)}</span>
-                  {stop.country}
+                <h3
+                  className={cn(
+                    'm-0 leading-tight font-semibold text-white',
+                    dense ? 'line-clamp-2 text-[13px] break-words hyphens-auto sm:text-base' : 'truncate text-lg sm:text-[22px]',
+                  )}
+                >
+                  {stop.name}
+                </h3>
+                <p className={cn('m-0 mt-0.5 truncate font-medium text-white/85', dense ? 'text-[11px]' : 'text-[12px]')}>
+                  <span className={cn(!dense && 'mr-1')}>{flagEmoji(stop.country_code)}</span>
+                  <span className={cn(dense && 'hidden sm:inline sm:pl-1')}>{stop.country}</span>
                 </p>
               </div>
             </motion.div>
@@ -218,18 +216,8 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
         </motion.div>
 
         {/* the joints: how you get from one city to the next, popping in once the cards close up */}
-        {between.map((leg, i) => (
-          <motion.span
-            key={`${leg.from}-${leg.to}`}
-            initial={false}
-            animate={merged ? { scale: 1, opacity: 1 } : { scale: 0.4, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 22, delay: merged ? 0.25 + i * 0.08 : 0 }}
-            style={{ left: `${((i + 1) / card.stops.length) * 100}%` }}
-            className="absolute top-[38%] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap text-foreground shadow-md"
-          >
-            <ModeIcon mode={leg.mode} className={cn('h-3.5 w-3.5', leg.mode === 'flight' ? 'text-highlight' : 'text-[#3f7d22]')} />
-            {hours(leg.ticket?.hours || leg.hours)}
-          </motion.span>
+        {seams.map(({ leg, at }, i) => (
+          <Seam key={`${leg.from}-${leg.to}`} leg={leg} at={at} order={i} merged={merged} tight={tight} />
         ))}
 
         <motion.div
