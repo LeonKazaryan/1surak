@@ -16,6 +16,10 @@ from app.destinations.climate import ClimateFetcher
 from app.flights import NoFlights, TravelpayoutsFlights, network
 from app.flights.fares import FareStore
 from app.flights.router import router as places_router
+from app.ground import GroundTransport
+from app.ground import configure as configure_ground
+from app.ground.flixbus import FlixBuses
+from app.ground.tutu import TutuTrains
 from app.hotels import EstimatedOffers, HotelSource
 from app.hotels.cache import CachedOffers, OfferStore
 from app.kb.embeddings import Embedder, FastEmbedder
@@ -102,6 +106,8 @@ def create_app(
             # the cities people fly to from the usual departure cities: their climate loads in the background
             for origin in filter(None, settings.destination_prefetch.split(",")):
                 await climate.ensure(reachable(network(), origin.strip()), urgent=False)
+        if settings.ground_transport:
+            configure_ground(GroundTransport(TutuTrains(), FlixBuses() if settings.flixbus else None))
         if tools is not None:
             app.state.tools = tools
         else:

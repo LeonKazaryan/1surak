@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 SEED = Path(__file__).parent / "seed"
 LOGO_URL = "https://pics.avs.io/{size}/{size}/{code}.png"  # Aviasales' airline logo CDN
@@ -58,6 +59,18 @@ def cities() -> dict[str, City]:
         )
         for r in rows
     }
+
+
+@cache
+def _zones() -> dict[str, str]:
+    """City code > IANA time zone, from the same Travelpayouts city list: {"TAS": "Asia/Tashkent"}."""
+    return json.loads((SEED / "timezones.json").read_text(encoding="utf-8"))
+
+
+def time_zone(place: City) -> ZoneInfo | None:
+    """The city's local time: a train after a flight leaves by the clock of the city the plane landed in."""
+    name = _zones().get(place.code)
+    return ZoneInfo(name) if name else None
 
 
 @cache

@@ -4,7 +4,7 @@ import { BuildingOffice2Icon, CameraIcon, HomeIcon, MapIcon, MapPinIcon, SunIcon
 import { ScrollRow } from '@/components/ScrollRow'
 import { cn } from '@/components/ui/utils'
 import type { PlanDay, PlanItem, PlanItemKind, PlanStop } from '@/types/api'
-import { ModeIcon } from '../components/RouteCard'
+import { ModeIcon } from '../components/LegRow'
 import { TripArt } from '../components/TripArt'
 import { PlanSection } from './planParts'
 import { dayChip } from './planFormat'

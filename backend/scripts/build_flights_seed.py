@@ -26,6 +26,11 @@ def fetch(name: str, url: str = DATA) -> list[dict]:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     countries = {c["code"]: c["name"] for c in fetch("countries") if c.get("name")}
+    flightable = [
+        c
+        for c in fetch("cities")
+        if c.get("has_flightable_airport") and c.get("name") and c.get("coordinates")
+    ]
     cities = [
         {
             "code": c["code"],
@@ -38,9 +43,9 @@ def main() -> None:
             "cc": c.get("country_code"),
             "tz": c.get("time_zone"),
         }
-        for c in fetch("cities")
-        if c.get("has_flightable_airport") and c.get("name") and c.get("coordinates")
+        for c in flightable
     ]
+    timezones = {c["code"]: c["time_zone"] for c in flightable if c.get("time_zone")}
     airlines = {
         a["code"]: a.get("name") or (a.get("name_translations") or {}).get("en")
         for a in fetch("airlines")
@@ -69,10 +74,14 @@ def main() -> None:
         ("airlines", airlines),
         ("airports", airports),
         ("routes", routes),
+        ("timezones", timezones),
     ):
         (OUT / f"{name}.json").write_text(
             json.dumps(
-                data, ensure_ascii=False, separators=(",", ":"), sort_keys=name in ("airports", "routes")
+                data,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=name in ("airports", "routes", "timezones"),
             ),
             encoding="utf-8",
         )

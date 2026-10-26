@@ -236,6 +236,7 @@ def price_level(b: TripBrief) -> int | None:
     return None
 
 
+MAX_NAMED = 7  # cities of one route (app.trip.routes.MAX_STOPS)
 STOP_SEPARATORS = re.compile(
     r"\s*(?:,|;|→|->|—|–|\s-\s|\sи\s|\sпотом\s|\sзатем\s|\sа потом\s)\s*", re.IGNORECASE
 )
@@ -280,7 +281,12 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         if countries or region:
             hint["countries"] = countries or region
     if stops := named_stops(b.destination, catalog):
-        hint["plan_route"] = {"stops": stops}  # the user's own cities: priced as they are, not suggested
+        ids = {p.name: p.id for p in catalog.places}
+        if len(stops) <= MAX_NAMED and all(name in ids for name in stops):
+            # all of them in the catalogue: search_routes builds the route with trains, smarter ways, nights
+            hint["route_places"] = [ids[name] for name in stops]
+        else:
+            hint["plan_route"] = {"stops": stops}  # the user's own cities: priced as they are, not suggested
     elif b.multi_city:
         hint["multi_city"] = True  # search_routes, not search_destinations
         _, nights = night_range(b)

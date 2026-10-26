@@ -9,6 +9,8 @@ from sqlalchemy.engine import make_url
 from app.config import Settings
 from app.db import reset_database
 from app.flights import RouteFlights, Ticket
+from app.ground import NoGround
+from app.ground import configure as configure_ground
 from app.llm import LLMEvent, TextDelta, ToolCall
 from app.main import create_app
 
@@ -92,6 +94,14 @@ class FakeFlights:
         return {d: await self.route(origin, d, month) for d in destinations}
 
 
+@pytest.fixture(autouse=True)
+def no_real_ground():
+    """An app built in a test switches real trains and buses on (the default); none may leak into the next test."""
+    configure_ground(NoGround())
+    yield
+    configure_ground(NoGround())
+
+
 @pytest.fixture
 def static_dir(tmp_path):
     static = tmp_path / "static"
@@ -111,6 +121,7 @@ def settings(db_url, static_dir):
         seed_catalog=False,
         embeddings=False,
         destination_climate=False,  # no Open-Meteo calls from tests
+        ground_transport=False,  # no test calls a real timetable
     )
 
 

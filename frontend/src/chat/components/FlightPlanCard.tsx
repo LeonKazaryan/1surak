@@ -4,7 +4,7 @@ import { ArrowTopRightOnSquareIcon, CheckIcon, MinusIcon } from '@heroicons/reac
 import { cn } from '@/components/ui/utils'
 import type { FlightConnection, FlightPlan, FlightPlanEvent, FlightPlanLeg, FlightTicket } from '@/types/api'
 import { CurrencyContext, RUB, formatMoney } from '../widgets'
-import { ModeIcon } from './RouteCard'
+import { ModeIcon } from './LegRow'
 import { AirlineLogo } from './ticket'
 import { hours, shortDate, stopsText } from './ticketFormat'
 

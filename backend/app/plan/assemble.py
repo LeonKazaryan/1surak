@@ -28,6 +28,7 @@ from app.plan.places import PlaceInfo, place_info
 from app.plan.transfers import Transfer, transfer_to
 from app.plan.trip import HOTEL_SPREAD, Costs, Move, StopPlan, TripPlan, day_text, span_text
 from app.trip.brief import TripBrief, night_range, price_level
+from app.trip.legs import arriving, leaving, units
 from app.trip.routes import DEFAULT_NIGHTS, ROAD_DETOUR, Leg, RoutePlan, price_route, split_nights
 
 HOME_LEAVES = time(9)  # a trip by land from home starts in the morning
@@ -90,7 +91,29 @@ def _ride_text(ride: Transfer | None) -> str | None:
 
 
 def _ground_rub(leg: Leg) -> int:
+    """A real train or bus fare when one was found, else the estimate by distance."""
+    if leg.ground_rub is not None:
+        return leg.ground_rub
     return hundreds(leg.km * ROAD_DETOUR * GROUND_RUB_PER_KM)
+
+
+def _smart_check(leg: Leg) -> Check | None:
+    """Says how a smart way goes, part by part, and what it saves against the direct flight."""
+    if not leg.parts:
+        return None
+    steps = []
+    for part in leg.parts:
+        if part.ticket:
+            steps.append(f"рейс {part.origin} → {part.destination} ({_flight_text(part.ticket)})")
+        elif part.ground:
+            best = part.ground.best
+            steps.append(f"{best.name} {part.origin} → {part.destination}, около {part.hours:g} ч")
+        else:
+            steps.append(f"по земле {part.origin} → {part.destination}, около {part.hours:g} ч")
+    text = "; затем ".join(steps).capitalize() + "."
+    if leg.instead and leg.price_rub is not None:
+        text += f" Прямой вариант стоил {money(leg.instead['price_rub'])} с пересадками: {leg.instead['transfers']}."
+    return Check("info", f"{leg.origin} → {leg.destination} через {leg.via}", text, kind="move")
 
 
 def _key(moment: datetime) -> tuple[date, str]:
@@ -253,7 +276,8 @@ def _wishes(brief: TripBrief, stops: list[StopPlan], moves: list[Move]) -> tuple
 def _costs(route: RoutePlan, party: Party, stops: list[StopPlan], brief: TripBrief) -> Costs:
     infants = sum(1 for a in party.children_ages if a < INFANT_AGE)
     seats = party.guests - infants + INFANT_FARE * infants
-    flown = [leg for leg in route.legs if leg.mode == "flight"]
+    every = [u for leg in route.legs for u in units(leg)]  # a smart way pays for each of its parts
+    flown = [u for u in every if u.mode == "flight"]
     budget = (
         CURRENCIES[brief.budget_currency or "RUB"].to_rub(brief.budget_total) if brief.budget_total else None
     )
@@ -261,7 +285,7 @@ def _costs(route: RoutePlan, party: Party, stops: list[StopPlan], brief: TripBri
         flights=round(sum(leg.ticket.price for leg in flown if leg.ticket) * seats),
         hotels=sum(s.pick.best.total_rub for s in stops),
         transfers=sum(s.transfers_rub for s in stops),
-        ground=sum(_ground_rub(leg) for leg in route.legs if leg.mode == "ground") * party.guests,
+        ground=sum(_ground_rub(u) for u in every if u.mode == "ground") * party.guests,
         guests=party.guests,
         flights_complete=all(leg.ticket for leg in flown),
         budget=budget,
@@ -360,12 +384,14 @@ async def assemble(
     per_stop = []
     moves: dict[int, Move] = {}
     checks = _ticket_checks(route, fixed, brief)
+    checks += [c for leg in route.legs if (c := _smart_check(leg))]
     cursor: datetime | None = None
     for i, s in enumerate(route.stops):
         place, info = s.place, place_info(s.place.id)
         j_in, j_out = (i, i + 1) if home else (i - 1, i)
-        leg_in = legs[j_in] if 0 <= j_in < len(legs) else None
-        leg_out = legs[j_out] if 0 <= j_out < len(legs) else None
+        # a smart way is seen from each city by its own end: a train out of here, a flight landing there
+        leg_in = arriving(legs[j_in]) if 0 <= j_in < len(legs) else None
+        leg_out = leaving(legs[j_out]) if 0 <= j_out < len(legs) else None
         nominal = start + timedelta(days=sum(route.nights[:i]))
         month = nominal.month
         options = await hotels.hotels(place, nominal, route.nights[i], party)
@@ -397,12 +423,12 @@ async def assemble(
                 Check("info", f"Переезд {leg_out.origin} → {leg_out.destination}", text, kind="move")
             )
         if arrival.move and leg_in:
-            moves[j_in] = arrival.move
+            moves[j_in] = replace(arrival.move, leg=legs[j_in])  # the whole leg, its parts included
         if departure.move and leg_out:
-            moves.setdefault(j_out, departure.move)
+            moves.setdefault(j_out, replace(departure.move, leg=legs[j_out]))
         if departure.back and leg_out:
             lands = departure.back.arrives.astimezone(home_tz) if departure.back.arrives and home_tz else None
-            moves.setdefault(j_out, Move(leg_out, departure.back.departs, lands))
+            moves.setdefault(j_out, Move(legs[j_out], departure.back.departs, lands))
         climate = s.climate.get(month, {})
         stay = Stay(
             guide=stop.guide,

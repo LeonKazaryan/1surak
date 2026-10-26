@@ -179,6 +179,14 @@ def test_should_hand_the_users_own_cities_to_plan_route():
     )
 
 
+def test_should_hand_catalogue_cities_the_user_named_to_search_routes():
+    from app.trip.brief import search_hint
+
+    hint = search_hint(TripBrief(destination="Алматы и Самарканд", multi_city=True, month=5), load_catalog())
+
+    assert hint["route_places"] == ["almaty", "samarkand"] and "plan_route" not in hint
+
+
 def test_should_not_announce_a_city_the_turn_already_flies_from():
     async def run():
         state = TripState(TripBrief())
