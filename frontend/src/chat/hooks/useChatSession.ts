@@ -172,7 +172,7 @@ export function useChatSession(urlChatId: string | undefined) {
           if (!isCurrent()) return
           if (event.type === 'origin') {
             // the user named another city in the message: the next one is sent from it too
-            saveDepartureCity({ code: event.code, name: event.name })
+            saveDepartureCity({ code: event.code, name: event.name, country: event.country })
             return
           }
           if (event.type === 'assistant_token') {

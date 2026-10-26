@@ -331,6 +331,7 @@ export interface OriginEvent {
   type: 'origin'
   code: string
   name: string
+  country?: string
 }
 
 export interface DestinationsEvent {

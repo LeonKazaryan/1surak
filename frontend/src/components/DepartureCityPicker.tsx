@@ -15,6 +15,7 @@ import {
 } from '@/lib/departureCity'
 
 const SEARCH_DELAY_MS = 250
+const PHONE_EDGE = 0.04 // CardNav is 92% wide and centred: on a phone the list lines up with its edges
 const SKELETON_ROWS = ['62%', '74%', '54%']
 const SEARCH_FAILED = 'Не получилось найти город. Проверьте интернет и попробуйте ещё раз'
 
@@ -139,7 +140,8 @@ export function DepartureCityPicker({ prefix, onChange, className }: DepartureCi
         <Popover.Content
           align="end"
           sideOffset={6}
-          className="z-50 w-72 rounded-2xl border border-border bg-card p-2 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.45)]"
+          collisionPadding={Math.round(window.innerWidth * PHONE_EDGE)}
+          className="z-50 w-72 rounded-2xl border border-border bg-card p-2 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.45)] max-sm:w-[92vw]"
         >
           <label className="flex items-center gap-2 rounded-xl bg-secondary/70 px-3 py-2">
             <MagnifyingGlassIcon className="h-4 w-4 text-faint" />

@@ -89,7 +89,7 @@ def test_should_search_from_the_city_named_in_the_message():
 
     reply, origin, currency, brief = asyncio.run(run())
 
-    assert isinstance(reply, ToolReply) and reply.event == {"type": "origin", "code": "NQZ", "name": "Астана"}
+    assert isinstance(reply, ToolReply) and reply.event == {"type": "origin", "code": "NQZ", "name": "Астана", "country": "Казахстан"}
     assert origin == "NQZ" and currency == "KZT" and brief.origin_code == "NQZ"
     assert "origin_changed" in reply.result
 

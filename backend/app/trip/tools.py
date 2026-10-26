@@ -227,7 +227,10 @@ def trip_tools(
             home = use_origin(brief.origin_code)
             result["origin_changed"] = f"Tickets are now searched {home.from_text}."
             # the picker in the browser follows, so the next message comes from the same city
-            return ToolReply(result=result, event={"type": "origin", "code": home.code, "name": home.name})
+            return ToolReply(
+                result=result,
+                event={"type": "origin", "code": home.code, "name": home.name, "country": home.country},
+            )
         return result
 
     async def ask_user(args: AskArgs) -> dict | ToolReply:

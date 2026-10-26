@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Popover } from 'radix-ui'
 import { CheckIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
-import { CURRENCY_OPTIONS, getCurrencyChoice, onCurrencyChange, saveCurrencyChoice, type CurrencyCode } from '@/lib/currency'
+import { CURRENCY_OPTIONS, currencyOf, getCurrencyChoice, onCurrencyChange, saveCurrencyChoice, type CurrencyCode } from '@/lib/currency'
+import { getDepartureCity, onDepartureCityChange } from '@/lib/departureCity'
 
 function Row({ label, note, active, onPick }: { label: string; note: string; active: boolean; onPick: () => void }) {
   return (
@@ -26,9 +27,11 @@ function Row({ label, note, active, onPick }: { label: string; note: string; act
 /** Which currency the prices are in: picked here, or «по городу вылета» (tenge from Astana, roubles from Moscow). */
 export function CurrencyPicker({ className }: { className?: string }) {
   const [code, setCode] = useState<CurrencyCode | null>(getCurrencyChoice)
+  const [country, setCountry] = useState(() => getDepartureCity().country)
   const [open, setOpen] = useState(false)
   useEffect(() => onCurrencyChange(() => setCode(getCurrencyChoice())), [])
-  const current = CURRENCY_OPTIONS.find((o) => o.code === code)
+  useEffect(() => onDepartureCityChange((city) => setCountry(city.country)), [])
+  const shown = CURRENCY_OPTIONS.find((o) => o.code === (code ?? currencyOf(country)))
   const choose = (picked: CurrencyCode | null) => {
     saveCurrencyChoice(picked)
     setCode(picked)
@@ -38,14 +41,14 @@ export function CurrencyPicker({ className }: { className?: string }) {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        aria-label={`Валюта: ${current?.name ?? 'по городу вылета'}`}
+        aria-label={`Валюта: ${shown?.name}${code ? '' : ', по городу вылета'}`}
         className={cn(
-          'inline-flex h-8 items-center gap-1 rounded-full bg-secondary/60 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary',
+          'inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-full bg-secondary/60 px-2 text-sm text-muted-foreground transition-colors hover:bg-secondary sm:px-2.5',
           className,
         )}
       >
-        <span className="font-semibold text-highlight">{current?.sign ?? '¤'}</span>
-        {current ? current.code : 'Валюта'}
+        <span className="font-semibold text-highlight">{shown?.sign}</span>
+        <span className="max-sm:hidden">{shown?.code}</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content

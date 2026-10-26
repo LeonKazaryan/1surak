@@ -198,6 +198,20 @@ describe('ChatPage', () => {
     )
   })
 
+  it('should keep the country of a departure city named in the chat, so prices follow its currency', async () => {
+    streamReply([{ type: 'origin', code: 'NQZ', name: 'Астана', country: 'Казахстан' }], {
+      type: 'done',
+      answer: 'Ок',
+      chat_id: 'chat-1',
+      title: 'Море',
+    })
+    renderChat({ pathname: '/chat', state: { query: 'Из Астаны к морю' } })
+
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem('1surak.departureCity')!)).toEqual({ code: 'NQZ', name: 'Астана', country: 'Казахстан' }),
+    )
+  })
+
   it('should show example trips in the empty state', () => {
     renderChat()
 

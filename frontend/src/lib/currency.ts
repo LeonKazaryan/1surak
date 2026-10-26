@@ -11,6 +11,13 @@ export const CURRENCY_OPTIONS: { code: CurrencyCode; sign: string; name: string 
   { code: 'KGS', sign: 'сом', name: 'Сомы' },
 ]
 
+const BY_COUNTRY: Partial<Record<string, CurrencyCode>> = { Россия: 'RUB', Казахстан: 'KZT', Беларусь: 'BYN', Узбекистан: 'UZS', Кыргызстан: 'KGS' }
+
+/** The currency the server picks for a departure country: keep in step with BY_COUNTRY in backend/app/money.py. */
+export function currencyOf(country?: string): CurrencyCode {
+  return country ? (BY_COUNTRY[country] ?? 'USD') : 'RUB'
+}
+
 const KEY = '1surak.currency'
 const CHANGED = '1surak:currency'
 let unsaved: CurrencyCode | null = null // when storage is blocked, the choice lasts until a reload
