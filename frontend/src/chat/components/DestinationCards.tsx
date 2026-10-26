@@ -1,6 +1,7 @@
 import { useContext, useState } from 'react'
 import { motion, type Variants } from 'motion/react'
 import {
+  ArrowTopRightOnSquareIcon,
   CheckBadgeIcon,
   CheckIcon,
   ChevronRightIcon,
@@ -78,6 +79,35 @@ export function TicketStrip({ flight, change }: { flight: RouteFlight; change?: 
             Прямой рейс {direct.airline_name} от {formatMoney(direct.price_rub, currency)}
             {direct.hours > 0 && `, ${hours(direct.hours)}`}
           </span>
+        </a>
+      )}
+    </div>
+  )
+}
+
+/** No cached ticket: two tickets through the main airport if we found them, and the live search on Aviasales. */
+export function NoCachedTicket({ card }: { card: DestinationCard }) {
+  const currency = useContext(CurrencyContext)
+  const via = card.flight_via
+  return (
+    <div className="flex flex-col gap-1.5 rounded-2xl border border-border px-3.5 py-2.5 text-[13px]">
+      {via ? (
+        <p className="m-0 text-foreground">
+          <span className="font-semibold">{`${via.estimate ? '≈ ' : ''}от ${formatMoney(via.price_rub, currency)}`}</span>
+          <span className="text-muted-foreground">{` с пересадкой в ${via.via_in ?? via.via}, два билета`}</span>
+        </p>
+      ) : (
+        <p className="m-0 text-muted-foreground">В кэше Aviasales цены пока нет</p>
+      )}
+      {card.search_link && (
+        <a
+          href={card.search_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 self-start font-medium text-highlight underline-offset-2 hover:underline"
+        >
+          Найти билеты на Aviasales
+          <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
         </a>
       )}
     </div>
@@ -194,9 +224,14 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="m-0 text-[14px] leading-relaxed text-foreground">{keepPricesTogether(card.why)}</p>
         {card.flight && <TicketStrip flight={card.flight} change={card.price_change} />}
+        {!card.flight && (card.flight_via || card.search_link) && <NoCachedTicket card={card} />}
         <ul className="m-0 grid list-none grid-cols-2 gap-x-3 gap-y-2 p-0">
           {!card.flight && travel && <Fact icon={PaperAirplaneIcon}>{travel}</Fact>}
-          {!card.flight && !travel && <Fact icon={PaperAirplaneIcon} tone="warn">билетов не нашлось</Fact>}
+          {!card.flight && !travel && !card.search_link && (
+            <Fact icon={PaperAirplaneIcon} tone="warn">
+              билетов не нашлось
+            </Fact>
+          )}
           <Fact icon={card.visa_easy ? CheckBadgeIcon : IdentificationIcon} tone={card.visa_easy ? 'good' : 'warn'}>
             {card.visa}
           </Fact>

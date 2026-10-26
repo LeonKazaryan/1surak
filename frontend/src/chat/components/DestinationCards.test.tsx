@@ -146,3 +146,19 @@ describe('DestinationCards', () => {
     expect(screen.getByText('5 ч · с пересадкой')).toBeInTheDocument()
   })
 })
+
+describe('a place with no cached ticket', () => {
+  it('should offer two tickets through the main airport and the live search on Aviasales', () => {
+    renderCard({
+      ...base,
+      flight: null,
+      search_link: 'https://www.aviasales.ru/search/NQZ1512MQX1',
+      flight_via: { via: 'Аддис-Абеба', via_in: 'Аддис-Абебе', price_rub: 78_100, estimate: true, tickets: [] },
+    })
+
+    expect(screen.getByText(/≈ от 78\s100 ₽/)).toBeInTheDocument()
+    expect(screen.getByText(/с пересадкой в Аддис-Абебе, два билета/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Найти билеты на Aviasales/ })).toHaveAttribute('href', 'https://www.aviasales.ru/search/NQZ1512MQX1')
+    expect(screen.queryByText('билетов не нашлось')).toBeNull()
+  })
+})

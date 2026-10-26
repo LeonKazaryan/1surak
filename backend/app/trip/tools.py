@@ -13,8 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, with_flights
 from app.destinations import snapshots_by_id
+from app.destinations.gateway import fill_missing
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
 from app.flights.dictionary import find_city
+from app.flights.network import network
 from app.money import current_currency
 from app.tools import Tool, ToolReply
 from app.trip.brief import (
@@ -303,9 +305,10 @@ def trip_tools(
         async with sessionmaker() as db:
             loaded = list((await snapshots_by_id(db, catalog, now(), picked)).values())
         # the same tickets the search saw: cached by the flights client, so this costs no requests
-        await with_flights(
-            [s for s in loaded if s.place.id in picked], flights, current_origin.get(), state.brief.month
-        )
+        chosen = [s for s in loaded if s.place.id in picked]
+        await with_flights(chosen, flights, current_origin.get(), state.brief.month)
+        # the same answers the search gave where the cache has no ticket: cached, so no new requests
+        await fill_missing(chosen, current_origin.get(), flights, network(), state.brief.month)
         snapshots = {s.place.id: s for s in loaded}
         cards, unknown = [], []
         for pick in args.picks:

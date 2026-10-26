@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -272,3 +272,33 @@ def test_should_look_at_a_named_countrys_main_cities_even_with_no_flight_from_ho
     assert "ADD" not in reachable(network(), "NQZ")  # no direct flight from Astana
     assert candidates(named, network(), "NQZ")[0] == "ADD"
     assert country_cities([f"страна {i}" for i in range(6)], network()) == []  # a region: live and map only
+
+
+class GatewayFlights:
+    """Cached tickets to Addis Ababa and on to Mekele, none straight to Mekele."""
+
+    async def routes(self, origin, destinations, month):
+        from tests.conftest import route
+
+        table = {
+            ("NQZ", "ADD"): route(600, direct=False, price=60_000),
+            ("ADD", "MQX"): route(70, price=9_000),
+        }
+        return {d: table.get((origin, d)) for d in destinations}
+
+
+def test_should_offer_the_live_search_and_a_way_through_the_main_airport():
+    from app.catalog.search import Snapshot
+    from app.destinations.gateway import fill_missing, search_link
+
+    mekele = Snapshot(discovered_place("MQX"))
+    asyncio.run(fill_missing([mekele], "NQZ", GatewayFlights(), network(), 12))
+
+    assert mekele.search_link.startswith(
+        "https://www.aviasales.ru/search/NQZ"
+    ) and mekele.search_link.endswith("MQX1")
+    assert mekele.via["via"] == "Аддис-Абеба" and mekele.via["via_in"] == "Аддис-Абебе"
+    assert (
+        mekele.via["price_rub"] == 69_000 and mekele.via["estimate"]
+    )  # both on the same hour: not connectable
+    assert search_link("NQZ", "MQX", 12, date(2026, 10, 26)) == "https://www.aviasales.ru/search/NQZ1512MQX1"

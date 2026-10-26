@@ -17,6 +17,7 @@ from app.catalog.search import (
     with_flights,
 )
 from app.destinations import candidates, country_cities, in_countries, load_discovered, snapshots_by_id
+from app.destinations.gateway import fill_missing
 from app.destinations.live import Directions, NoDirections
 from app.flights import Flights, NoFlights, city, current_origin
 from app.flights.network import network
@@ -116,6 +117,9 @@ def catalog_tools(
         snapshots = await with_flights(
             [*snapshots, *shortlist(discovered, query)], flights, origin, query.month, query
         )
+        # no cached ticket: a live search link, and two tickets through the country's main airport
+        shown = [s for s in snapshots if in_scope(s, query)]
+        await fill_missing(shown, origin, flights, network(), query.month)
         result = search(snapshots, query, city(origin))
         result["route_map"] = {
             "destinations_from_your_city": len(reach),

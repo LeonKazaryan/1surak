@@ -1,0 +1,82 @@
+"""When Aviasales' cache has no ticket to a small city: the way there through its country's main airport.
+
+The Data API only knows prices someone searched lately, so Astana-Mekele has none while the website finds
+78 000 ₽ with a change. Two answers instead of «no tickets»: a link to the live search on Aviasales, and two
+cached tickets through the main airport (Astana-Addis Ababa, Addis Ababa-Mekele) that can be flown in a row,
+or, when no pair of days connects, their prices added up and marked as an estimate.
+"""
+
+from datetime import date, timedelta
+
+from app.catalog.search import Snapshot
+from app.flights import Flights, city, city_code
+from app.flights.client import departure_month
+from app.flights.connections import connect
+from app.flights.network import Network
+from app.money import money
+
+SEARCH_URL = "https://www.aviasales.ru/search/{origin}{day:02d}{month:02d}{destination}1"
+MAX_GATEWAYS = 6  # cities a search prices this way: two cached lookups each
+
+
+def search_link(origin: str, destination: str, month: int | None, today: date | None = None) -> str:
+    """The live search on Aviasales for one adult, mid-month (or two weeks from now without a month)."""
+    today = today or date.today()
+    if month:
+        year = int(departure_month(month, today)[:4])
+        day = max(date(year, month, 15), today + timedelta(days=3))
+    else:
+        day = today + timedelta(days=14)
+    return SEARCH_URL.format(
+        origin=city_code(origin), day=day.day, month=day.month, destination=city_code(destination)
+    )
+
+
+def gateway(code: str, network: Network) -> str | None:
+    """The best connected airport of the city's country, when that is another city."""
+    from app.destinations import country_cities
+
+    c = city(code)
+    found = country_cities([c.country], network, per_country=1) if c else []
+    return found[0] if found and found[0] != c.code else None
+
+
+async def via_gateway(
+    origin: str, s: Snapshot, flights: Flights, network: Network, month: int | None
+) -> dict | None:
+    hub = gateway(s.place.airport, network)
+    if hub is None or hub == city_code(origin):
+        return None
+    first = (await flights.routes(origin, [hub], month)).get(hub)
+    second = (await flights.routes(hub, [s.place.airport], month)).get(s.place.airport)
+    if not first or not second:
+        return None
+    hub_city = city(hub)
+    pair = connect(hub_city, first, second, lambda price, minutes, transfers: price)
+    where = hub_city.name_in or hub_city.name  # «в Аддис-Абебе»
+    if pair:
+        return {**pair.view(), "via_in": where, "price": money(pair.price), "estimate": False}
+    total = first.cheapest.price + second.cheapest.price
+    return {
+        "via": hub_city.name,
+        "via_in": where,
+        "price_rub": total,
+        "price": money(total),
+        "estimate": True,  # the two cheapest days do not connect: a rough sum, dates to be matched
+        "separate_tickets": True,
+        "tickets": [first.cheapest.view(), second.cheapest.view()],
+    }
+
+
+async def fill_missing(
+    snapshots: list[Snapshot], origin: str, flights: Flights, network: Network, month: int | None
+) -> None:
+    """Search links for every place without a cached ticket; a way through the gateway for route-map cities."""
+    tried = 0
+    for s in snapshots:
+        if s.flights or not s.place.airport:
+            continue
+        s.search_link = search_link(origin, s.place.airport, month)
+        if not s.place.verified and tried < MAX_GATEWAYS:
+            tried += 1
+            s.via = await via_gateway(origin, s, flights, network, month)

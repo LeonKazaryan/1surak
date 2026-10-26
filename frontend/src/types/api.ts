@@ -127,6 +127,10 @@ export interface DestinationCard {
   price_change?: PriceChange
   /** False for a city from the route map: its facts are fetched, not checked by the team. */
   verified?: boolean
+  /** No cached ticket: the live search on Aviasales for this route. */
+  search_link?: string | null
+  /** No cached ticket: two tickets through the country's main airport (estimate when the days do not connect). */
+  flight_via?: { via: string; via_in?: string; price_rub: number; estimate: boolean; tickets: FlightTicket[] } | null
 }
 
 export interface RouteStop {
