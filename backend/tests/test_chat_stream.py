@@ -43,7 +43,7 @@ def stream_events(client, body: dict) -> list[dict]:
 def test_should_stream_tokens_then_done(client):
     events = stream_events(client, {"query": "Привет"})
 
-    assert [e["type"] for e in events] == ["assistant_token", "assistant_token", "done"]
+    assert [e["type"] for e in events] == ["brief", "assistant_token", "assistant_token", "done"]
     assert "".join(e["text"] for e in events if e["type"] == "assistant_token") == "Привет"
     done = events[-1]
     assert done["answer"] == "Привет"
@@ -57,7 +57,8 @@ def test_should_persist_user_and_assistant_messages_with_agent_steps(settings):
         events = stream_events(test_client, {"query": "Хочу к морю"})
         messages = test_client.get(f"/api/chats/{events[-1]['chat_id']}/messages").json()["messages"]
 
-    assert [e["type"] for e in events] == ["tool_start", "tool_end", "assistant_token", "done"]
+    # the header's brief comes first; it lives in the chat's status, so the saved trace does not keep it
+    assert [e["type"] for e in events] == ["brief", "tool_start", "tool_end", "assistant_token", "done"]
     assert [(m["role"], m["content"]) for m in messages] == [
         ("user", "Хочу к морю"),
         ("assistant", "Нашёл"),

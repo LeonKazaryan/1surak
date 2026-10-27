@@ -449,6 +449,8 @@ def card(s: Snapshot, month: int | None = None, sea: bool | None = None) -> dict
         "name": place.name,
         "country": place.country.name,
         "country_code": place.country.code,
+        "lat": place.lat,  # for the map above the cards
+        "lon": place.lon,
         "kinds": list(place.kinds),
         "flight_hours": _hours(s.flight_min),
         "direct": s.direct,

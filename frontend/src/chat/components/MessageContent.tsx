@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import { keepPricesTogether } from '../widgets'
+import { flagEmoji, keepPricesTogether } from '../widgets'
+import { highlightPlugin, type TextPlace } from './highlight'
 
 const components: Components = {
   p: ({ children }) => <p className="m-0 mb-3 last:mb-0">{children}</p>,
@@ -139,17 +141,65 @@ function SourceList({ sources }: { sources: Source[] }) {
 
 interface MessageContentProps {
   text: string
+  /** The places on this message's cards: their names in the text become chips that lead to the card. */
+  places?: TextPlace[]
 }
 
-export function MessageContent({ text }: MessageContentProps) {
+const marked: Components = {
+  ...components,
+  span: ({ className, children, ...props }) => {
+    const data = props as { 'data-place'?: string; 'data-flag'?: string }
+    if (className === 'price-chip') {
+      return <span className="price-chip rounded-md bg-accent px-1 py-px font-semibold whitespace-nowrap text-foreground tabular-nums">{children}</span>
+    }
+    if (className === 'place-chip') {
+      const flag = data['data-flag']
+      return (
+        <span
+          role={data['data-place'] ? 'link' : undefined}
+          tabIndex={data['data-place'] ? 0 : undefined}
+          data-place={data['data-place'] || undefined}
+          className="place-chip cursor-pointer rounded-md font-semibold text-foreground underline decoration-primary-hover decoration-2 underline-offset-[3px] transition-colors hover:bg-accent"
+        >
+          {flag ? `${flagEmoji(flag)} ` : null}
+          {children}
+        </span>
+      )
+    }
+    return <span className={className}>{children}</span>
+  },
+}
+
+/** A place chip leads to its card on the page. */
+function toCard(target: EventTarget | null) {
+  const id = (target as HTMLElement | null)?.closest?.('[data-place]')?.getAttribute('data-place')
+  if (!id) return false
+  const card = document.getElementById(`card-${id}`)
+  card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  card?.animate?.([{ transform: 'scale(1)' }, { transform: 'scale(1.015)' }, { transform: 'scale(1)' }], { duration: 500, easing: 'ease-out' })
+  return true
+}
+
+export function MessageContent({ text, places = [] }: MessageContentProps) {
   const { body, sources, tail } = splitSources(keepPricesTogether(text))
+  const plugins = useMemo(() => [highlightPlugin(places)], [places])
   return (
-    <div className="text-[15px] leading-relaxed wrap-break-word text-foreground">
-      <ReactMarkdown components={components}>{linkAddresses(body)}</ReactMarkdown>
+    <div
+      className="text-[15px] leading-relaxed wrap-break-word text-foreground"
+      onClick={(e) => toCard(e.target)}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && toCard(e.target)) e.preventDefault()
+      }}
+    >
+      <ReactMarkdown components={marked} rehypePlugins={plugins}>
+        {linkAddresses(body)}
+      </ReactMarkdown>
       {sources.length > 0 && <SourceList sources={sources} />}
       {tail && (
         <div className="mt-3">
-          <ReactMarkdown components={components}>{linkAddresses(tail)}</ReactMarkdown>
+          <ReactMarkdown components={marked} rehypePlugins={plugins}>
+            {linkAddresses(tail)}
+          </ReactMarkdown>
         </div>
       )}
     </div>

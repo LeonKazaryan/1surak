@@ -28,6 +28,8 @@ class Tool:
     args: type[BaseModel]
     handler: Callable[[Any], Awaitable[Any]]
     preview: Callable[[Any], str] | None = None
+    # A few numbers about the work, for the progress the user watches: «120 направлений → 14 подходят».
+    facts: Callable[[Any], list[dict]] | None = None
     # A tool the model must call after this one before it answers, e.g. show the places it found as cards.
     then: str | None = None
 
@@ -94,6 +96,22 @@ class ToolResult:
     event: dict | None = None
     text: str = ""
     ends_turn: bool = False
+    facts: tuple[dict, ...] = ()
+
+
+def fact(value: int, forms: tuple[str, str, str], rest: str = "") -> dict:
+    """{value, label}: «120 направлений из Москвы», the label agreeing with the number."""
+    tail = abs(value) % 100
+    word = (
+        forms[2]
+        if 11 <= tail <= 14
+        else forms[0]
+        if tail % 10 == 1
+        else forms[1]
+        if 2 <= tail % 10 <= 4
+        else forms[2]
+    )
+    return {"value": value, "label": f"{word} {rest}".strip()}
 
 
 def _short(text: str) -> str:
@@ -167,6 +185,10 @@ class ToolRegistry:
         if reply:
             result = reply.result
         preview = tool.preview(result) if tool.preview else "Готово"
+        try:
+            facts = tuple(tool.facts(result)) if tool.facts else ()
+        except (KeyError, TypeError, ValueError):  # a fact is a nicety, never a failure
+            facts = ()
         return ToolResult(
             ok=True,
             content=json.dumps(_drop_empty(result), ensure_ascii=False, default=str, separators=(",", ":")),
@@ -175,4 +197,5 @@ class ToolRegistry:
             event=reply.event if reply else None,
             text=reply.text if reply else "",
             ends_turn=bool(reply and reply.ends_turn),
+            facts=facts,
         )

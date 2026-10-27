@@ -143,6 +143,8 @@ export interface DestinationCard {
   name: string
   country: string
   country_code: string
+  lat?: number
+  lon?: number
   kinds: TripKind[]
   flight_hours?: number | null
   direct?: boolean | null
@@ -175,6 +177,8 @@ export interface RouteStop {
   name: string
   country: string
   country_code: string
+  lat?: number
+  lon?: number
   kinds: TripKind[]
   nights: number
   day: number | null
@@ -375,6 +379,8 @@ export interface DestinationsEvent {
   with_kids?: boolean
   cards: DestinationsCard[]
   currency?: Currency
+  /** The departure city, where the arcs of the map start. */
+  origin?: { code: string; name: string; lat: number; lon: number } | null
 }
 
 /** A real photo from Wikimedia Commons: shown with its author and licence. */
@@ -473,6 +479,8 @@ export interface PlanStop {
   name: string
   country: string
   country_code: string
+  lat?: number
+  lon?: number
   kinds: TripKind[]
   check_in: string
   check_out: string
@@ -570,9 +578,41 @@ export interface BookingRequest {
   holder: string
 }
 
+/** The trip field by field, for the chat's header: it fills in as the agent understands the request. */
+export interface TripPassport {
+  destination: {
+    name: string
+    country_code: string | null
+    place_id: string | null
+    photo: Photo | null
+    lat: number | null
+    lon: number | null
+  } | null
+  kinds: { kind: TripKind; label: string }[]
+  month: number | null
+  /** «Ноябрь · 11–14 ночей» */
+  when: string | null
+  /** «2 взрослых + 1 ребёнок (5 лет)» */
+  travelers: string | null
+  /** «Средний бюджет», «до 500 000 ₸» */
+  budget: string | null
+  origin: { code: string; name: string; from: string; lat: number; lon: number } | null
+  multi_city: boolean
+  visa_free_only: boolean
+  by_land: boolean
+  wishes: string[]
+}
+
+/** A number about the agent's work: «120 направлений из города». */
+export interface ToolFact {
+  value: number
+  label: string
+}
+
 /** What a saved trip looks like now: its brief, where the tickets fly from, and whether they still hold. */
 export interface TripStatus {
   summary: string[]
+  passport?: TripPassport | null
   /** «из Астаны» */
   departure: string | null
   priced_at: string | null
@@ -599,7 +639,8 @@ export type ChatStreamEvent =
   | { type: 'assistant_token'; text: string }
   | { type: 'assistant_note'; text: string }
   | { type: 'tool_start'; name: string; title?: string; args?: Record<string, unknown> }
-  | { type: 'tool_end'; name: string; output_preview?: string }
+  | { type: 'tool_end'; name: string; output_preview?: string; facts?: ToolFact[] }
+  | { type: 'brief'; passport: TripPassport }
   | { type: 'error'; message: string }
   | ClarifyEvent
   | DestinationsEvent

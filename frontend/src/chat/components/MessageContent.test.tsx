@@ -89,14 +89,40 @@ describe('MessageContent', () => {
   })
 
   it('should keep a price on one line', () => {
-    render(<MessageContent text="Билет от 72 504 ₸ и 12 775 ₽" />)
+    const { container } = render(<MessageContent text="Билет от 72 504 ₸ и 12 775 ₽" />)
 
-    expect(screen.getByText(/Билет от/).textContent).toBe('Билет от 72\u00a0504\u00a0₸ и 12\u00a0775\u00a0₽')
+    // the prices are chips now: the paragraph as a whole still reads with no-break spaces inside them
+    expect(container.querySelector('p')?.textContent).toBe('Билет от 72\u00a0504\u00a0₸ и 12\u00a0775\u00a0₽')
   })
 
   it('should not render raw HTML from the model', () => {
     const { container } = render(<MessageContent text={'<img src=x onerror="alert(1)">'} />)
 
     expect(container.querySelector('img')).toBeNull()
+  })
+})
+
+describe('MessageContent highlights', () => {
+  it('should mark the prices and turn the places of the cards into chips', () => {
+    render(
+      <MessageContent
+        text={'В Анталье тепло, билет от 12 775 ₽, а в Сочи прохладнее. $185 за визу.'}
+        places={[
+          { id: 'antalya', name: 'Анталья', countryCode: 'TR' },
+          { id: 'sochi', name: 'Сочи', countryCode: 'RU' },
+        ]}
+      />,
+    )
+
+    const prices = document.querySelectorAll('.price-chip')
+    expect([...prices].map((p) => p.textContent)).toEqual(['от 12 775 ₽', '$185'])
+    expect(screen.getByRole('link', { name: /Сочи/ })).toHaveAttribute('data-place', 'sochi')
+    expect(screen.queryByRole('link', { name: /Анталья/ })).toBeNull() // «Анталье» is another form: left as text
+  })
+
+  it('should leave the text alone without cards', () => {
+    render(<MessageContent text="Просто ответ без цен" />)
+
+    expect(document.querySelector('.place-chip, .price-chip')).toBeNull()
   })
 })

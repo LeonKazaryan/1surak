@@ -32,13 +32,14 @@ export function applyTraceEvent(steps: ChatTraceStep[], event: ChatStreamEvent):
       const index = steps.findLastIndex(
         (s) => s.kind === 'tool' && s.name === event.name && s.status === 'running',
       )
+      const facts = event.facts?.length ? event.facts : undefined
       if (index === -1) {
         return [
           ...steps,
-          { id: nextId(steps), kind: 'tool', name: event.name, title: event.name, status: 'done', resultLine },
+          { id: nextId(steps), kind: 'tool', name: event.name, title: event.name, status: 'done', resultLine, facts },
         ]
       }
-      return steps.map((s, i) => (i === index ? { ...s, status: 'done', resultLine } : s))
+      return steps.map((s, i) => (i === index ? { ...s, status: 'done', resultLine, facts } : s))
     }
     case 'assistant_note':
       return [...steps, { id: nextId(steps), kind: 'note', detail: event.text, status: 'done' }]

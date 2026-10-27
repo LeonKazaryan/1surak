@@ -188,6 +188,8 @@ class StopPlan:
             "name": self.place.name,
             "country": self.place.country.name,
             "country_code": self.place.country.code,
+            "lat": self.place.lat,
+            "lon": self.place.lon,
             "kinds": list(self.place.kinds),
             "check_in": self.check_in.isoformat(),
             "check_out": self.check_out.isoformat(),

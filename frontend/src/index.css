@@ -161,6 +161,41 @@
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
 
+/* Trip map: light runs along the flown arcs. */
+@keyframes arc-flow {
+  to { stroke-dashoffset: calc(var(--flow) * -1); }
+}
+.arc-flow {
+  animation: arc-flow 1.8s linear infinite;
+}
+
+/* Trip cover: the photo drifts slowly (Ken Burns), the colours behind a cover without one too. */
+@keyframes cover-drift {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to { transform: scale(1.14) translate3d(-1.6%, -1.2%, 0); }
+}
+.cover-drift {
+  animation: cover-drift 24s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes blob-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6%, -8%, 0) scale(1.12); }
+  100% { transform: translate3d(-4%, 6%, 0) scale(0.96); }
+}
+.blob-drift {
+  animation: blob-drift 16s ease-in-out infinite alternate;
+}
+
+/* Voice input: rings spread from the microphone while it listens. */
+@keyframes listen-ring {
+  from { transform: scale(1); opacity: 0.55; }
+  to { transform: scale(2.1); opacity: 0; }
+}
+.listen-ring {
+  animation: listen-ring 1.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
 /* Flight loader: a plane circles a tiny spinning globe, its trail fading behind it. */
 @keyframes orbit {
   to { transform: rotate(360deg); }

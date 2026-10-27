@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from app.flights import city
 from app.flights.client import departure_month
 from app.trip.brief import TripBrief, chips
+from app.trip.passport import passport
 
 STALE_AFTER = timedelta(hours=24)
 
@@ -23,6 +24,7 @@ def trip_status(brief: TripBrief, now: datetime) -> dict:
     origin = city(brief.priced_from)
     return {
         "summary": chips(brief),
+        "passport": passport(brief),
         "departure": origin.from_text if origin else None,
         "priced_at": brief.priced_at.isoformat() if brief.priced_at else None,
         "stale": brief.priced_at is not None and now - brief.priced_at > STALE_AFTER,

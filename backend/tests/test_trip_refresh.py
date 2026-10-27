@@ -29,13 +29,16 @@ def test_should_mark_prices_stale_a_day_after_they_were_found():
 
 
 def test_should_never_call_a_trip_without_prices_stale():
-    assert trip_status(TripBrief(), NOW) == {
+    status = trip_status(TripBrief(), NOW)
+
+    assert {k: v for k, v in status.items() if k != "passport"} == {
         "summary": [],
         "departure": None,
         "priced_at": None,
         "stale": False,
         "dates_passed": False,
     }
+    assert status["passport"]["destination"] is None and status["passport"]["when"] is None
 
 
 def test_should_say_when_the_trip_dates_have_passed():

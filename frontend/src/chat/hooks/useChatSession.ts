@@ -14,11 +14,14 @@ const MAX_RECENT_CHATS = 50
 const SEND_ERROR = 'Не удалось получить ответ. Проверьте, что сервер запущен, и попробуйте ещё раз.'
 const LOAD_ERROR = 'Не удалось загрузить эту поездку.'
 const REFRESH_ERROR = 'Не удалось обновить цены. Попробуйте ещё раз чуть позже.'
+const STOPPED = 'Остановил. Напишите, что поменять, и продолжу.'
 
 interface ActiveRun {
   id: string
   chatId: string
   controller: AbortController
+  /** Ends the run here: keeps what was written so far and aborts the stream. */
+  stop: () => void
 }
 
 function isAbortError(err: unknown): boolean {
@@ -26,8 +29,8 @@ function isAbortError(err: unknown): boolean {
 }
 
 function tripStatus(source: Partial<TripStatus>): Partial<TripStatus> {
-  const { summary, departure, priced_at, stale, dates_passed } = source
-  return { summary, departure, priced_at, stale, dates_passed }
+  const { summary, passport, departure, priced_at, stale, dates_passed } = source
+  return { summary, passport, departure, priced_at, stale, dates_passed }
 }
 
 function upsertRecent(prev: ChatMeta[], done: ChatStreamDone): ChatMeta[] {
@@ -128,7 +131,7 @@ export function useChatSession(urlChatId: string | undefined) {
       const assistantId = crypto.randomUUID()
       setMessages((prev) => [
         ...(retry ? prev.slice(0, -2) : prev),
-        { id: crypto.randomUUID(), role: 'user', content: query, timestamp: new Date() },
+        { id: crypto.randomUUID(), role: 'user', content: query, answers, timestamp: new Date() },
         { id: assistantId, role: 'assistant', content: '', traceSteps: [], phase: 'working', timestamp: new Date() },
       ])
       setStreamingId(assistantId)
@@ -140,6 +143,7 @@ export function useChatSession(urlChatId: string | undefined) {
         id: crypto.randomUUID(),
         chatId: urlChatId ?? crypto.randomUUID(),
         controller: new AbortController(),
+        stop: () => {},
       }
       activeRun.current = run
       const isCurrent = () => activeRun.current?.id === run.id
@@ -156,6 +160,11 @@ export function useChatSession(urlChatId: string | undefined) {
         patch({ phase })
       }
       const pump = createTextPump((shown) => patch({ content: shown }))
+      run.stop = () => {
+        pump.stop()
+        patch({ content: pump.text() || STOPPED, traceSteps: steps, phase: undefined })
+        run.controller.abort()
+      }
 
       sendChatStream(
         {
@@ -173,6 +182,11 @@ export function useChatSession(urlChatId: string | undefined) {
           if (event.type === 'origin') {
             // the user named another city in the message: the next one is sent from it too
             saveDepartureCity({ code: event.code, name: event.name, country: event.country })
+            return
+          }
+          if (event.type === 'brief') {
+            // the header follows the agent as it understands the request
+            setTrip((prev) => ({ ...prev, passport: event.passport }))
             return
           }
           if (event.type === 'assistant_token') {
@@ -224,6 +238,9 @@ export function useChatSession(urlChatId: string | undefined) {
     },
     [isLoading, navigate, setActiveChatId, setMessages, setRecentChats, urlChatId],
   )
+
+  /** Stops the agent: what it wrote so far stays, the turn is over. */
+  const stop = useCallback(() => activeRun.current?.stop(), [])
 
   /** Asks the last question again in place of the reply that failed. */
   const retry = useCallback(() => {
@@ -280,5 +297,6 @@ export function useChatSession(urlChatId: string | undefined) {
     refreshing,
     book,
     retry,
+    stop,
   }
 }

@@ -18,6 +18,7 @@ import { Composer } from './components/Composer'
 import { DestinationCards } from './components/DestinationCards'
 import { FlightLoader } from './components/FlightLoader'
 import { MessageContent } from './components/MessageContent'
+import type { TextPlace } from './components/highlight'
 import { DetailsPanel } from './components/DetailsPanel'
 import { PlaceDetails } from './components/PlaceDetails'
 import { RouteDetails } from './components/RouteDetails'
@@ -31,12 +32,24 @@ import { TripPlan } from './plan/TripPlan'
 import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { isFailed } from './trace'
+import { AnswerReceipt } from './components/AnswerReceipt'
+import { QuickReplies } from './components/QuickReplies'
+import { CompactPassport, TripCover } from './passport/TripCover'
+import { BrandBackdrop } from './map/BrandBackdrop'
+import { coverPhoto, EDIT_PROMPTS, stageOf, type PassportField, type TripStage } from './passport/passport'
+import { quickReplies } from './quickReplies'
 import type { WorkspaceChatMessage } from './types'
 
 // Long enough for the agent's words to finish typing in the chat before the cards fly in.
 const CLARIFY_OPEN_DELAY_MS = 700
 const NEW_DATES_PROMPT = 'Перенеси поездку на '
-const CHANGE_PROMPT = 'Хотите что-то изменить?'
+// what the composer suggests as the trip moves on: the next thing people usually say
+const STAGE_PROMPTS: Record<TripStage, string> = {
+  idea: 'Опишите поездку своими словами…',
+  options: 'Хотите что-то изменить?',
+  plan: 'Спросите про отель, визу или поменяйте день…',
+  booked: 'Спросите что-нибудь о поездке…',
+}
 const EMPTY_STATE_INTRO =
   'Напишите, куда и как хотите поехать. Агент уточнит главное, подберёт варианты и соберёт план поездки.'
 const DETAILS_WIDTH = 380
@@ -74,14 +87,30 @@ interface MessageBubbleProps {
   onAsk: (text: string) => void
   onBook: BookFn
   onRetry: () => void
+  /** A user message that answers the question cards: drawn as a receipt. */
+  answered?: boolean
+}
+
+/** The places on a message's cards and plan, for the chips in its text. */
+function placesOf(widget: WorkspaceChatMessage['widget']): TextPlace[] {
+  if (widget?.type === 'destinations') {
+    return widget.cards.flatMap((c) =>
+      c.type === 'route'
+        ? c.stops.map((s) => ({ id: c.id, name: s.name, countryCode: s.country_code }))
+        : [{ id: c.id, name: c.name, countryCode: c.country_code }],
+    )
+  }
+  if (widget?.type === 'trip_plan') return widget.stops.map((s) => ({ id: s.place_id, name: s.name, countryCode: s.country_code }))
+  return []
 }
 
 function MessageBubble(props: MessageBubbleProps) {
   const { message, isStreaming, isLast, busy, onOpenClarify, onPick, detailsId, onDetails } = props
   if (message.role === 'user') {
+    if (props.answered) return <AnswerReceipt text={message.content} />
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl bg-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-foreground">
+        <div className="max-w-[80%] rounded-[20px] rounded-br-md bg-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-foreground shadow-[0_10px_28px_-24px_rgba(63,125,34,0.9)] ring-1 ring-primary/40">
           {message.content}
         </div>
       </div>
@@ -92,7 +121,7 @@ function MessageBubble(props: MessageBubbleProps) {
   return (
     <div className="min-w-0">
       {!working && <AgentTracePanel steps={message.traceSteps ?? []} isStreaming={false} />}
-      {content && <MessageContent text={content} />}
+      {content && <MessageContent text={content} places={placesOf(widget)} />}
       {isLast && !busy && isFailed(message) && (
         <Button variant="outline" size="sm" onClick={props.onRetry} className="mt-3 rounded-full bg-card">
           <ArrowPathIcon aria-hidden />
@@ -126,13 +155,30 @@ export default function ChatPage() {
   const { chatId } = useParams<{ chatId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading, trip, refresh, refreshing, book, retry } =
+  const { messages, send, isLoading, error, streamingId, chatTitle, chatLoading, trip, refresh, refreshing, book, retry, stop } =
     useChatSession(chatId)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const coverRef = useRef<HTMLDivElement>(null)
+  // messages already there when the page opened stay put; new ones come in with a spring
+  const [openedAt] = useState(() => Date.now())
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastMessageRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const busy = isLoading || chatLoading || refreshing
+  const thread = !chatLoading && messages.length > 0
+  // the cover and its scroller only exist once the chat has loaded: watch them from then on
+  const [coverInView, setCoverInView] = useState(true)
+  useEffect(() => {
+    const cover = coverRef.current
+    if (!thread || !cover) return
+    const watch = new IntersectionObserver(([entry]) => setCoverInView(entry.isIntersecting), {
+      root: scrollRef.current,
+      threshold: 0.2,
+    })
+    watch.observe(cover)
+    return () => watch.disconnect()
+  }, [thread, chatId])
   const hasCards = messages.some(
     (m) => m.widget?.type === 'destinations' || m.widget?.type === 'trip_plan' || m.widget?.type === 'flight_plan',
   )
@@ -189,6 +235,19 @@ export default function ChatPage() {
     return () => clearTimeout(timer)
   }, [location.state, location.pathname, navigate, send])
 
+  const passport = trip?.passport
+  const stage = stageOf(messages)
+  const photo = coverPhoto(passport, messages)
+  const replies = !busy && last?.role === 'assistant' ? quickReplies(last, passport) : []
+  const editField = (field: PassportField) => {
+    setInput(EDIT_PROMPTS[field])
+    requestAnimationFrame(() => {
+      const box = composerRef.current
+      box?.focus()
+      box?.setSelectionRange(box.value.length, box.value.length)
+    })
+  }
+
   const submit = (text: string = input) => {
     if (!text.trim() || busy) return
     setInput('')
@@ -208,7 +267,9 @@ export default function ChatPage() {
       onChange={setInput}
       onSubmit={() => submit()}
       disabled={busy}
-      placeholder={hasCards ? CHANGE_PROMPT : undefined}
+      placeholder={isLoading ? 'Можно уже написать следующее…' : messages.length ? STAGE_PROMPTS[stage] : undefined}
+      streaming={isLoading}
+      onStop={stop}
     />
   )
   const freshness = trip && hasCards && !isLoading && !chatLoading && (
@@ -235,7 +296,16 @@ export default function ChatPage() {
     <MotionConfig reducedMotion="user">
       <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <PageHeader breadcrumb={breadcrumb} />
+          <PageHeader
+            breadcrumb={breadcrumb}
+            headerRight={
+              <AnimatePresence>
+                {thread && !coverInView && (
+                  <CompactPassport passport={passport} onClick={() => coverRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+                )}
+              </AnimatePresence>
+            }
+          />
 
           {chatLoading || messages.length > 0 ? (
             <>
@@ -244,12 +314,23 @@ export default function ChatPage() {
                   <MessagesSkeleton />
                 </div>
               ) : (
-                <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
-                  <div className="flex min-h-full flex-col justify-end pt-4 pb-6">
+                <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain">
+                  <div className="flex min-h-full flex-col pt-2 pb-6">
                     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 max-md:px-4">
+                      <div ref={coverRef} className="scroll-mt-2">
+                        <TripCover passport={passport} photo={photo} stage={stage} busy={isLoading} onEdit={editField} />
+                      </div>
                       {errorBanner}
                       {messages.map((m, i) => (
-                        <div key={m.id} ref={i === messages.length - 1 ? lastMessageRef : undefined} className="scroll-mt-4">
+                        <motion.div
+                          key={m.id}
+                          ref={i === messages.length - 1 ? lastMessageRef : undefined}
+                          className="scroll-mt-4"
+                          initial={m.timestamp.getTime() >= openedAt ? { opacity: 0, y: 14, scale: m.role === 'user' ? 0.97 : 1 } : false}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+                          style={{ transformOrigin: m.role === 'user' ? 'bottom right' : 'top left' }}
+                        >
                           <MessageBubble
                             message={m}
                             isStreaming={streamingId === m.id}
@@ -264,8 +345,10 @@ export default function ChatPage() {
                             onAsk={submit}
                             onBook={book}
                             onRetry={retry}
+                            answered={m.role === 'user' && (Boolean(m.answers) || messages[i - 1]?.widget?.type === 'clarify')}
                           />
-                        </div>
+                          {i === messages.length - 1 && <QuickReplies key={m.id} replies={replies} onPick={submit} />}
+                        </motion.div>
                       ))}
                       <div ref={messagesEndRef} />
                     </div>
@@ -280,7 +363,9 @@ export default function ChatPage() {
               </div>
             </>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-6 pb-16 max-md:px-4">
+            <div className="relative isolate flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-6 pb-16 max-md:px-4">
+              {/* the brand's colours and the world in dots, softly, behind the first question */}
+              <BrandBackdrop className="-z-10 bg-transparent opacity-70 [mask-image:radial-gradient(70%_60%_at_50%_45%,#000_30%,transparent_100%)]" />
               <div className="flex w-full max-w-[min(92vw,44rem)] flex-col gap-5">
                 <div className="flex flex-col items-center gap-3 text-center">
                   <LogoMark className="h-14 w-14" />

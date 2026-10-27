@@ -12,7 +12,6 @@ import {
   PaperAirplaneIcon,
   SunIcon,
 } from '@heroicons/react/20/solid'
-import { ScrollRow } from '@/components/ScrollRow'
 import { cn } from '@/components/ui/utils'
 import type { Currency, DestinationCard, DestinationsCard, DestinationsEvent, PriceChange, RouteFlight } from '@/types/api'
 import { CurrencyContext, RUB, flagEmoji, formatMoney, keepPricesTogether } from '../widgets'
@@ -20,6 +19,7 @@ import { AirlineLogo, PriceChangeNote } from './ticket'
 import { hours, shortDate, stopsText, temp, travelText } from './ticketFormat'
 import { RouteCardView } from './RouteCard'
 import { TripArt } from './TripArt'
+import { TripMap, type MapPin, type MapRoute } from '../map/TripMap'
 import { VisaChip } from './VisaChip'
 
 const grid: Variants = {
@@ -154,23 +154,34 @@ interface CardProps {
   onPick: () => void
   detailsOpen: boolean
   onDetails: () => void
+  /** Its pin on the map is pointed at: the card answers with a glow. */
+  lit?: boolean
+  onHover?: (on: boolean) => void
 }
 
-function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, withKids, wide }: CardProps & { withKids: boolean; wide: boolean }) {
+function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, withKids, wide, lit, onHover }: CardProps & { withKids: boolean; wide: boolean }) {
   const travel = travelText(card)
   const kind = card.kinds[0] ?? 'sea'
 
   return (
     <motion.article
+      id={`card-${card.id}`}
       variants={rise}
       layout
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+      whileHover={{ y: -3 }}
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-3xl border bg-card transition-[box-shadow,border-color,opacity] duration-300',
+        'group relative flex scroll-mt-20 flex-col overflow-hidden rounded-3xl border bg-card transition-[box-shadow,border-color,opacity] duration-300',
         wide && 'sm:col-span-2',
         picked
           ? 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.7)]'
-          : cn('shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest', detailsOpen ? 'border-faintest' : 'border-border'),
+          : cn(
+              'shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest hover:shadow-[0_22px_44px_-26px_rgba(15,23,42,0.35)]',
+              detailsOpen ? 'border-faintest' : 'border-border',
+              lit && 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.55)]',
+            ),
         dimmed && 'opacity-60',
       )}
     >
@@ -297,22 +308,47 @@ export function DestinationCards({ widget, canPick, onPick, detailsId = null, on
   // routes take a whole row, so an odd count of places leaves one alone: it widens instead of leaving a hole
   const places = widget.cards.filter((card) => card.type !== 'route')
   const lone = places.length % 2 === 1 ? places[places.length - 1].id : null
+  // the map and the cards point at each other: a card under the mouse lights its arc, a pin its card
+  const [active, setActive] = useState<string | null>(null)
+  const pins: MapPin[] = places.flatMap((card) =>
+    card.lat != null && card.lon != null
+      ? [
+          {
+            id: card.id,
+            name: card.name,
+            lat: card.lat,
+            lon: card.lon,
+            countryCode: card.country_code,
+            note: card.flight ? `от ${formatMoney(card.flight.price_rub, currency)}` : undefined,
+          },
+        ]
+      : [],
+  )
+  const routes: MapRoute[] = widget.cards.flatMap((card) =>
+    card.type === 'route' && card.stops.every((s) => s.lat != null && s.lon != null)
+      ? [
+          {
+            id: card.id,
+            stops: card.stops.map((s) => ({ name: s.name, lat: s.lat!, lon: s.lon! })),
+            modes: card.legs.map((leg) => (leg.parts?.length ? 'flight' : leg.mode)),
+          },
+        ]
+      : [],
+  )
 
   return (
     <CurrencyContext value={currency}>
       <motion.div variants={grid} initial="hidden" animate="show" className="mt-4 flex flex-col gap-4">
-        {widget.summary.length > 0 && (
-          <motion.div variants={grid} className="flex items-center gap-2.5">
-            <motion.span variants={chip} aria-hidden className="shrink-0 text-xs font-semibold tracking-wider text-faint uppercase">
-              Подбирал по
-            </motion.span>
-            <ScrollRow label="Подбирал по" className="min-w-0 flex-1" rowClassName="mx-0 gap-1.5 px-0">
-              {widget.summary.map((text) => (
-                <motion.span key={text} variants={chip} className="rounded-full bg-accent px-2.5 py-1 text-[12px] font-medium text-foreground">
-                  {text}
-                </motion.span>
-              ))}
-            </ScrollRow>
+        {(pins.length > 0 || routes.length > 0) && (
+          <motion.div variants={chip}>
+            <TripMap
+              origin={widget.origin}
+              pins={pins}
+              routes={routes}
+              active={active}
+              onActive={setActive}
+              onSelect={(id) => document.getElementById(`card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            />
           </motion.div>
         )}
         {/* a route spans two cells; dense flow lets single places fill the holes it leaves */}
@@ -329,6 +365,8 @@ export function DestinationCards({ widget, canPick, onPick, detailsId = null, on
               },
               detailsOpen: detailsId === card.id,
               onDetails: () => onDetails(card, currency),
+              lit: active === card.id,
+              onHover: (on: boolean) => setActive(on ? card.id : null),
             }
             return card.type === 'route' ? (
               <RouteCardView key={card.id} card={card} {...props} />

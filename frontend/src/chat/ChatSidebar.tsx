@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronLeftIcon, PlusIcon, TrashIcon } from '@heroicons/react/20/solid'
+import { motion } from 'motion/react'
+import { ChevronLeftIcon, MapIcon, PlusIcon, TrashIcon } from '@heroicons/react/20/solid'
 import { Wordmark } from '@/components/Logo'
 import { LogoMark } from '@/components/LogoMark'
 import {
@@ -21,8 +22,26 @@ import type { ChatMeta } from '@/types/api'
 import { RecentChatsSkeleton } from './components/ChatSkeletons'
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog'
 import { shortDate } from './components/ticketFormat'
+import { flagEmoji } from './widgets'
 
 const UNTITLED = 'Новая поездка'
+
+/** A trip's cover in the list: a small copy of its photo (Commons serves thumbnails by width), else its flag. */
+function TripThumb({ chat }: { chat: ChatMeta }) {
+  const place = chat.passport?.destination
+  const photo = place?.photo?.url.replace(/\/\d+px-/, '/120px-')
+  return (
+    <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-accent text-[15px] ring-1 ring-border">
+      {photo ? (
+        <img src={photo} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" />
+      ) : place?.country_code ? (
+        flagEmoji(place.country_code)
+      ) : (
+        <MapIcon className="h-4 w-4 text-[#3f7d22]" aria-hidden />
+      )}
+    </span>
+  )
+}
 
 /** The line under a trip's title: why it needs a look, or else when it is and where it flies from. */
 function tripLine(chat: ChatMeta): { text: string; warn: boolean } | null {
@@ -87,15 +106,21 @@ export function ChatSidebar({ recentChats, recentLoading, activeChatId, onDelete
                 <SidebarMenu>
                   {recentChats.map((chat) => {
                     const line = tripLine(chat)
+                    const active = chat.id === activeChatId
                     return (
                       <SidebarMenuItem key={chat.id}>
-                        <SidebarMenuButton
-                          asChild
-                          size={line ? 'lg' : 'default'}
-                          isActive={chat.id === activeChatId}
-                          title={chat.title ?? UNTITLED}
-                        >
+                        {/* the active trip's mark glides from item to item */}
+                        {active && (
+                          <motion.span
+                            layoutId="active-trip"
+                            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                            className="absolute top-2 bottom-2 -left-1 z-10 w-1 rounded-full bg-primary-hover"
+                            aria-hidden
+                          />
+                        )}
+                        <SidebarMenuButton asChild size="lg" isActive={active} title={chat.title ?? UNTITLED}>
                           <Link to={`/chat/${chat.id}`} onClick={closeOnMobile} viewTransition>
+                            <TripThumb chat={chat} />
                             <span className="flex min-w-0 flex-col">
                               <span className="truncate">{chat.title ?? UNTITLED}</span>
                               {line && (

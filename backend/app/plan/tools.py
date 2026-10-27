@@ -21,6 +21,7 @@ from app.plan.assemble import _start, assemble, party_of
 from app.plan.hotels import MEAL_LABELS, Hotel, cheapest_rate, hotels_for, party_night
 from app.plan.trip import TripPlan, wish_for_model
 from app.tools import Tool, ToolReply
+from app.tools.registry import fact
 from app.trip.brief import cards_first, chips, night_range, price_level
 from app.trip.routes import DEFAULT_NIGHTS
 from app.trip.tools import TripState
@@ -113,6 +114,18 @@ def _build_preview(result: dict) -> str:
     if "error" in result:
         return result["error"]
     return f"{result['name']}: {result['dates']}, всего {result['costs']['total']}"
+
+
+def _build_facts(result: dict) -> list[dict]:
+    if "error" in result:
+        return []
+    stops = result.get("stops") or []
+    nights = sum(s.get("nights") or 0 for s in stops)
+    places = sum(len(s.get("sights") or []) + len(s.get("food") or []) for s in stops)
+    found = [fact(nights, ("ночь", "ночи", "ночей"), "в отелях")] if nights else []
+    if places:
+        found.append(fact(places, ("место", "места", "мест"), "в плане"))
+    return [*found, fact(len(result.get("checks") or []), ("стыковка", "стыковки", "стыковок"), "проверил")]
 
 
 def _hotel_notes(plan: TripPlan, asked: dict[str, str]) -> list[str]:
@@ -309,6 +322,7 @@ def plan_tools(
             handler=build_trip,
             timeout_s=HOTEL_TOOL_TIMEOUT_S,
             preview=_build_preview,
+            facts=_build_facts,
             then="show_trip",
         ),
         Tool(

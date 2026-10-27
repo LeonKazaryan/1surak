@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { CheckIcon } from '@heroicons/react/16/solid'
 import { LogoMark } from '@/components/LogoMark'
 import type { ChatTraceStep } from '../types'
+import { FactsFunnel, SourceBadges, ToolBadge } from './AgentWork'
 import { LAND_PATH } from './landPath'
 
 /** What each tool really does, shown in turn under the step title while it runs. */
@@ -153,6 +154,7 @@ export function FlightLoader({ steps }: FlightLoaderProps) {
   const current = running ?? tools.at(-1)
   const title = running?.title ?? (tools.length ? 'Думаю над следующим шагом' : 'Разбираю запрос')
   const toolName = current?.name ?? ''
+  const facts = tools.findLast((s) => s.status === 'done' && s.facts?.length)?.facts ?? []
 
   return (
     <motion.div
@@ -171,7 +173,10 @@ export function FlightLoader({ steps }: FlightLoaderProps) {
       </div>
       <div className="relative min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <LogoMark className="animate-logo-pulse h-6 w-6 shrink-0" />
+          <span className="relative shrink-0">
+            <LogoMark className="animate-logo-pulse h-6 w-6" />
+            <ToolBadge tool={running?.name ?? ''} />
+          </span>
           <AnimatePresence mode="wait" initial={false}>
             <motion.p
               key={title}
@@ -186,7 +191,9 @@ export function FlightLoader({ steps }: FlightLoaderProps) {
           </AnimatePresence>
         </div>
         <RotatingLine key={toolName} lines={TOOL_LINES[toolName] ?? START_LINES} />
-        {done.length > 0 && (
+        {facts.length > 0 ? (
+          <FactsFunnel facts={facts} className="mt-2" />
+        ) : done.length > 0 && (
           <ul className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0">
             <AnimatePresence initial={false}>
               {done.map((step) => (
@@ -204,6 +211,11 @@ export function FlightLoader({ steps }: FlightLoaderProps) {
               ))}
             </AnimatePresence>
           </ul>
+        )}
+        {running?.name && (
+          <div className="mt-2">
+            <SourceBadges tool={running.name} />
+          </div>
         )}
       </div>
     </motion.div>

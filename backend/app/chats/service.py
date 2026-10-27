@@ -18,6 +18,7 @@ from app.tools import ToolRegistry
 from app.trip import BriefPatch, TripBrief, TripState, merge, trip_tools
 from app.trip.brief import chips
 from app.trip.freshness import STALE_AFTER, trip_status
+from app.trip.passport import passport
 from app.trip.refresh import reprice
 
 log = logging.getLogger(__name__)
@@ -177,6 +178,9 @@ async def stream_reply(
     trace: list[dict] = []
     failed = finished = False
     try:
+        # the header shows what is known before the agent starts (the cards' answers are in already), and
+        # again whenever the agent writes the brief; it lives in the chat's status, not in the trace
+        yield {"type": "brief", "passport": passport(trip.brief)}
         turns = [*history, {"role": "user", "content": query}]
         async for event in agent.run(llm, turns, tools, origin=origin):
             if event["type"] == "assistant_token":
@@ -184,6 +188,8 @@ async def stream_reply(
             else:
                 trace.append(event)
             yield event
+            if event["type"] == "tool_end" and event.get("name") == "update_trip_brief":
+                yield {"type": "brief", "passport": passport(trip.brief)}
         finished = True
     except Exception:
         log.exception("Agent failed for chat %s", chat_id)

@@ -38,6 +38,7 @@ class ChatMeta(BaseModel):
     created_at: str
     updated_at: str
     summary: list[str] = []
+    passport: dict | None = None  # the trip field by field, for the chat's header (app.trip.passport)
     departure: str | None = None  # «из Астаны»
     priced_at: str | None = None
     stale: bool = False

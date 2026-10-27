@@ -1,5 +1,15 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { BookingEvent, ChatMeta, ClarifyEvent, DestinationsEvent, FlightPlanEvent, HotelOptionsEvent, TripPlanEvent } from '@/types/api'
+import type {
+  BookingEvent,
+  BriefAnswers,
+  ChatMeta,
+  ClarifyEvent,
+  DestinationsEvent,
+  FlightPlanEvent,
+  HotelOptionsEvent,
+  ToolFact,
+  TripPlanEvent,
+} from '@/types/api'
 
 /** One visible step of the agent's work: a tool call, a note, or an error. */
 export interface ChatTraceStep {
@@ -10,6 +20,8 @@ export interface ChatTraceStep {
   args?: Record<string, unknown>
   detail?: string
   resultLine?: string
+  /** A few numbers about the work: «120 направлений → 5 подходят». */
+  facts?: ToolFact[]
   status: 'running' | 'done'
 }
 
@@ -24,6 +36,8 @@ export interface WorkspaceChatMessage {
   widget?: ChatWidget
   /** While streaming: is the agent running tools or writing text. Drives the flight loader. */
   phase?: 'working' | 'writing'
+  /** A user message sent from the question cards: drawn as a receipt of the answers. */
+  answers?: BriefAnswers
   timestamp: Date
 }
 

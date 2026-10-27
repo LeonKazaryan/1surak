@@ -22,6 +22,7 @@ from app.photos import ensure_photos
 from app.plan.live_guide import guides
 from app.plan.taxi import taxi
 from app.tools import Tool, ToolReply
+from app.tools.registry import fact
 from app.trip.brief import (
     SLOTS,
     BriefPatch,
@@ -176,6 +177,12 @@ def _update_preview(result: dict) -> str:
     if gaps and not result["already_asked"]:
         return f"Понял: {understood}. Уточню: {', '.join(gaps)}"
     return f"Понял: {understood}"
+
+
+def _home_point() -> dict | None:
+    """The departure city as a point for the map above the cards: the arcs start there."""
+    home = city(current_origin.get())
+    return {"code": home.code, "name": home.name, "lat": home.lat, "lon": home.lon} if home else None
 
 
 def trip_tools(
@@ -374,6 +381,7 @@ def trip_tools(
                 "with_kids": bool(state.brief.children),
                 "cards": cards,
                 "currency": current_currency.get().view(),
+                "origin": _home_point(),
             },
             ends_turn=True,
         )
@@ -406,6 +414,9 @@ def trip_tools(
                 if r["routes"]
                 else "Маршрутов не нашлось"
             ),
+            facts=lambda r: [
+                fact(len(r.get("routes") or []), ("маршрут", "маршрута", "маршрутов"), "собрал")
+            ],
             then="show_destinations",
         ),
         Tool(

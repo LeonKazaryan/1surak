@@ -320,7 +320,10 @@ async def _run(
                 "args": _display_args(call.arguments),
             }
             result = await tools.execute(call.name, call.arguments)
-            yield {"type": "tool_end", "name": call.name, "output_preview": result.preview, "ok": result.ok}
+            ended = {"type": "tool_end", "name": call.name, "output_preview": result.preview, "ok": result.ok}
+            if result.facts:
+                ended["facts"] = list(result.facts)
+            yield ended
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result.content})
             tool = tools.get(call.name)
             if call.name == owed:

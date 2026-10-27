@@ -84,19 +84,26 @@ describe('DestinationCards', () => {
     expect(document.querySelector(`img[src="${PHOTO.url}"]`)).not.toBeNull()
   })
 
-  it('should keep the brief chips in one sideways scrolling row', () => {
+  it('should draw the places on a map from home, the brief living in the trip header instead', async () => {
     render(
       <DestinationCards
-        widget={{ type: 'destinations', summary: ['Море', 'Ноябрь · 2–4 ночи', 'без долгих перелётов'], cards: [base] }}
+        widget={{
+          type: 'destinations',
+          summary: ['Море', 'Ноябрь · 2–4 ночи'],
+          cards: [{ ...base, lat: 27.26, lon: 33.81 }],
+          origin: { code: 'MOW', name: 'Москва', lat: 55.75, lon: 37.62 },
+        }}
         canPick={false}
         onPick={() => {}}
         onDetails={() => {}}
       />,
     )
 
-    const row = screen.getByRole('group', { name: 'Подбирал по' })
-    expect(row).toHaveClass('scroll-row')
-    expect(row).toHaveTextContent('МореНоябрь · 2–4 ночибез долгих перелётов')
+    expect(screen.getByRole('img', { name: 'Карта: Москва, Хургада' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Подбирал по' })).toBeNull()
+
+    await userEvent.hover(screen.getByRole('button', { name: /Хургада/ }))
+    expect(document.getElementById('card-hurghada')).toHaveClass('border-primary')
   })
 
   it('should hand the place to the details panel instead of stretching the card', async () => {

@@ -21,7 +21,7 @@ from app.destinations.gateway import fill_missing
 from app.destinations.live import Directions, NoDirections
 from app.flights import Flights, NoFlights, city, current_origin
 from app.flights.network import network
-from app.tools.registry import Tool
+from app.tools.registry import Tool, fact
 from app.visas import fees
 
 if TYPE_CHECKING:
@@ -69,6 +69,15 @@ def _search_preview(result: dict) -> str:
         return f"Подходят: {', '.join(names)}"
     near = [m["name"] for m in result["near_misses"]]
     return f"Точных совпадений нет, близко: {', '.join(near)}" if near else "Ничего не подошло"
+
+
+def _search_facts(result: dict) -> list[dict]:
+    reach = (result.get("route_map") or {}).get("destinations_from_your_city") or 0
+    fit = len(result.get("matches") or []) + (result.get("more_matches") or 0)
+    found = [fact(reach, ("направление", "направления", "направлений"), "из города")] if reach else []
+    if result.get("checked"):
+        found.append(fact(result["checked"], ("место", "места", "мест"), "проверил"))
+    return [*found, fact(fit, ("подходит", "подходят", "подходят"))]
 
 
 SEARCH_TIMEOUT_S = 45.0  # live destinations, a few climates and the tickets
@@ -156,6 +165,7 @@ def catalog_tools(
             args=SearchQuery,
             handler=search_destinations,
             preview=_search_preview,
+            facts=_search_facts,
             then="show_destinations",
             timeout_s=SEARCH_TIMEOUT_S,
         ),

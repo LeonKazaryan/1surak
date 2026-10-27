@@ -708,6 +708,8 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
                 "name": s.place.name,
                 "country": s.place.country.name,
                 "country_code": s.place.country.code,
+                "lat": s.place.lat,
+                "lon": s.place.lon,
                 "kinds": list(s.place.kinds),
                 "nights": nights,
                 "day": round(climate["air_max"]) if climate and "air_max" in climate else None,

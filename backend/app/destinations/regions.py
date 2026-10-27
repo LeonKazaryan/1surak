@@ -165,6 +165,12 @@ def country_names(text: str) -> list[str] | None:
     return None
 
 
+def country_code(text: str) -> str | None:
+    """The ISO code of the one country the text names («Казахстан» → KZ), or None."""
+    needle = text.strip().casefold()
+    return next((code for code, names in _names().items() if needle in {n.casefold() for n in names}), None)
+
+
 def countries_in(text: str) -> list[str] | None:
     """The country names of the region the text names, or None when it names no region."""
     codes = region_codes(text)

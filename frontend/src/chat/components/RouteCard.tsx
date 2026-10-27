@@ -146,10 +146,12 @@ interface RouteCardProps {
   onPick: () => void
   detailsOpen: boolean
   onDetails: () => void
+  lit?: boolean
+  onHover?: (on: boolean) => void
 }
 
 /** A multi-city route across two cells of the grid: its cities arrive as separate cards and merge into one. */
-export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails }: RouteCardProps) {
+export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, lit, onHover }: RouteCardProps) {
   const [merged, setMerged] = useState(false)
   const seams = card.legs.flatMap((leg, i) => {
     const at = seamAt(leg, i, card.stops.length)
@@ -164,16 +166,23 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
 
   return (
     <motion.article
+      id={`card-${card.id}`}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
       variants={routeRise}
       onAnimationComplete={(definition) => {
         if (definition === 'show') setTimeout(() => setMerged(true), MERGE_AFTER_MS)
       }}
       className={cn(
-        'relative overflow-hidden rounded-3xl border transition-[border-color,box-shadow,background-color,opacity] duration-500 sm:col-span-2',
+        'relative scroll-mt-20 overflow-hidden rounded-3xl border transition-[border-color,box-shadow,background-color,opacity] duration-500 sm:col-span-2',
         merged ? 'bg-card' : 'border-transparent bg-transparent shadow-none',
         merged && (picked
           ? 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.7)]'
-          : cn('shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest', detailsOpen ? 'border-faintest' : 'border-border')),
+          : cn(
+              'shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest',
+              detailsOpen ? 'border-faintest' : 'border-border',
+              lit && 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.55)]',
+            )),
         dimmed && 'opacity-60',
       )}
     >

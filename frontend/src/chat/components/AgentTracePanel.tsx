@@ -3,6 +3,7 @@ import { CheckIcon } from '@heroicons/react/16/solid'
 import { ChevronRightIcon, ExclamationCircleIcon } from '@heroicons/react/20/solid'
 import { LogoMark } from '@/components/LogoMark'
 import type { ChatTraceStep } from '../types'
+import { FactsFunnel } from './AgentWork'
 
 interface AgentTracePanelProps {
   steps: ChatTraceStep[]
@@ -47,6 +48,7 @@ function StepRow({ step }: { step: ChatTraceStep }) {
         {step.status === 'done' && step.resultLine && (
           <p className="m-0 mt-0.5 text-xs leading-relaxed text-muted-foreground">{step.resultLine}</p>
         )}
+        {step.status === 'done' && step.facts?.length ? <FactsFunnel facts={step.facts} className="mt-1" /> : null}
         {hasArgs && (
           <details className="mt-1">
             <summary className="list-none text-[11px] text-faint transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
