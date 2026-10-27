@@ -41,6 +41,14 @@ def test_should_make_a_place_of_any_city_the_route_map_flies_to():
     assert str(place_info("city-tas").tz) == "Asia/Tashkent" and place_info("city-tas").airport
 
 
+def test_should_price_a_route_map_city_by_its_country_from_the_world_bank():
+    # «недорого» must keep cheap countries in: before, every city not in the catalogue was a made-up 2
+    assert discovered_place("BEY").price_level == 1  # Lebanon 0.38 of US prices
+    assert discovered_place("LCA").price_level == 2  # Cyprus 0.65
+    assert discovered_place("SHJ").price_level == 2  # the UAE 0.63, not Dubai's 3 copied onto Sharjah
+    assert discovered_place("TLV").price_level == 3  # Israel 1.01
+
+
 def test_should_list_the_direct_destinations_beyond_the_catalogue_nearest_first():
     found = reachable(network(), "ALA")
 

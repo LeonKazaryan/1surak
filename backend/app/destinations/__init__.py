@@ -27,7 +27,6 @@ BEACH_SEA_C = 24  # warm enough to swim for real
 BEACH_MONTHS = (
     5  # that warm this many months a year: a beach place first (Pattaya), not a city by the sea (New York)
 )
-DEFAULT_LEVEL = 2
 MAX_CANDIDATES = 120  # the nearest direct destinations a search looks at
 
 
@@ -45,13 +44,19 @@ def catalog_cities() -> frozenset[str]:
     return frozenset(city_code(p.airport) for p in load_catalog().places if p.airport)
 
 
-@cache
-def _levels() -> dict[str, int]:
-    """A country's price level: the median of its catalogue places, when we have some."""
-    by_country: dict[str, list[int]] = {}
-    for p in load_catalog().places:
-        by_country.setdefault(p.country.code, []).append(p.price_level)
-    return {code: sorted(levels)[len(levels) // 2] for code, levels in by_country.items()}
+# World Bank prices next to the US (1.0) as our 1-3 scale, matched to the team's levels in the catalogue:
+# Egypt 0.15, Turkey 0.41, Lebanon 0.38 are «недорого»; Cyprus 0.65, the UAE 0.63 mid-range; Israel 1.01 dear
+BUDGET_BELOW = 0.46
+MID_BELOW = 0.70
+
+
+def country_level(country_code: str | None) -> int:
+    """A country's price level 1-3 from the World Bank (seed/price_levels.json): data for any country, where
+    the catalogue's median would copy Dubai onto Sharjah and give every other country a made-up 2."""
+    from app.plan.taxi import price_level
+
+    ratio = price_level(country_code)
+    return 1 if ratio < BUDGET_BELOW else 2 if ratio < MID_BELOW else 3
 
 
 def kinds_from(facts: dict) -> tuple[str, ...]:
@@ -93,7 +98,7 @@ def discovered_place(code: str) -> Place | None:
         airport=c.code,
         lat=c.lat,
         lon=c.lon,
-        price_level=_levels().get(c.country_code, DEFAULT_LEVEL),
+        price_level=country_level(c.country_code),
         kids="ok",
         highlights=(),
         watch_out=(),
