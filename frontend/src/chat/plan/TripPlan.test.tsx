@@ -161,6 +161,16 @@ describe('TripPlan', () => {
     expect(within(days).getByRole('link', { name: 'Викигид' })).toHaveAttribute('href', PLAN.stops[0].source_url)
   })
 
+  it('should credit OpenStreetMap on a day that eats at a place from it', () => {
+    const [first, ...rest] = PLAN.days
+    const spot = PLAN.days.flatMap((d) => d.items).find((i) => i.spot)!.spot!
+    const osm = { kind: 'food' as const, title: 'Обед: Der Garten', time: '13:30', note: null, spot: { ...spot, id: 'osm-n1', photo: null } }
+    renderPlan({}, { ...PLAN, days: [{ ...first, items: [osm] }, ...rest] })
+
+    const days = screen.getByRole('region', { name: 'По дням' })
+    expect(within(days).getByRole('link', { name: '© участники OpenStreetMap' })).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright')
+  })
+
   it('should not credit the guide on a day that uses nothing from it', () => {
     const stop = { ...PLAN.stops[0], dishes: [], food_intro: null }
     renderPlan({}, { ...PLAN, stops: [stop] })

@@ -5,11 +5,9 @@ plus the amenity tags some hotels carry (dog=yes, internet_access=wlan), and giv
 barely covers (Sochi had four) and to every city of the route map. © OpenStreetMap contributors, ODbL 1.0.
 """
 
-import asyncio
 import logging
 import math
 import re
-import time
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 
@@ -18,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import nominatim
 from app.catalog.catalog import Place
 from app.db import place_hotels
 from app.hotels.directory import OSM_URL, Listed, hotel_id
@@ -42,7 +41,6 @@ BOX_DEG = 0.06  # about 7 km each way from the centre: the town, not the whole r
 FRESH_FOR = timedelta(days=30)
 FAILED_FOR = timedelta(minutes=10)  # an outage costs one wait, not one per search
 TWIN_M = 1000  # one name this close is one hotel: Wikidata and OSM place it a few hundred metres apart
-NOMINATIM_GAP_S = 1.1  # its usage policy: one request a second at most
 
 
 def metres(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
@@ -132,8 +130,6 @@ class OsmHotels:
         self._timeout = timeout_s
         self._transport = transport  # tests pass an httpx.MockTransport
         self._failed: dict[str, datetime] = {}
-        self._gate = asyncio.Lock()  # one OsmHotels per app: Nominatim's one request a second holds app-wide
-        self._last_request = 0.0
 
     async def around(self, place: Place) -> list[Listed]:
         now = datetime.now(UTC)
@@ -171,9 +167,7 @@ class OsmHotels:
             "limit": "40",
             "accept-language": "ru",
         }
-        async with self._gate:  # only the spacing: requests themselves may overlap
-            await asyncio.sleep(max(0.0, self._last_request + NOMINATIM_GAP_S - time.monotonic()))
-            self._last_request = time.monotonic()
+        await nominatim.wait_turn()  # one request a second, shared with the restaurants
         async with httpx.AsyncClient(
             timeout=self._timeout, headers={"User-Agent": USER_AGENT}, transport=self._transport
         ) as client:

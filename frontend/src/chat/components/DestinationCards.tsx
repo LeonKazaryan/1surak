@@ -1,4 +1,5 @@
 import { useContext, useState } from 'react'
+import { DataCredit } from '@/components/DataCredit'
 import { motion, type Variants } from 'motion/react'
 import {
   ArrowTopRightOnSquareIcon,
@@ -332,6 +333,9 @@ export function DestinationCards({ widget, canPick, onPick, detailsId = null, on
             )
           })}
         </motion.div>
+        {widget.cards.some((card) => card.type !== 'route' && card.climate) && (
+          <DataCredit sources={['openMeteo']} prefix="Погода:" className="mt-2" />
+        )}
       </motion.div>
     </CurrencyContext>
   )

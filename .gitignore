@@ -10,3 +10,4 @@ __pycache__/
 .coverage
 backend/data/
 backend/.cache/
+.claude/scheduled_tasks.lock

@@ -1,4 +1,6 @@
 import { useContext } from 'react'
+import { DataCredit } from '@/components/DataCredit'
+import { fromOsm } from '@/lib/dataSources'
 import { motion } from 'motion/react'
 import { MapPinIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
@@ -79,6 +81,7 @@ export function HotelOptionsCards({ widget, canPick, onPick }: { widget: HotelOp
           <Option key={hotel.id} hotel={hotel} index={i} canPick={canPick} onPick={() => onPick(hotel.name)} />
         ))}
       </ul>
+      {widget.hotels.some((hotel) => fromOsm(hotel.source_url)) && <DataCredit sources={['osm']} className="mt-2" />}
     </CurrencyContext.Provider>
   )
 }

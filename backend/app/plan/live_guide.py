@@ -29,6 +29,7 @@ from urllib.parse import unquote
 
 import httpx
 
+from app import nominatim
 from app.catalog.catalog import Place
 from app.lookups import Lookups, LookupStore
 from app.plan.guide import Guide, Spot, guide_for, parse_guide
@@ -53,7 +54,6 @@ THIN_SIGHTS, THIN_FOOD = 6, 4  # a seed guide with fewer gets the live one added
 TWIN_M = 150  # one name this close is one place
 FOUND_TTL, MISSED_TTL = timedelta(days=60), timedelta(days=3)
 GOOGLE_TTL_S = 24 * 3600
-NOMINATIM_GAP_S = 1.1  # its usage policy: one request a second
 
 SIGHT = re.compile(
     r"museum|park|garden|square|plaza|bridge|monument|memorial|statue|sculpture|cathedral|church|basilica|"
@@ -355,8 +355,6 @@ class LiveGuides:
         self._google_key = google_key
         self._transport = transport
         self._google: dict[str, tuple[float, list[Spot]]] = {}
-        self._gate = asyncio.Lock()
-        self._last = 0.0
         self.cache = Lookups(
             "city_guide_v2",  # v2: short Russian cuisines; a new name, so old guides are fetched again
             self._find,
@@ -422,9 +420,7 @@ class LiveGuides:
             "limit": "40",
             "accept-language": "ru",
         }
-        async with self._gate:  # only the spacing: Nominatim asks for one request a second
-            await asyncio.sleep(max(0.0, self._last + NOMINATIM_GAP_S - time.monotonic()))
-            self._last = time.monotonic()
+        await nominatim.wait_turn()  # one request a second, shared with the hotels
         try:
             response = await client.get(NOMINATIM, params=params)
             response.raise_for_status()

@@ -66,6 +66,18 @@ describe('DestinationCards', () => {
     expect(screen.queryByText('не проверено')).toBeNull()
   })
 
+  it('should credit Open-Meteo for the weather, as its licence asks', () => {
+    renderCard({ ...base, climate: { month: 'ноябрь', month_in: 'ноябре', day: 27, sea: 26 } })
+
+    expect(screen.getByRole('link', { name: 'Open-Meteo' })).toHaveAttribute('href', 'https://open-meteo.com/')
+  })
+
+  it('should not credit a weather source when no card shows the weather', () => {
+    renderCard(base)
+
+    expect(screen.queryByRole('link', { name: 'Open-Meteo' })).toBeNull()
+  })
+
   it('should show the real photo of the place', () => {
     renderCard({ ...base, photo: PHOTO })
 

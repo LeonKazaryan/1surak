@@ -1,3 +1,4 @@
+import { DataCredit } from '@/components/DataCredit'
 import {
   CheckBadgeIcon,
   ExclamationTriangleIcon,
@@ -34,6 +35,7 @@ function Weather({ climate }: { climate: DestinationClimate }) {
           </li>
         ))}
       </ul>
+      <DataCredit sources={['openMeteo']} prefix="Погода:" className="mt-1.5" />
     </Section>
   )
 }

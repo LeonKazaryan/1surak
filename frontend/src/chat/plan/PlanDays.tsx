@@ -1,6 +1,8 @@
 import { useId, useState, type ComponentType } from 'react'
 import { motion } from 'motion/react'
 import { ArrowTopRightOnSquareIcon, BuildingOffice2Icon, CameraIcon, HomeIcon, MapIcon, MapPinIcon, SunIcon } from '@heroicons/react/20/solid'
+import { DataCredit } from '@/components/DataCredit'
+import { spotSource, type DataSource } from '@/lib/dataSources'
 import { ScrollRow } from '@/components/ScrollRow'
 import { cn } from '@/components/ui/utils'
 import type { PlanDay, PlanItem, PlanItemKind, PlanStop } from '@/types/api'
@@ -120,6 +122,11 @@ function Taste({ stop }: { stop: PlanStop }) {
   )
 }
 
+/** The open data a day's places come from, each named once. */
+function daySources(day: PlanDay): DataSource[] {
+  return [...new Set(day.items.map((i) => spotSource(i.spot?.id)).filter((s): s is DataSource => s !== null))]
+}
+
 interface PlanDaysProps {
   days: PlanDay[]
   stops: PlanStop[]
@@ -180,7 +187,7 @@ export function PlanDays({ days, stops }: PlanDaysProps) {
           <p className="m-0 text-[13px] text-muted-foreground">Свободный день.</p>
         )}
         <Taste stop={stop} />
-        {stop.source_url && (day.items.some((i) => i.spot) || stop.dishes.length > 0 || stop.food_intro) && (
+        {stop.source_url && (day.items.some((i) => i.spot) || stop.dishes.length > 0 || stop.food_intro) ? (
           <p className="m-0 text-[11px] text-faint">
             Фото: Wikimedia Commons · тексты:{' '}
             <a href={stop.source_url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
@@ -188,7 +195,10 @@ export function PlanDays({ days, stops }: PlanDaysProps) {
             </a>
             , CC BY-SA
           </p>
+        ) : (
+          day.items.some((i) => i.spot?.photo) && <p className="m-0 text-[11px] text-faint">Фото: Wikimedia Commons</p>
         )}
+        <DataCredit sources={daySources(day)} className="-mt-3" />
       </motion.div>
     </PlanSection>
   )
