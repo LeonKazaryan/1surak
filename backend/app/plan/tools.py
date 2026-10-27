@@ -14,6 +14,7 @@ from app.destinations import snapshots_by_id
 from app.flights import Flights, NoFlights, city, current_origin
 from app.hotels import HotelSource
 from app.hotels.evidence import hotel_wishes
+from app.maps import google_maps_url
 from app.money import current_currency, money
 from app.photos import ensure_photos
 from app.plan.assemble import _start, assemble, party_of
@@ -46,6 +47,8 @@ def _hotel_card(h: Hotel, rate, night: int, nights: int, current: bool) -> dict:
         "area": h.area,
         "photo": h.photo,
         "source_url": h.source_url,
+        # an invented demo hotel has no place on any map
+        "maps_url": google_maps_url(h.name, h.lat, h.lon) if h.real else None,
         "real": h.real,
         "meal_label": MEAL_LABELS[rate.meal],
         "night_rub": night,

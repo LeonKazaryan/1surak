@@ -7,6 +7,7 @@ from datetime import date, datetime
 from app.catalog.catalog import Place
 from app.catalog.search import Snapshot
 from app.flights.dictionary import airline_name
+from app.maps import google_maps_url
 from app.money import money
 from app.photos import place_photo
 from app.plan.checks import Check
@@ -122,6 +123,8 @@ def choice_view(c: HotelChoice) -> dict:
         "stars_known": h.stars_known,
         "photo": h.photo,
         "source_url": h.source_url,
+        # an invented demo hotel has no place on any map
+        "maps_url": google_maps_url(h.name, h.lat, h.lon) if h.real else None,
         "price_estimate": c.rate.estimate or not h.real,
         "terms_known": c.rate.terms_known,
         "evidence": [asdict(e) for e in h.evidence],

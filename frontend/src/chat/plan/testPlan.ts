@@ -279,7 +279,8 @@ export const PLAN: TripPlanEvent = {
             },
             "lat": 36.884,
             "lon": 30.705,
-            "source_url": null
+            "source_url": null,
+            "maps_url": "https://www.google.com/maps/search/%D0%9A%D0%B0%D0%BB%D0%B5%D0%B8%D1%87%D0%B8/@36.884,30.705,17z"
           }
         },
         {
@@ -326,7 +327,8 @@ export const PLAN: TripPlanEvent = {
             "photo": null,
             "lat": 36.885,
             "lon": 30.708,
-            "source_url": null
+            "source_url": null,
+            "maps_url": "https://www.google.com/maps/search/%D0%92%D0%BE%D1%80%D0%BE%D1%82%D0%B0%20%D0%90%D0%B4%D1%80%D0%B8%D0%B0%D0%BD%D0%B0/@36.885,30.708,17z"
           }
         },
         {
@@ -359,7 +361,8 @@ export const PLAN: TripPlanEvent = {
             "photo": null,
             "lat": 36.88,
             "lon": 30.7,
-            "source_url": null
+            "source_url": null,
+            "maps_url": "https://www.google.com/maps/search/Piyazc%C4%B1%20Sami/@36.88,30.7,17z"
           }
         }
       ]
@@ -385,7 +388,8 @@ export const PLAN: TripPlanEvent = {
             "photo": null,
             "lat": 36.85,
             "lon": 30.78,
-            "source_url": null
+            "source_url": null,
+            "maps_url": "https://www.google.com/maps/search/%D0%92%D0%BE%D0%B4%D0%BE%D0%BF%D0%B0%D0%B4%20%D0%94%D1%8E%D0%B4%D0%B5%D0%BD/@36.85,30.78,17z"
           }
         },
         {

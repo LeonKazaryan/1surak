@@ -1,6 +1,6 @@
 import { useId, useState, type ComponentType } from 'react'
 import { motion } from 'motion/react'
-import { BuildingOffice2Icon, CameraIcon, HomeIcon, MapIcon, MapPinIcon, SunIcon } from '@heroicons/react/20/solid'
+import { ArrowTopRightOnSquareIcon, BuildingOffice2Icon, CameraIcon, HomeIcon, MapIcon, MapPinIcon, SunIcon } from '@heroicons/react/20/solid'
 import { ScrollRow } from '@/components/ScrollRow'
 import { cn } from '@/components/ui/utils'
 import type { PlanDay, PlanItem, PlanItemKind, PlanStop } from '@/types/api'
@@ -62,9 +62,21 @@ function ItemRow({ item, last }: { item: PlanItem; last: boolean }) {
       </span>
       <span className="flex min-w-0 flex-1 gap-3 pt-1">
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] leading-snug font-medium text-foreground">{item.title}</span>
+          {item.spot?.maps_url ? (
+            <a
+              href={item.spot.maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Открыть в Google Картах"
+              className="group block text-[14px] leading-snug font-medium text-foreground underline-offset-2 hover:underline"
+            >
+              {item.title}
+              <ArrowTopRightOnSquareIcon aria-hidden className="ml-1 inline h-3.5 w-3.5 -translate-y-px text-faint group-hover:text-foreground" />
+            </a>
+          ) : (
+            <span className="block text-[14px] leading-snug font-medium text-foreground">{item.title}</span>
+          )}
           {item.note && <span className="block text-[13px] leading-snug text-muted-foreground">{item.note}</span>}
-          {item.spot?.hours && <span className="block text-[12px] text-faint">{item.spot.hours}</span>}
         </span>
         {photo && (
           <span className="relative h-14 w-[72px] shrink-0 overflow-hidden rounded-xl">

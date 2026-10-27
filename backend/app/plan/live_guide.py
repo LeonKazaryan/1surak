@@ -89,10 +89,87 @@ WHERE {
 } GROUP BY ?item ?links ORDER BY DESC(?links) LIMIT 150"""
 NOTES_PROMPT = (
     "Ты переводишь на русский теги кухни из OpenStreetMap для подписей в путеводителе. Для каждой строки дан "
-    "тег вроде «italian;pizza» или «coffee_shop». Напиши по каждой одну подпись в 2-5 слов, только перевод "
-    "тега: «итальянская кухня и пицца», «кофейня». Ничего не добавляй: ни оценок, ни цен, ни догадок. Порядок "
+    "тег вроде «georgian» или «kebab, levantine». Напиши по каждой одну короткую подпись в 1-3 слова, только "
+    "перевод тега: «грузинская кухня», «кебаб». Ничего не добавляй: ни оценок, ни цен, ни догадок. Порядок "
     "и число подписей — как у строк."
 )
+CUISINES_SHOWN = 2  # «бургеры, местная кухня», not the whole tag list
+# the common OSM cuisines, so most spots need no model; the rest go to the fast model, and with no answer
+# a spot says what it is («Ресторан»), never the raw English tag
+CUISINE_RU = {
+    "regional": "местная кухня",
+    "local": "местная кухня",
+    "international": "европейская кухня",
+    "italian": "итальянская кухня",
+    "pizza": "пицца",
+    "pasta": "паста",
+    "burger": "бургеры",
+    "american": "американская кухня",
+    "steak_house": "стейки",
+    "barbecue": "барбекю",
+    "grill": "гриль",
+    "chicken": "курица",
+    "seafood": "морепродукты",
+    "fish": "рыба",
+    "fish_and_chips": "фиш-энд-чипс",
+    "sushi": "суши",
+    "japanese": "японская кухня",
+    "ramen": "рамен",
+    "chinese": "китайская кухня",
+    "asian": "азиатская кухня",
+    "thai": "тайская кухня",
+    "vietnamese": "вьетнамская кухня",
+    "korean": "корейская кухня",
+    "indian": "индийская кухня",
+    "mexican": "мексиканская кухня",
+    "spanish": "испанская кухня",
+    "tapas": "тапас",
+    "french": "французская кухня",
+    "greek": "греческая кухня",
+    "turkish": "турецкая кухня",
+    "kebab": "кебаб",
+    "lebanese": "ливанская кухня",
+    "levantine": "ближневосточная кухня",
+    "middle_eastern": "ближневосточная кухня",
+    "arab": "арабская кухня",
+    "georgian": "грузинская кухня",
+    "german": "немецкая кухня",
+    "austrian": "австрийская кухня",
+    "czech": "чешская кухня",
+    "russian": "русская кухня",
+    "uzbek": "узбекская кухня",
+    "mediterranean": "средиземноморская кухня",
+    "vegetarian": "вегетарианская кухня",
+    "vegan": "веганская кухня",
+    "coffee_shop": "кофейня",
+    "cake": "торты",
+    "dessert": "десерты",
+    "ice_cream": "мороженое",
+    "breakfast": "завтраки",
+    "bagel": "бейглы",
+    "sandwich": "сэндвичи",
+    "crepe": "блины",
+    "noodle": "лапша",
+    "beer": "пиво",
+    "wine": "вино",
+}
+
+
+def cuisine_tags(raw: str) -> list[str]:
+    """The first cuisines of an OSM tag: «burger;regional;barbecue;grill» is burger and regional."""
+    tags = [t.strip().lower() for t in raw.replace(",", ";").split(";")]
+    return list(dict.fromkeys(t for t in tags if t))[:CUISINES_SHOWN]
+
+
+def cuisine_ru(tags: list[str]) -> str | None:
+    """The cuisines in Russian when every one of them is a common one; None leaves them to the model."""
+    words = [CUISINE_RU.get(t) for t in tags]
+    if not words or None in words:
+        return None
+    text = ", ".join(dict.fromkeys(words))
+    return text[0].upper() + text[1:]
+
+
 NOTES_SCHEMA = {
     "type": "object",
     "properties": {"notes": {"type": "array", "items": {"type": "string"}}},
@@ -281,7 +358,7 @@ class LiveGuides:
         self._gate = asyncio.Lock()
         self._last = 0.0
         self.cache = Lookups(
-            "city_guide",
+            "city_guide_v2",  # v2: short Russian cuisines; a new name, so old guides are fetched again
             self._find,
             store,
             lambda raw: raw,
@@ -399,11 +476,15 @@ class LiveGuides:
     async def _notes(self, food: list[dict]) -> None:
         """The cuisine tags of the food spots in Russian, in one call to the fast model; a spot without a
         cuisine keeps saying what it is («Ресторан», «Кафе»)."""
-        tagged = [(spot, cuisine) for spot in food if (cuisine := spot.pop("cuisine", None))]
-        for spot, cuisine in tagged:
-            spot["summary"] = cuisine.replace("_", " ").replace(";", ", ")
+        tagged = []
+        for spot in food:
+            tags = cuisine_tags(spot.pop("cuisine", None) or "")
+            if known := cuisine_ru(tags):
+                spot["summary"] = known
+            elif tags:
+                tagged.append((spot, ", ".join(t.replace("_", " ") for t in tags)))
         if not tagged or self._client is None:
-            return
+            return  # the rare ones keep saying what the spot is («Ресторан»)
         listing = "\n".join(f"{i}. {cuisine}" for i, (_, cuisine) in enumerate(tagged, 1))
         try:
             response = await self._client.chat.completions.create(
@@ -421,7 +502,7 @@ class LiveGuides:
             return
         if len(notes) == len(tagged):
             for (spot, _), note in zip(tagged, notes, strict=True):
-                spot["summary"] = _sentence(str(note)[:80])
+                spot["summary"] = _sentence(str(note)[:40])
 
     async def _google_food(self, place: Place) -> list[Spot]:
         """The best rated places from Google Places, when there is a key; kept in memory only, for a day."""

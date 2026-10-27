@@ -124,8 +124,8 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
         <span className="text-[12px] text-muted-foreground">
           {nightsText(hotel.nights)} · {hotel.price_estimate && hotel.real ? 'около ' : ''}
           {formatMoney(hotel.night_rub, currency)} за ночь
-          {hotel.source_url && (
-            <a href={hotel.source_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-highlight underline-offset-2 hover:underline">
+          {(hotel.maps_url ?? hotel.source_url) && (
+            <a href={hotel.maps_url ?? hotel.source_url ?? undefined} target="_blank" rel="noopener noreferrer" className="ml-2 text-highlight underline-offset-2 hover:underline">
               на карте
             </a>
           )}

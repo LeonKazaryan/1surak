@@ -337,6 +337,8 @@ export interface HotelOption {
   area: string
   photo: Photo | null
   source_url: string | null
+  /** A real hotel on Google Maps; null for a demo hotel. */
+  maps_url?: string | null
   real: boolean
   meal_label: string
   night_rub: number
@@ -398,6 +400,8 @@ export interface PlanSpot {
   lat: number | null
   lon: number | null
   source_url: string | null
+  /** The place on Google Maps: its own listing, or a search for its name around its point. */
+  maps_url: string | null
 }
 
 export type PlanItemKind = 'sight' | 'trip' | 'food' | 'beach' | 'walk' | 'free' | 'flight' | 'transfer' | 'hotel' | 'move'
@@ -447,6 +451,8 @@ export interface PlanHotel {
   stars_known?: boolean
   photo?: Photo | null
   source_url?: string | null
+  /** A real hotel on Google Maps; null for a demo hotel. */
+  maps_url?: string | null
   price_estimate?: boolean
   /** False: meals, refunds and payment are confirmed at booking, so the card claims none of them. */
   terms_known?: boolean

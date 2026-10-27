@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+from app.maps import google_maps_url
+
 GUIDE_PATH = Path(__file__).parent / "seed" / "guide.json"
 FOOD_TYPES = {"eat", "drink"}
 
@@ -47,6 +49,11 @@ class Spot:
     alt: str | None = None
     source_url: str | None = None
 
+    @property
+    def maps_url(self) -> str | None:
+        """The place on Google Maps, for its rating, reviews and the way there (see app.maps)."""
+        return google_maps_url(self.name, self.lat, self.lon, self.source_url)
+
     def view(self) -> dict:
         return {
             "id": self.id,
@@ -60,6 +67,7 @@ class Spot:
             "lat": self.lat,
             "lon": self.lon,
             "source_url": self.source_url,
+            "maps_url": self.maps_url,
         }
 
 

@@ -11,7 +11,7 @@ from app.catalog.catalog import load_catalog
 from app.plan.guide import Guide, Spot
 from app.plan.hotels import Party
 from app.plan.itinerary import Stay, plan_days
-from app.plan.live_guide import LiveGuides, food_from, kind_of, merged, sights_from
+from app.plan.live_guide import LiveGuides, cuisine_ru, cuisine_tags, food_from, kind_of, merged, sights_from
 
 CATALOG = load_catalog()
 
@@ -54,6 +54,26 @@ ROWS = [
     row("Q11297", "Гринвич-Виллидж", 52, "neighborhood of Manhattan|NRHP district", 40.733, -74.003, "район"),
     row("Q1194", "Nasdaq", 92, "organization|stock exchange", 40.757, -73.986),
 ]
+
+
+def test_should_link_every_place_with_a_point_to_google_maps():
+    osm = Spot(
+        "osm-n1",
+        "eat",
+        "Der Garten",
+        "",
+        lat=48.2,
+        lon=16.36,
+        source_url="https://www.openstreetmap.org/node/1",
+    )
+    google = Spot(
+        "gp-1", "eat", "Sultans", "", lat=48.2, lon=16.37, source_url="https://maps.google.com/?cid=42"
+    )
+
+    # a search for the name around its point: the place itself, not one of the same name across town
+    assert osm.view()["maps_url"] == "https://www.google.com/maps/search/Der%20Garten/@48.2,16.36,17z"
+    assert google.view()["maps_url"] == "https://maps.google.com/?cid=42"  # Google's own listing
+    assert Spot("x", "see", "Нигде", "").maps_url is None  # no point, no guess
 
 
 def test_should_sort_wikidata_places_into_sights_and_walks():
@@ -104,6 +124,15 @@ def test_should_pick_varied_restaurants_and_never_guess_a_cuisine():
     names = [f["name"] for f in found]
     assert names[0] == "Famous Deli" and "Pizza C" not in names  # the notable first, a cuisine at most twice
     assert next(f for f in found if f["name"] == "Corner Spot")["summary"] == "Ресторан"
+
+
+def test_should_say_a_cuisine_in_two_russian_words_at_most():
+    tags = cuisine_tags("burger;regional;barbecue;grill")
+
+    assert tags == ["burger", "regional"]  # a short line, not the whole tag list
+    assert cuisine_ru(tags) == "Бургеры, местная кухня"
+    assert cuisine_ru(cuisine_tags("levantine")) == "Ближневосточная кухня"
+    assert cuisine_ru(cuisine_tags("jewish;deli")) is None  # a rare one goes to the model, never shown raw
 
 
 def test_should_find_a_guide_for_any_city_and_keep_the_seed_first():

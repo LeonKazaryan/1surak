@@ -70,6 +70,7 @@ describe('TripPlan', () => {
       price_estimate: true,
       terms_known: false,
       source_url: 'https://www.wikidata.org/wiki/Q1',
+      maps_url: 'https://www.google.com/maps/search/H/@36.8,30.7,17z',
       photo: { url: 'https://upload.wikimedia.org/h.jpg', width: 640, height: 400, author: 'Анна', license: 'CC BY 4.0', file_url: 'https://commons.wikimedia.org/wiki/File:H.jpg' },
     }
     const { onAsk } = renderPlan({}, { ...PLAN, stops: [{ ...stop, hotel: real }, ...PLAN.stops.slice(1)] })
@@ -82,6 +83,8 @@ describe('TripPlan', () => {
     expect(within(stay).queryByText(label, { exact: true })).toBeNull()
     expect(within(stay).queryByText(/отзыв/)).toBeNull()
     expect(within(stay).getByRole('link', { name: 'Анна, CC BY 4.0' })).toBeInTheDocument()
+    // the map is Google's, where the reviews are, not the Wikidata entry it was found in
+    expect(within(stay).getByRole('link', { name: 'на карте' })).toHaveAttribute('href', real.maps_url)
     await userEvent.click(within(stay).getByRole('button', { name: 'Ещё отели' }))
     expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
   })
@@ -145,6 +148,9 @@ describe('TripPlan', () => {
     expect(within(days).getAllByText('Калеичи').length).toBeGreaterThan(0)
     expect(within(days).getAllByTitle(/Jane Doe/).length).toBeGreaterThan(0)
     expect(within(days).getByText('Пияз')).toBeInTheDocument()
+    const onMap = within(days).getByRole('link', { name: 'Калеичи' })
+    expect(onMap.getAttribute('href')).toMatch(/^https:\/\/www\.google\.com\/maps\/search\/.+\/@36\.884,30\.705,17z$/)
+    expect(onMap).toHaveAttribute('target', '_blank')
   })
 
   it('should credit the guide the days are drawn from', () => {

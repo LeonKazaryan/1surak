@@ -32,8 +32,8 @@ function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: 
           <MapPinIcon aria-hidden className="h-3.5 w-3.5 text-faint" />
           {hotel.area}
         </span>
-        {hotel.source_url && (
-          <a href={hotel.source_url} target="_blank" rel="noopener noreferrer" className="text-highlight underline-offset-2 hover:underline">
+        {(hotel.maps_url ?? hotel.source_url) && (
+          <a href={hotel.maps_url ?? hotel.source_url ?? undefined} target="_blank" rel="noopener noreferrer" className="text-highlight underline-offset-2 hover:underline">
             на карте
           </a>
         )}
