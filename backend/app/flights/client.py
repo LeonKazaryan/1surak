@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 PRICES_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 AVIASALES = "https://www.aviasales.ru"
+SEARCH_URL = AVIASALES + "/search/{origin}{day:02d}{month:02d}{destination}1"
 MAX_PARALLEL = 8
 TICKETS_PER_ROUTE = 100  # more tickets, more days in the calendar (by_day)
 
@@ -141,6 +142,24 @@ class NoFlights:
         self, origin: str, destinations: list[str], month: int | None
     ) -> dict[str, RouteFlights | None]:
         return dict.fromkeys(destinations)
+
+
+def search_on(origin: str, destination: str, day: date) -> str:
+    """The live search on Aviasales for one adult on that day: it has every fare, the cache only some."""
+    return SEARCH_URL.format(
+        origin=city_code(origin), day=day.day, month=day.month, destination=city_code(destination)
+    )
+
+
+def search_link(origin: str, destination: str, month: int | None, today: date | None = None) -> str:
+    """The live search for a month: mid-month (or two weeks from now without a month)."""
+    today = today or date.today()
+    if month:
+        year = int(departure_month(month, today)[:4])
+        day = max(date(year, month, 15), today + timedelta(days=3))
+    else:
+        day = today + timedelta(days=14)
+    return search_on(origin, destination, day)
 
 
 def departure_month(month: int | None, today: date | None = None) -> str | None:

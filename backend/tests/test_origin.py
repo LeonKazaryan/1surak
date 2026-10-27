@@ -33,6 +33,13 @@ def test_should_find_a_city_by_name_or_code():
     assert find_city("Нигдебург") is None and find_city("") is None
 
 
+def test_should_take_the_best_connected_of_cities_with_one_name():
+    # London, Ontario and Barcelona in Venezuela come first in the dictionary
+    assert (find_city("Лондон").code, find_city("Лондон").country_code) == ("LON", "GB")
+    assert find_city("Барселона").country_code == "ES"
+    assert find_city("Валенсия").country_code == "ES"
+
+
 def test_should_keep_the_city_the_user_named():
     token = current_origin.set("MOW")
     try:

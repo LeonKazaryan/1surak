@@ -5,14 +5,18 @@ import type { PlanCheck, PlanLeg, RouteLeg } from '@/types/api'
 import { CurrencyContext, formatMoney } from '../widgets'
 import { ModeIcon } from '../components/LegRow'
 import { Credit } from '../components/Credit'
+import { DearTag, LiveSearchLink } from '../components/FareNotes'
 import { fareOf, KIND_TONE, knownFare, legKind, rideAction, rideShop, rideTimes, saving, units } from '../components/legFormat'
 import { AirlineLogo } from '../components/ticket'
-import { forPassengers, hours, stopsText } from '../components/ticketFormat'
+import { forPassengers, hours, shortDate, stopsText } from '../components/ticketFormat'
 import { CheckRow, PlanSection } from './planParts'
 import { clock, dayChip, dayText } from './planFormat'
 
 function when(leg: PlanLeg): string {
-  if (!leg.departs) return 'дату и время уточню, когда появятся билеты на эти даты'
+  if (!leg.departs) {
+    const rest = 'время по рейсу, который выберете'
+    return leg.date ? `${dayChip(leg.date).weekday}, ${dayText(leg.date)} · ${rest}` : rest
+  }
   const day = dayChip(leg.departs)
   const times = [clock(leg.departs), clock(leg.arrives)].filter(Boolean).join(' → ')
   return `${day.weekday}, ${dayText(leg.departs)} · ${times}`
@@ -35,18 +39,34 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
             {ticket.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(ticket.hours)}`}</span>}
           </span>
         </span>
-        {ticket.link && (
-          <a
-            href={forPassengers(ticket.link, seats)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
-            className={cn(BUY, 'bg-highlight/10 text-highlight hover:bg-highlight/20')}
-          >
-            Купить на Aviasales
-            <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
-          </a>
+        {leg.usual_rub ? (
+          <span className="mt-1.5 block">
+            <DearTag usual={leg.usual_rub} />
+          </span>
+        ) : null}
+        {/* the nearest cached ticket flies on another day than the plan's: that day's fares are in the search */}
+        {leg.search_link && leg.date && (
+          <span className="mt-1 block text-[12px] leading-snug text-amber-700">
+            {`ближайший билет в кэше на ${shortDate(ticket.departure)}, на ${shortDate(leg.date)} цены в поиске`}
+          </span>
         )}
+        <span className="flex flex-wrap gap-x-2">
+          {ticket.link && (
+            <a
+              href={forPassengers(ticket.link, seats)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
+              className={cn(BUY, 'bg-highlight/10 text-highlight hover:bg-highlight/20')}
+            >
+              Купить на Aviasales
+              <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
+            </a>
+          )}
+          {leg.search_link && (
+            <LiveSearchLink href={forPassengers(leg.search_link, seats)} day={leg.date} from={leg.from} to={leg.to} />
+          )}
+        </span>
       </>
     )
   }
@@ -74,11 +94,28 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
       </>
     )
   }
-  return (
-    <span className="mt-1 block text-[12px] text-muted-foreground">
-      {leg.mode === 'flight' ? 'билетов пока нет' : `по земле, ${leg.km} км: поезд, автобус или такси`}
-    </span>
-  )
+  if (leg.mode === 'flight') {
+    // no fare on the day yet: the best ticket of the nearest dates stands in for the price, the day is a link away
+    const guide = leg.guide
+    return (
+      <>
+        {guide ? (
+          <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
+            <AirlineLogo ticket={guide} className="h-4 w-4" />
+            <span className="min-w-0">
+              {`${guide.airline_name} · ${stopsText(guide)}`}
+              {guide.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(guide.hours)}`}</span>}
+              <span className="text-faint">{` · ориентир по билету на ${shortDate(guide.departure)}`}</span>
+            </span>
+          </span>
+        ) : (
+          <span className="mt-1 block text-[12px] text-muted-foreground">в кэше Aviasales цен на этот день пока нет</span>
+        )}
+        {leg.search_link && <LiveSearchLink href={forPassengers(leg.search_link, seats)} day={leg.date} from={leg.from} to={leg.to} />}
+      </>
+    )
+  }
+  return <span className="mt-1 block text-[12px] text-muted-foreground">{`по земле, ${leg.km} км: поезд, автобус или такси`}</span>
 }
 
 function Price({ rub, note, estimate }: { rub: number; note: string; estimate?: boolean }) {
@@ -141,7 +178,13 @@ function LegRow({ leg, seats }: { leg: PlanLeg; seats: number }) {
         <span className="block text-[13px] leading-snug text-muted-foreground">{when(leg)}</span>
         {smart ? <SmartParts leg={leg} seats={seats} /> : <UnitInfo leg={leg} seats={seats} />}
       </span>
-      {fare ? <Price rub={fare} note={each} /> : leg.ground_rub ? <Price rub={leg.ground_rub} note="на человека" estimate /> : null}
+      {fare ? (
+        <Price rub={fare} note={each} />
+      ) : leg.guide ? (
+        <Price rub={leg.guide.price_rub} note={seats > 1 ? `ориентир × ${seats}` : 'ориентир'} estimate />
+      ) : leg.ground_rub ? (
+        <Price rub={leg.ground_rub} note="на человека" estimate />
+      ) : null}
     </li>
   )
 }

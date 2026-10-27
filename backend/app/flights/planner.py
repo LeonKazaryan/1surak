@@ -16,9 +16,9 @@ from datetime import date, timedelta
 from typing import Literal
 
 from app.catalog.catalog import RAIL_ORIGIN, Catalog
-from app.flights.client import Flights, RouteFlights, Ticket, merged
+from app.flights.client import Flights, RouteFlights, Ticket, merged, search_link, search_on
 from app.flights.connections import Connection, connect, hubs
-from app.flights.dictionary import City, cities, city, distance_km
+from app.flights.dictionary import City, city, distance_km, find_city
 from app.flights.network import Network
 
 Preference = Literal["cheapest", "balanced", "fastest"]
@@ -56,7 +56,7 @@ def resolve_stop(name: str, catalog: Catalog) -> Stop | None:
     needle = name.strip().casefold()
     exact = next((p for p in catalog.places if needle in (p.id, p.name.casefold())), None)
     if exact is None:
-        found = city(name) or next((c for c in cities().values() if c.name.casefold() == needle), None)
+        found = find_city(name)
         if found:
             return Stop.of_city(found)
         exact = catalog.find(name)
@@ -175,7 +175,10 @@ def leg_card(leg: Leg) -> dict:
     elif leg.mode == "none":
         view["estimate"] = "нет ни рейса, ни поезда"
     else:
-        view["estimate"] = "прямой рейс есть, билетов пока нет" if leg.direct_on_map else "билетов пока нет"
+        view["estimate"] = "прямой рейс, цены в поиске" if leg.direct_on_map else "цены в поиске Aviasales"
+        if leg.origin.code and leg.destination.code:
+            o, d = leg.origin.code, leg.destination.code
+            view["search_link"] = search_on(o, d, leg.day) if leg.day else search_link(o, d, leg.month)
     if leg.via:
         view["via"] = {
             **leg.via.view(),

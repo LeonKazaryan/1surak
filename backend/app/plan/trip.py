@@ -16,7 +16,7 @@ from app.plan.hotels import MEAL_LABELS, Evidence, HotelChoice, HotelPick, Party
 from app.plan.itinerary import Day
 from app.plan.transfers import Transfer
 from app.trip.brief import plural
-from app.trip.routes import Leg
+from app.trip.routes import Leg, guide_for_model
 
 MONTHS_OF = (
     "января",
@@ -89,6 +89,13 @@ class Move:
                 f"{airline_name(ticket.airline)} {ticket.airline} {ticket.flight_number}, {stops}"
             )
             view["price_per_person"] = money(ticket.price)
+            if self.leg.pricey:
+                view["dear"] = (
+                    f"the best ticket that fits the dates, but the route usually costs about "
+                    f"{money(self.leg.usual_rub)} that month"
+                )
+        elif self.leg.guide:
+            view["price_guide_per_person"] = guide_for_model(self.leg.guide)
         elif self.price_rub:
             view["estimate_per_person"] = money(self.price_rub)
             view["hours"] = self.leg.hours
@@ -207,6 +214,7 @@ class StopPlan:
 
 
 FARE_DRIFT = 0.1  # cached fares are a few days old: the same ticket may cost this much more at booking
+GUIDE_SPREAD = 0.25  # a fare of the nearest dates standing in for the trip's day
 RIDE_SPREAD = 0.25  # a taxi or a bus estimated by distance
 HOTEL_SPREAD = (0.85, 1.2)  # an estimated room price, low and high
 
@@ -218,8 +226,9 @@ class Costs:
     transfers: int
     ground: int
     guests: int
-    flights_complete: bool  # every flight leg has a ticket, so the total is the whole cost
+    flights_complete: bool  # every flight leg has a ticket or a guide, so the total is the whole cost
     budget: int | None = None
+    flights_guide: int = 0  # the part of `flights` priced by the nearest dates, not the trip's day
     # The cheapest and the dearest the same trip may come to. Tickets are real cached prices, hotels and
     # rides are estimates: they get a spread, and the lower end takes the cheapest hotel offered instead.
     hotels_low: int | None = None
@@ -235,7 +244,10 @@ class Costs:
     def high(self) -> int:
         hotels = self.hotels_high if self.hotels_high is not None else self.hotels
         return round(
-            self.flights * (1 + FARE_DRIFT) + hotels + (self.transfers + self.ground) * (1 + RIDE_SPREAD)
+            self.flights * (1 + FARE_DRIFT)
+            + self.flights_guide * GUIDE_SPREAD
+            + hotels
+            + (self.transfers + self.ground) * (1 + RIDE_SPREAD)
         )
 
     @property
@@ -260,6 +272,7 @@ class Costs:
             "per_person": self.per_person,
             "guests": self.guests,
             "flights_complete": self.flights_complete,
+            "flights_guide": self.flights_guide,
             "low": self.low,
             "high": self.high,
             "hotels_estimate": self.hotels_estimate,
@@ -277,7 +290,9 @@ class Costs:
             "ground_estimate": money(self.ground) if self.ground else None,
         }
         if not self.flights_complete:
-            parts["note"] = "some flights have no tickets yet, so the total leaves them out"
+            parts["note"] = "some flights have no fare at all yet, so the total leaves them out"
+        elif self.flights_guide:
+            parts["note"] = "some flights are priced by the best ticket of the nearest dates: a guide"
         if self.budget:
             parts["budget"] = money(self.budget)
             parts["over_budget_by"] = money(self.over_by) if self.over_by else None

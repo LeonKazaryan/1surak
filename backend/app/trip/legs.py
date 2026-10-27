@@ -7,9 +7,12 @@ what the direct way would have cost, for the card to show the saving.
 """
 
 import math
+import statistics
 from dataclasses import dataclass, field, replace
+from datetime import date
 
 from app.flights import RouteFlights, Ticket
+from app.flights.client import search_on
 from app.ground import GroundRoute
 
 FLIGHT_FROM_KM = 400  # shorter hops go by land even when there is an airport (Antalya → Alanya)
@@ -17,6 +20,9 @@ GROUND_MAX_KM = 650  # a longer hop needs a plane: both ends must have an airpor
 GROUND_KMH = 60
 ROAD_DETOUR = 1.3  # roads are longer than the straight line
 GROUND_RUB_PER_KM = 5  # a bus or train seat, per person: an estimate, never a quote
+USUAL_FROM_DAYS = 4  # days with a fare that month before there is a usual price to compare with
+PRICEY_SHARE = 1.3  # a ticket this much above the month's usual price is marked as dear
+PRICEY_RUB = 3_000  # and at least this much: 30% of a short hop is small change
 
 
 def km_between(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> int:
@@ -50,6 +56,32 @@ class Leg:
     instead: dict | None = None  # the direct way it replaced: price, transfers, hours
     from_stop: int | None = None  # index of the route's city it leaves, None for home
     to_stop: int | None = None  # index of the city it arrives at, None for home
+    # No fare cached for the month: the route on its nearest dates, and the ticket from them that stands in
+    # for the price (a guide, not a ticket for the trip's day), with the live search for that day.
+    nearby: RouteFlights | None = None
+    guide: Ticket | None = None
+    day: date | None = None  # the day the plan has this leg on, for the live search
+
+    @property
+    def usual_rub(self) -> int | None:
+        """The route's usual fare that month: the median of the cheapest ticket of each day."""
+        days = self.flights.by_day if self.flights else ()
+        return round(statistics.median(t.price for t in days)) if len(days) >= USUAL_FROM_DAYS else None
+
+    @property
+    def pricey(self) -> bool:
+        """The ticket on the plan's dates costs clearly more than the route usually does that month."""
+        usual = self.usual_rub
+        return bool(
+            self.ticket
+            and usual
+            and self.ticket.price >= usual * PRICEY_SHARE
+            and self.ticket.price - usual >= PRICEY_RUB
+        )
+
+    @property
+    def search_link(self) -> str | None:
+        return search_on(*self.codes, self.day) if self.day and all(self.codes) else None
 
     @property
     def via(self) -> str | None:
@@ -118,6 +150,11 @@ class Leg:
         if self.ticket and self.flights:
             view["ticket"] = {**self.ticket.view(), "direct_available": self.flights.direct is not None}
             view["hours"] = round(self.ticket.duration_min / 60 * 2) / 2 or self.hours
+            if self.pricey:
+                view["usual_rub"] = self.usual_rub
+            if self.day and self.ticket.day != self.day:  # the nearest ticket, on another day than the plan's
+                view["date"] = self.day.isoformat()
+                view["search_link"] = self.search_link
         elif self.ground:
             view["ground"] = self.ground.view()
             view["hours"] = view["ground"]["hours"]
@@ -125,7 +162,13 @@ class Leg:
             view["estimate"] = "по земле: автобус, поезд или авто, оценка по расстоянию"
             view["estimate_rub"] = ground_estimate_rub(self.km)
         else:
-            view["estimate"] = "билетов на этот месяц не нашлось"
+            # never a dead end: the best ticket of the nearest dates as the price, the live search for the day
+            if self.guide:
+                view["guide"] = self.guide.view()
+                view["hours"] = round(self.guide.duration_min / 60 * 2) / 2 or self.hours
+            if self.day:
+                view["date"] = self.day.isoformat()
+            view["search_link"] = self.search_link
         return view
 
 

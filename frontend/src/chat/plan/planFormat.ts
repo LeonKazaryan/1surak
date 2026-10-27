@@ -58,9 +58,11 @@ export function billLines(plan: TripPlanEvent): BillLine[] {
   const guests = party.adults + party.children_ages.length
   const lines: BillLine[] = []
   if (costs.flights || plan.legs.some((l) => l.mode === 'flight')) {
-    const note = costs.flights_complete
-      ? `${guests} ${plural(guests, ['пассажир', 'пассажира', 'пассажиров'])}, все перелёты`
-      : 'без перелётов, где билетов пока нет'
+    const note = !costs.flights_complete
+      ? 'без перелётов, где цены только в поиске Aviasales'
+      : costs.flights_guide
+        ? `${guests} ${plural(guests, ['пассажир', 'пассажира', 'пассажиров'])}, часть по ориентиру ближайших дат`
+        : `${guests} ${plural(guests, ['пассажир', 'пассажира', 'пассажиров'])}, все перелёты`
     lines.push({ label: 'Перелёты', note, rub: costs.flights })
   }
   for (const stop of plan.stops) {

@@ -6,6 +6,7 @@ import type { GroundRide, RouteFlight, RouteLeg } from '@/types/api'
 import { CurrencyContext, formatMoney, plural } from '../widgets'
 import { fareOf, KIND_TONE, legKind, rideTimes, saving, units, type LegKind } from './legFormat'
 import { Credit } from './Credit'
+import { DearTag } from './FareNotes'
 import { AirlineLogo } from './ticket'
 import { hours, shortDate, stopsText } from './ticketFormat'
 
@@ -92,10 +93,21 @@ function RideLine({ ride }: { ride: GroundRide }) {
 function LegLine({ leg }: { leg: RouteLeg }) {
   if (leg.ticket) return <FlightLine ticket={leg.ticket} />
   if (leg.ground) return <RideLine ride={leg.ground} />
+  if (leg.guide) {
+    return (
+      <>
+        <AirlineLogo ticket={leg.guide} className="h-4 w-4" />
+        <span className="truncate">
+          {leg.guide.airline_name}
+          <span className="text-faint"> · ориентир по ближайшим датам</span>
+        </span>
+      </>
+    )
+  }
   return (
     <span className="truncate">
       {leg.mode === 'ground' ? `по земле ~${hours(leg.hours)}, ${leg.km} км` : `~${hours(leg.hours)} лёту`}
-      <span className="text-faint"> · {leg.mode === 'ground' ? 'оценка' : 'билетов пока нет'}</span>
+      <span className="text-faint"> · {leg.mode === 'ground' ? 'оценка' : 'цены в поиске Aviasales'}</span>
     </span>
   )
 }
@@ -108,10 +120,12 @@ function LegPrice({ leg, small }: { leg: RouteLeg; small?: boolean }) {
     ? `${shortDate(leg.ticket.departure)}${small ? `, ${leg.ticket.departure.slice(11, 16)}` : ', от'}`
     : leg.ground
       ? (leg.ground.fare ?? (leg.ground.mode === 'bus' ? 'автобус' : 'поезд'))
-      : leg.estimate_rub
-        ? 'оценка'
-        : null
-  const shown = fare ?? leg.estimate_rub ?? null
+      : leg.guide
+        ? 'ориентир'
+        : leg.estimate_rub
+          ? 'оценка'
+          : null
+  const shown = fare ?? leg.guide?.price_rub ?? leg.estimate_rub ?? null
   if (shown === null && !note) return null
   return (
     <span className="shrink-0 text-right">
@@ -122,16 +136,18 @@ function LegPrice({ leg, small }: { leg: RouteLeg; small?: boolean }) {
           {formatMoney(shown, currency)}
         </span>
       )}
+      {leg.usual_rub ? <DearTag usual={leg.usual_rub} compact /> : null}
     </span>
   )
 }
 
+/** Where the row leads: the ticket or the ride to buy, else the live search for the leg's day. */
 function linkOf(leg: RouteLeg): string | undefined {
-  return leg.ticket?.link ?? leg.ground?.link
+  return leg.ticket?.link ?? leg.ground?.link ?? leg.search_link ?? undefined
 }
 
 function labelOf(leg: RouteLeg): string {
-  const by = leg.ticket?.airline_name ?? leg.ground?.name
+  const by = leg.ticket?.airline_name ?? leg.ground?.name ?? (leg.search_link ? 'цены в поиске Aviasales' : null)
   return by ? `${leg.from} → ${leg.to}, ${by}` : `${leg.from} → ${leg.to}`
 }
 

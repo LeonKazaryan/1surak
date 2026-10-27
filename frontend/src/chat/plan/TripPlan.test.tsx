@@ -58,6 +58,43 @@ describe('TripPlan', () => {
     buy.forEach((a) => expect(a).toHaveAttribute('target', '_blank'))
   })
 
+  it('should price a flight with no fare on its day by the nearest dates and link the live search', () => {
+    const [there, back] = PLAN.legs
+    const { ticket, ...unpriced } = there
+    const guide = { ...ticket!, price_rub: 21_000, departure: '2026-12-02 09:40' }
+    const legs = [
+      { ...unpriced, departs: null, arrives: null, date: '2026-11-06', guide, search_link: 'https://www.aviasales.ru/search/MOW0611AYT1' },
+      { ...back, usual_rub: 9_000 },
+    ]
+    renderPlan({}, { ...PLAN, legs })
+
+    const road = screen.getByRole('region', { name: 'Дорога' })
+    expect(within(road).getByText(/пт, 6 ноября · время по рейсу/)).toBeInTheDocument()
+    expect(within(road).getByText(/ориентир по билету на 2 дек/)).toBeInTheDocument()
+    expect(within(road).getByText(money(21_000).replace(/^/, '~'))).toBeInTheDocument()
+    // two adults and a child: the search opens for three
+    expect(within(road).getByRole('link', { name: /Цены на 6 ноя.* в Aviasales: Москва → Анталья/ })).toHaveAttribute(
+      'href',
+      'https://www.aviasales.ru/search/MOW0611AYT3',
+    )
+    expect(within(road).getByText(/дороже обычного · обычно ~9/)).toBeInTheDocument()
+    expect(road).not.toHaveTextContent(/билетов (пока )?нет/)
+  })
+
+  it('should keep the nearest ticket and link the live search when it flies on another day', () => {
+    const [there, back] = PLAN.legs
+    const legs = [{ ...there, departs: null, arrives: null, date: '2026-11-20', search_link: 'https://www.aviasales.ru/search/MOW2011AYT1' }, back]
+    renderPlan({}, { ...PLAN, legs })
+
+    const road = screen.getByRole('region', { name: 'Дорога' })
+    expect(within(road).getByText('ближайший билет в кэше на 6 ноя, на 20 ноя цены в поиске')).toBeInTheDocument()
+    expect(within(road).getByRole('link', { name: /Цены на 20 ноя.* в Aviasales/ })).toHaveAttribute(
+      'href',
+      'https://www.aviasales.ru/search/MOW2011AYT3',
+    )
+    expect(within(road).getAllByRole('link', { name: /Купить билет/ })).toHaveLength(2)
+  })
+
   it('should show a real hotel without inventing its rating or terms, and offer more hotels', async () => {
     const stop = PLAN.stops[0]
     const real = {
@@ -192,7 +229,7 @@ describe('TripPlan', () => {
     renderPlan({}, { ...PLAN, costs: { ...PLAN.costs, flights: 0, flights_complete: false, budget: 400_000 } })
 
     const bill = screen.getByRole('region', { name: 'Стоимость' })
-    expect(within(bill).getByText(/^Пока без перелётов/)).toBeInTheDocument()
+    expect(within(bill).getByText(/^Без перелёта/)).toBeInTheDocument()
     expect(within(bill).queryByText(/В бюджете/)).toBeNull()
   })
 

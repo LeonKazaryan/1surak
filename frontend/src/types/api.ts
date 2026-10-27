@@ -244,6 +244,14 @@ export interface RouteLeg {
   /** The parts together, per person; null while one of them has no fare. */
   price_rub?: number | null
   instead?: LegDetour
+  /** No fare cached for the leg's dates: the best ticket of the nearest dates, a guide to the price. */
+  guide?: RouteFlight
+  /** The day the plan has a flight without a ticket on, «2027-03-10». */
+  date?: string
+  /** The live search on Aviasales for that day. */
+  search_link?: string | null
+  /** The ticket costs clearly more than the route usually does that month: the usual fare. */
+  usual_rub?: number
 }
 
 export interface RouteInterest {
@@ -264,6 +272,8 @@ export interface RouteCard {
   legs: RouteLeg[]
   total_rub: number | null
   total_complete: boolean
+  /** Part of the total is the best fare of the nearest dates, for flights with no fare on their day. */
+  total_guided?: boolean
   /** Every flight leaves after the nights before it: the tickets make one trip, not separate cheapest ones. */
   dates_chained: boolean
   match: number
@@ -296,6 +306,8 @@ export interface FlightPlanLeg {
   hours?: number
   ticket?: RouteFlight
   estimate?: string
+  /** No fare cached: the live search on Aviasales for the leg's day. */
+  search_link?: string
   via?: FlightConnection
 }
 
@@ -532,6 +544,8 @@ export interface PlanCosts {
   per_person: number
   guests: number
   flights_complete: boolean
+  /** The part of `flights` priced by the nearest dates: those flights have no fare on their day yet. */
+  flights_guide?: number
   budget: number | null
   over_by: number | null
   /** What the same trip may come to: tickets are cached real prices, hotels and rides are estimates. */

@@ -110,7 +110,9 @@ def test_should_find_tickets_for_a_city_outside_the_catalogue(registry):
     assert preview == "Москва → Стамбул: от 10\u00a0558\u00a0₽, прямой"
 
 
-def test_should_say_when_aviasales_has_no_tickets(registry):
+def test_should_send_to_the_live_search_when_the_cache_has_no_fare(registry):
     result, preview = call(registry[0], "search_flights", {"destination": "Магадан"})
 
-    assert "tickets" not in result and preview.endswith("билетов не нашлось")  # empty fields are dropped
+    assert "tickets" not in result  # empty fields are dropped
+    assert result["search_link"].startswith("https://www.aviasales.ru/search/MOW")
+    assert preview.endswith("цены в живом поиске Aviasales")

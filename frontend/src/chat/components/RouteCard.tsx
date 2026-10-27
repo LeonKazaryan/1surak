@@ -74,7 +74,9 @@ export function RouteTotal({ card }: { card: Route }) {
           'цены уточню'
         )}
         {card.total_rub && !card.total_complete && (
-          <span className="ml-2 text-[12px] font-normal text-muted-foreground">без плеч, где билетов пока нет</span>
+          <span className="ml-2 text-[12px] font-normal text-muted-foreground">
+            {card.total_guided ? 'часть перелётов по ориентиру ближайших дат' : 'без плеч, где цены только в поиске'}
+          </span>
         )}
       </p>
       {byLand > 0 && (

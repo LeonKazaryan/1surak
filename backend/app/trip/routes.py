@@ -44,7 +44,7 @@ from app.trip.legs import (  # re-exported: the trip plan imports them from here
     km_between,
     units,
 )
-from app.trip.smart import better_way, fit_rides, leg_value, wants_better
+from app.trip.smart import better_way, fit_rides, leg_value, value, wants_better
 from app.visas import label as visa_label
 
 log = logging.getLogger(__name__)
@@ -135,6 +135,11 @@ class RoutePlan:
     def total_rub(self) -> int:
         """Tickets for the whole route, per person: flights and the trains or buses with a real fare."""
         return sum(p.price_rub or 0 for leg in self.legs for p in units(leg))  # a part's estimate is no fare
+
+    @property
+    def guide_rub(self) -> int:
+        """The flights without a ticket, at the best fare of their nearest dates: a guide to the price."""
+        return sum(leg.guide.price for leg in self.legs if leg.guide and not leg.ticket)
 
     @property
     def priced(self) -> bool:
@@ -370,6 +375,12 @@ async def price_route(
     later = iter(found[len(flown) :])
     for i, leg in enumerate(flown):
         leg.flights = merged(found[i], next(later)) if i and following else found[i]
+    # no fare cached for the month is no dead end: the route's nearest dates give the price to plan with
+    lacking = [leg for leg in flown if not leg.flights] if month is not None else []
+    for leg, near in zip(
+        lacking, await asyncio.gather(*(flights.route(*leg.codes) for leg in lacking)), strict=True
+    ):
+        leg.nearby = near
     plan.dates_chained = chain_dates(legs, plan.nights, start_at_home=home, start=start)
     if improve:
         await _improve(plan, points, flights, month)
@@ -377,7 +388,21 @@ async def price_route(
         for leg in plan.legs:
             fit_rides(leg.parts)
         await _add_ground(plan, points, month, home)
+    _add_guides(plan, month, home, start)
     return plan
+
+
+def _add_guides(plan: RoutePlan, month: int | None, home: bool, start: date | None) -> None:
+    """Every flight still without a ticket gets the best ticket of its nearest dates as its price, and the
+    day the plan has it on, for the live search on Aviasales."""
+    for leg, day in zip(plan.legs, _leg_days(plan, month, home, start), strict=True):
+        if leg.mode != "flight" or leg.parts or leg.ticket:
+            continue
+        if leg.nearby:
+            near = leg.nearby
+            pool = {id(t): t for t in (*near.by_day, near.cheapest, near.direct, near.fastest) if t}
+            leg.guide = min(pool.values(), key=lambda t: value(t.price, t.duration_min, t.transfers))
+        leg.day = day or (leg.guide.day if leg.guide else None)
 
 
 async def _improve(plan: RoutePlan, points: list, flights: Flights, month: int | None) -> None:
@@ -421,18 +446,19 @@ async def _within(seconds: float, work):
         return None
 
 
-def _leg_days(plan: RoutePlan, month: int | None, home: bool) -> list[date | None]:
-    """The day each leg is travelled: from the chained tickets, else the 10th of the month."""
+def _leg_days(plan: RoutePlan, month: int | None, home: bool, start: date | None = None) -> list[date | None]:
+    """The day each leg is travelled: from the chained tickets, else the trip's start, else the 10th of
+    the month."""
     stays = _stays_before(plan.legs, plan.nights, home)
     first = next(
         ((j, t) for j, leg in enumerate(plan.legs) for t in [_first_ticket(leg)] if t and t.day), None
     )
     if first:
         start = first[1].day - timedelta(days=stays[first[0]])
-    elif month:
+    elif start is None and month:
         today = date.today()
         start = date(today.year + (month < today.month), month, START_DAY)
-    else:
+    if start is None:
         return [None] * len(plan.legs)
     return [start + timedelta(days=s) for s in stays]
 
@@ -668,7 +694,17 @@ def _leg_for_model(leg: Leg) -> dict:
     view = leg.view()
     if leg.parts:
         view["smarter_than_direct"] = leg.instead is not None
+    if leg.guide and not leg.ticket:
+        view["guide"] = guide_for_model(leg.guide)
     return view
+
+
+def guide_for_model(guide: Ticket) -> str:
+    when = f" ({guide.day:%d.%m})" if guide.day else ""
+    return (
+        f"{money(guide.price)}{when}: no fare cached for the trip's dates, so this is the best ticket of the "
+        "nearest dates, a guide to the price; the live search on Aviasales for the trip's day is linked"
+    )
 
 
 def route_for_model(plan: RoutePlan, month: int | None) -> dict:
@@ -691,6 +727,7 @@ def route_for_model(plan: RoutePlan, month: int | None) -> dict:
         ],
         "legs": [_leg_for_model(leg) for leg in plan.legs],
         "tickets_total": money(plan.total_rub) if plan.total_rub else None,
+        "tickets_guide": money(plan.guide_rub) if plan.guide_rub else None,
         "all_flights_priced": plan.priced,
         "dates_chained": plan.dates_chained,
         "interests": {i["label"]: i["covered"] for i in plan.interests},
@@ -731,8 +768,9 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
         "month": MONTHS[month - 1] if month else None,
         "stops": stops,
         "legs": [leg.view() for leg in plan.legs],
-        "total_rub": plan.total_rub or None,
+        "total_rub": (plan.total_rub + plan.guide_rub) or None,
         "total_complete": plan.priced,
+        "total_guided": plan.guide_rub > 0,
         "dates_chained": plan.dates_chained,
         "match": plan.match,
         "interests": plan.interests,

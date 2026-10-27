@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.catalog.catalog import load_catalog
 from app.flights import Flights, city, current_origin, network
+from app.flights.client import search_link
 from app.flights.dictionary import find_city
 from app.flights.planner import MAX_OPEN_STOPS, Request, Stop, plan, plan_card, resolve_stop
 from app.money import current_currency, money
@@ -81,16 +82,26 @@ def flight_tools(flights: Flights) -> list[Tool]:
             return {"error": f"Unknown city: {args.origin if origin is None else args.destination!r}"}
         found = await flights.route(origin.code, destination.code, args.month)
         result = {"from": origin.name, "to": destination.name}
-        if found is None:
-            return {**result, "tickets": None, "note": "Aviasales has no tickets for this route and dates."}
-        return {**result, "tickets": found.view()}
+        if found:
+            return {**result, "tickets": found.view()}
+        # the cache has no fare for the month: the nearest dates as a guide, and the live search for the month
+        near = await flights.route(origin.code, destination.code) if args.month else None
+        result |= {"tickets": None, "search_link": search_link(origin.code, destination.code, args.month)}
+        if near:
+            note = (
+                "No fare cached for these dates: `guide` is the cheapest of the nearest dates, a price guide."
+            )
+            return {**result, "guide": near.view(), "note": note}
+        return {**result, "note": "No fare cached yet: the live search on Aviasales has the day's fares."}
 
     def preview(result: dict) -> str:
         if result.get("error"):
             return result["error"]
         ticket = result.get("tickets")
+        if not ticket and result.get("guide"):
+            return f"{result['from']} → {result['to']}: ориентир от {money(result['guide']['price_rub'])} по ближайшим датам"
         if not ticket:
-            return f"{result['from']} → {result['to']}: билетов не нашлось"
+            return f"{result['from']} → {result['to']}: цены в живом поиске Aviasales"
         stops = "прямой" if ticket["transfers"] == 0 else f"пересадок: {ticket['transfers']}"
         return f"{result['from']} → {result['to']}: от {money(ticket['price_rub'])}, {stops}"
 

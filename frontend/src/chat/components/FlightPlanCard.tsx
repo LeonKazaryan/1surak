@@ -4,6 +4,7 @@ import { ArrowTopRightOnSquareIcon, CheckIcon, MinusIcon } from '@heroicons/reac
 import { cn } from '@/components/ui/utils'
 import type { FlightConnection, FlightPlan, FlightPlanEvent, FlightPlanLeg, FlightTicket } from '@/types/api'
 import { CurrencyContext, RUB, formatMoney } from '../widgets'
+import { LiveSearchLink } from './FareNotes'
 import { ModeIcon } from './LegRow'
 import { AirlineLogo } from './ticket'
 import { hours, shortDate, stopsText } from './ticketFormat'
@@ -82,10 +83,13 @@ function Leg({ leg, index }: { leg: FlightPlanLeg; index: number }) {
           {ticket ? (
             <TicketLine ticket={ticket} />
           ) : (
-            <p className="m-0 px-1.5 py-1 text-[12px] text-muted-foreground">
-              {leg.hours ? `~${hours(leg.hours)} · ` : ''}
-              <span className="text-faint">{leg.estimate}</span>
-            </p>
+            <>
+              <p className="m-0 px-1.5 py-1 text-[12px] text-muted-foreground">
+                {leg.hours ? `~${hours(leg.hours)} · ` : ''}
+                <span className="text-faint">{leg.estimate}</span>
+              </p>
+              {leg.search_link && <LiveSearchLink href={leg.search_link} from={leg.from} to={leg.to} className="mt-0 ml-1.5" />}
+            </>
           )}
           {leg.via && <Connection via={leg.via} />}
         </div>

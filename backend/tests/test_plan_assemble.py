@@ -90,16 +90,64 @@ def test_should_add_up_the_whole_bill_for_the_party():
     assert plan.costs.per_person == round(plan.costs.total / 3)
 
 
-def test_should_say_so_when_there_are_no_tickets_and_still_plan_the_stay():
+class NearestDatesOnly(FakeFlights):
+    """The cache has no fare for the trip's month, only for the nearest dates."""
+
+    async def route(self, origin: str, destination: str, month: int | None = None) -> RouteFlights | None:
+        return await super().route(origin, destination, month) if month is None else None
+
+
+def test_should_send_to_the_live_search_when_no_fare_is_cached_and_still_plan_the_stay():
     plan = build([snap("antalya")], tickets=FakeFlights())
 
     assert not plan.dates_fixed
     assert plan.stops[0].nights == 7
     assert plan.stops[0].check_in.month == 11
-    assert any(
-        c.level == "warn" and "Билетов" in c.title and "билетов в ноябре" in c.text for c in plan.checks
-    )
+    assert not any("не нашлось" in c.title.lower() for c in plan.checks)
+    assert any(c.kind == "tickets" and "живом поиске Aviasales" in c.text for c in plan.checks)
+    there, back = (m.view() for m in plan.moves)
+    assert there["search_link"] == "https://www.aviasales.ru/search/MOW1011AYT1"  # the plan's day there
+    assert back["search_link"] == "https://www.aviasales.ru/search/AYT1711MOW1"  # and back
     assert plan.days
+
+
+def test_should_price_a_month_without_fares_by_the_nearest_dates():
+    plan = build([snap("antalya")], tickets=NearestDatesOnly(ANTALYA_TICKETS.table))
+
+    assert plan.costs.flights == plan.costs.flights_guide == (18_000 + 17_000) * 3
+    assert plan.costs.flights_complete
+    assert any(c.title == "Цена перелёта по ориентиру" for c in plan.checks)
+    there = plan.moves[0].view()
+    assert there["guide"]["price_rub"] == 18_000 and "ticket" not in there
+    assert "ориентир 18" in plan.days[0].items[0].note
+
+
+def test_should_link_the_named_day_when_the_tickets_fly_on_other_days():
+    brief = COUPLE.model_copy(update={"date_from": date(2026, 11, 20), "date_to": date(2026, 11, 27)})
+
+    plan = build([snap("antalya")], brief=brief)  # the cached tickets fly on the 6th and the 13th
+
+    there = plan.moves[0].view()
+    assert there["ticket"]["departure"].startswith("2026-11-06")
+    assert there["search_link"] == "https://www.aviasales.ru/search/MOW2011AYT1"
+    assert "ближайший билет 6 ноября" in plan.days[0].items[0].note
+
+
+def test_should_mark_a_ticket_dearer_than_the_route_usually_is():
+    brief = COUPLE.model_copy(update={"date_from": date(2026, 11, 20), "date_to": date(2026, 11, 27)})
+    cheap_days = [(f"2026-11-0{d}T09:40:00+03:00", "AYT", 10_000, 240) for d in range(5, 9)]
+    tickets = FakeFlights(
+        {
+            "AYT": flights(("2026-11-20T09:40:00+03:00", "AYT", 30_000, 240), *cheap_days),
+            "MOW": flights(("2026-11-27T15:00:00+03:00", "MOW", 17_000, 240)),
+        }
+    )
+
+    plan = build([snap("antalya")], brief=brief, tickets=tickets)
+
+    assert plan.moves[0].leg.ticket.price == 30_000 and plan.moves[0].view()["usual_rub"] == 10_000
+    assert any(c.level == "warn" and c.title == "Билет дороже обычного" for c in plan.checks)
+    assert "usual_rub" not in plan.moves[1].view()
 
 
 def test_should_start_on_the_day_the_user_named_without_tickets():
@@ -127,7 +175,7 @@ def test_should_not_call_a_trip_in_budget_before_the_flights_are_counted():
     plan = build([snap("antalya")], brief=brief, tickets=FakeFlights())
 
     [budget] = [c for c in plan.checks if c.kind == "budget"]
-    assert budget.level == "info" and "без перелётов" in budget.text
+    assert budget.level == "info" and "без перелёта" in budget.text.lower()
 
 
 def test_should_name_the_wishes_it_could_not_meet():

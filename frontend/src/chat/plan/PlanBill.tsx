@@ -40,9 +40,10 @@ function Budget({ plan, budget }: { plan: TripPlanEvent; budget: number }) {
         {over
           ? `На ${formatMoney(total - budget, currency)} больше бюджета ${formatMoney(budget, currency)}.`
           : partial
-            ? `Пока без перелётов: ${formatMoney(total, currency)} из ${formatMoney(budget, currency)}.`
+            ? `Без перелёта, цена которого в поиске Aviasales: ${formatMoney(total, currency)} из ${formatMoney(budget, currency)}.`
             : `В бюджете: остаётся ${formatMoney(budget - total, currency)} из ${formatMoney(budget, currency)}.`}
         {swap && <span className="text-muted-foreground">{` Отель «${swap.name}» дешевле на ${formatMoney(swap.saves, currency)}.`}</span>}
+        {plan.costs.flights_guide ? <span className="text-muted-foreground"> Перелёт по ориентиру ближайших дат.</span> : null}
       </p>
     </div>
   )

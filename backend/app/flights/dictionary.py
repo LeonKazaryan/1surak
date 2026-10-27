@@ -99,9 +99,19 @@ def _key(name: str) -> str:
 
 
 @cache
+def _reach() -> dict[str, int]:
+    """How many cities each city has a direct flight to, from the route map."""
+    routes = json.loads((SEED / "routes.json").read_text(encoding="utf-8"))
+    return {code: len(destinations) for code, destinations in routes.items()}
+
+
+@cache
 def _by_name() -> dict[str, City]:
+    """A name of several cities is the best connected one: «Лондон» is London with 324 routes, not London,
+    Ontario with two; «Барселона» is in Spain, not in Venezuela."""
     found: dict[str, City] = {}
-    for c in cities().values():
+    reach = _reach()
+    for c in sorted(cities().values(), key=lambda c: -reach.get(c.code, 0)):
         for name in (c.name, c.name_from):
             if name:
                 found.setdefault(_key(name), c)

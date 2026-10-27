@@ -6,30 +6,14 @@ cached tickets through the main airport (Astana-Addis Ababa, Addis Ababa-Mekele)
 or, when no pair of days connects, their prices added up and marked as an estimate.
 """
 
-from datetime import date, timedelta
-
 from app.catalog.search import Snapshot
 from app.flights import Flights, city, city_code
-from app.flights.client import departure_month
+from app.flights.client import search_link
 from app.flights.connections import connect
 from app.flights.network import Network
 from app.money import money
 
-SEARCH_URL = "https://www.aviasales.ru/search/{origin}{day:02d}{month:02d}{destination}1"
 MAX_GATEWAYS = 6  # cities a search prices this way: two cached lookups each
-
-
-def search_link(origin: str, destination: str, month: int | None, today: date | None = None) -> str:
-    """The live search on Aviasales for one adult, mid-month (or two weeks from now without a month)."""
-    today = today or date.today()
-    if month:
-        year = int(departure_month(month, today)[:4])
-        day = max(date(year, month, 15), today + timedelta(days=3))
-    else:
-        day = today + timedelta(days=14)
-    return SEARCH_URL.format(
-        origin=city_code(origin), day=day.day, month=day.month, destination=city_code(destination)
-    )
 
 
 def gateway(code: str, network: Network) -> str | None:

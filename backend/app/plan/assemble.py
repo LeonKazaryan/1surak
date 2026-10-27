@@ -123,6 +123,15 @@ def _smart_check(leg: Leg) -> Check | None:
     return Check("info", f"{leg.origin} → {leg.destination} через {leg.via}", text, kind="move")
 
 
+def _unticketed(leg: Leg) -> str:
+    """What the day says of a flight with no ticket on it: the fare to plan with and where the day's fares are."""
+    if leg.ticket and leg.ticket.day:
+        return f"ближайший билет {day_text(leg.ticket.day)} за {money(leg.ticket.price)}, на этот день: в поиске Aviasales"
+    if leg.guide:
+        return f"ориентир {money(leg.guide.price)} по ближайшим датам, цена на этот день: в поиске Aviasales"
+    return "цены на этот день: в поиске Aviasales"
+
+
 def _key(moment: datetime) -> tuple[date, str]:
     return moment.date(), moment.strftime("%H:%M")
 
@@ -166,12 +175,12 @@ def _arrival(
         (
             reached.date(),
             "00:00",
-            Item("hotel", check_in, None, "время прилёта уточню, когда будут билеты на эти даты"),
+            Item("hotel", check_in, None, "время заселения: по рейсу, который выберете"),
         )
     ]
     if leg:
         items.insert(0, (reached.date(), "00:00", Item("flight", f"Перелёт {leg.origin} → {leg.destination}", None,
-                                                       "рейс подберу, когда появятся билеты на эти даты")))  # fmt: skip
+                                                       _unticketed(leg))))  # fmt: skip
     return _Arrival(reached, Move(leg) if leg else None, None, items)
 
 
@@ -210,7 +219,7 @@ def _departure(
     leave = datetime.combine(check_out, NOMINAL_LEAVE, info.tz)
     items = [
         (check_out, "12:00", Item("hotel", "Выезд из отеля", "12:00")),
-        (check_out, "23:59", Item("flight", f"Перелёт {leg.origin} → {leg.destination}", None, "рейс подберу, когда появятся билеты на эти даты")),
+        (check_out, "23:59", Item("flight", f"Перелёт {leg.origin} → {leg.destination}", None, _unticketed(leg))),
     ]  # fmt: skip
     return _Departure(check_out, leave, None, None, items)
 
@@ -224,38 +233,46 @@ def _with_nights(pick: HotelPick, nights: int) -> HotelPick:
 
 
 def _ticket_checks(route: RoutePlan, fixed: bool, brief: TripBrief) -> list[Check]:
+    """What to know about the tickets. Never «no tickets»: a month the cache has no fare for is priced by the
+    best ticket of the nearest dates, and the live search on Aviasales has the day's fares."""
     flown = [leg for leg in route.legs if leg.mode == "flight"]
-    missing = [f"{leg.origin} → {leg.destination}" for leg in flown if not leg.flights]
-    when = f"в {MONTHS_IN[brief.month - 1]}" if brief.month else "на ближайшие даты"
-    if missing:
-        text = f"Aviasales не нашёл билетов {when}: {', '.join(missing)}. Отель и программу собрал, рейсы подберу, как только появятся, или посмотрим соседний месяц."
-        return [Check("warn", "Билетов не нашлось", text, kind="tickets")]
+    when = f"в {MONTHS_IN[brief.month - 1]}" if brief.month else "на эти даты"
+    checks = []
+    if guided := [leg for leg in flown if not leg.flights and leg.guide]:
+        legs = "; ".join(f"{leg.origin} → {leg.destination} от {money(leg.guide.price)}" for leg in guided)
+        text = f"Цен {when} в кэше Aviasales пока нет, поэтому перелёт посчитан по лучшему билету ближайших дат: {legs}. Точная цена на ваш день в живом поиске Aviasales, ссылка у рейса."
+        checks.append(Check("info", "Цена перелёта по ориентиру", text, kind="tickets"))
+    if blind := [leg for leg in flown if not leg.flights and not leg.guide]:
+        names = ", ".join(f"{leg.origin} → {leg.destination}" for leg in blind)
+        text = f"{names}: цены на эти даты есть в живом поиске Aviasales, ссылка у рейса. В итог этот перелёт пока не входит."
+        checks.append(Check("info", "Цена в поиске Aviasales", text, kind="tickets"))
+    for leg in flown:
+        if leg.pricey:
+            text = f"{leg.origin} → {leg.destination}: {money(leg.ticket.price)}, а обычно на этом направлении около {money(leg.usual_rub)}. Это лучший билет, который сходится с датами поездки; если сдвинуть её на несколько дней, перелёт выйдет дешевле."
+            checks.append(Check("warn", "Билет дороже обычного", text, kind="tickets"))
+    if guided or blind:
+        return checks
     if flown and not fixed:
         text = "Билеты есть, но ни один набор рейсов не сходится с числом ночей. Цены ниже ориентировочные, самые дешёвые за месяц: можно сдвинуть даты или число ночей на день."
-        return [Check("warn", "Билеты не сходятся по датам", text, kind="tickets")]
+        return [Check("warn", "Билеты не сходятся по датам", text, kind="tickets"), *checks]
     first = next((leg.ticket for leg in flown if leg.ticket), None)
     if brief.date_from and first and first.day and first.day != brief.date_from:
         text = f"На {day_text(brief.date_from)} подходящих рейсов нет, ближайший {day_text(first.day)}: план сдвинут на этот день."
-        return [Check("info", f"Вылет {day_text(first.day)}", text, kind="tickets")]
-    return []
+        checks.insert(0, Check("info", f"Вылет {day_text(first.day)}", text, kind="tickets"))
+    return checks
 
 
-def _budget_check(costs: Costs, stops: list[StopPlan]) -> list[Check]:
+def _budget_check(costs: Costs, stops: list[StopPlan], fixed: bool) -> list[Check]:
     if not costs.budget:
         return []
     if not costs.over_by and not costs.flights_complete:
-        text = f"Пока без перелётов: {money(costs.total)} из {money(costs.budget)}. Билеты добавлю, когда появятся."
+        text = f"Без перелёта, цена которого пока только в поиске Aviasales: {money(costs.total)} из {money(costs.budget)}."
         return [Check("info", "Бюджет", text, kind="budget")]
+    guide = " Перелёт посчитан по ориентиру ближайших дат." if costs.flights_guide else ""
     if not costs.over_by:
-        return [
-            Check(
-                "ok",
-                "В бюджете",
-                f"Вся поездка {money(costs.total)} из {money(costs.budget)}.",
-                kind="budget",
-            )
-        ]
-    text = f"Вся поездка выходит {money(costs.total)}, это на {money(costs.over_by)} больше бюджета."
+        text = f"Вся поездка {money(costs.total)} из {money(costs.budget)}.{guide}"
+        return [Check("ok", "В бюджете", text, kind="budget")]
+    text = f"Вся поездка выходит {money(costs.total)}, это на {money(costs.over_by)} больше бюджета.{guide}"
     savings = [
         (s.pick.best.total_rub - a.total_rub, a.hotel.name)
         for s in stops
@@ -265,6 +282,8 @@ def _budget_check(costs: Costs, stops: list[StopPlan]) -> list[Check]:
     if savings:
         saved, name = max(savings)
         text += f" Отель «{name}» дешевле на {money(saved)}."
+    if fixed and costs.flights and not costs.flights_guide:
+        text += " Билеты в этой сумме уже самые выгодные из тех, что сходятся с датами: дешевле перелёт выйдет, только если сдвинуть поездку."
     return [Check("warn", "Дороже бюджета", text, kind="budget")]
 
 
@@ -291,12 +310,14 @@ def _costs(route: RoutePlan, party: Party, stops: list[StopPlan], brief: TripBri
         CURRENCIES[brief.budget_currency or "RUB"].to_rub(brief.budget_total) if brief.budget_total else None
     )
     return Costs(
-        flights=round(sum(leg.ticket.price for leg in flown if leg.ticket) * seats),
+        # a flight with no fare on its day counts at the best fare of the nearest dates, marked as a guide
+        flights=round(sum(fare.price for leg in flown if (fare := leg.ticket or leg.guide)) * seats),
+        flights_guide=round(sum(leg.guide.price for leg in flown if leg.guide and not leg.ticket) * seats),
         hotels=sum(s.pick.best.total_rub for s in stops),
         transfers=sum(s.transfers_rub for s in stops),
         ground=sum(_ground_rub(u) for u in every if u.mode == "ground") * party.guests,
         guests=party.guests,
-        flights_complete=all(leg.ticket for leg in flown),
+        flights_complete=all(leg.ticket or leg.guide for leg in flown),
         budget=budget,
         **_hotel_range(stops),
     )
@@ -477,8 +498,13 @@ async def assemble(
         planned.append(stop)
         cursor = departure.leave
 
+    # a flight with no ticket on the plan's day links the live search on that day
+    for j, leg in enumerate(legs):
+        if leg.mode == "flight" and not leg.parts and not (fixed and leg.ticket) and planned:
+            k = j if home else j + 1
+            leg.day = planned[k].check_in if k < len(planned) else planned[-1].check_out
     costs = _costs(route, party, planned, brief)
-    checks += _budget_check(costs, planned)
+    checks += _budget_check(costs, planned, fixed)
     all_moves = [moves.get(j, Move(leg)) for j, leg in enumerate(legs)]
     unmet, not_checked = _wishes(brief, planned, all_moves)
     by_land = bool(legs) and home and legs[0].mode == "ground"
