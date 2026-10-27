@@ -48,6 +48,15 @@ def test_should_ask_for_the_party_when_a_child_has_no_age():
     )  # nothing else to ask: visa does not ride alone
 
 
+def test_should_keep_asking_the_kind_of_trip_and_visas_when_only_a_region_is_named():
+    b = brief(destination="Европа")
+
+    assert "vibe" in missing(b) and "visa" in missing(b)  # «в Европу»: cities or sea is still open
+    assert "Франция" in search_hint(b, load_catalog())["countries"]
+    assert "Грузия" not in search_hint(b, load_catalog())["countries"]
+    assert "vibe" not in missing(brief(destination="Германия"))  # a country is a choice already
+
+
 def test_should_count_nights_from_dates_and_take_the_month_from_them():
     b = brief(date_from="2026-11-10", date_to="2026-11-17")
 
@@ -277,6 +286,22 @@ def test_should_find_routes_and_show_one_as_a_wide_card(sessionmaker):
     assert sum(s["nights"] for s in card["stops"]) == 8
     assert card["legs"][0]["from"] == "Москва" and card["match"] > 0 and card["why"] == "Город и горы"
     assert any(s["photo"] for s in card["stops"])
+
+
+def test_should_keep_routes_in_the_region_the_user_named_when_the_model_leaves_it_out(sessionmaker):
+    flights = FakeFlights({"TBS": route(250), "IST": route(300), "BEG": route(400), "MOW": route(200)})
+    state = TripState(
+        asked(brief(destination="Европа", kinds=["city"], month=10, nights_min=8, adults=1, multi_city=True))
+    )
+    registry = ToolRegistry(trip_tools(state, sessionmaker, flights=flights))
+
+    found = call(registry, "search_routes", {"month": 10, "kinds": ["city"]})  # no countries passed
+
+    result = json.loads(found.content)
+    europe = set(search_hint(state.brief, load_catalog())["countries"])
+    stops = [s for r in result["routes"] for s in r["stops"]]
+    assert all(s["country"] in europe for s in stops)  # never Tbilisi or Istanbul
+    assert stops or "Франция" in result["note"]  # nothing in Europe: the fallback stays there too
 
 
 def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):

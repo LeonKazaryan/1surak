@@ -168,3 +168,21 @@ describe('a place with no cached ticket', () => {
     expect(screen.queryByText('билетов не нашлось')).toBeNull()
   })
 })
+
+describe('DestinationCards layout', () => {
+  it('should widen the last of an odd number of places so no cell stays empty', () => {
+    const names = ['Берлин', 'Мюнхен', 'Ницца']
+    render(
+      <DestinationCards
+        widget={{ type: 'destinations', summary: [], cards: names.map((name, i) => ({ ...base, id: `p${i}`, name })) }}
+        canPick={false}
+        onPick={() => {}}
+        onDetails={() => {}}
+      />,
+    )
+
+    const card = (name: string) => screen.getByRole('heading', { name }).closest('article')!
+    expect(card('Ницца').className).toContain('sm:col-span-2')
+    expect(card('Берлин').className).not.toContain('sm:col-span-2')
+  })
+})

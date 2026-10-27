@@ -31,7 +31,10 @@ class BriefPatch(BaseModel):
     """What the user stated. None means «not said», so a patch never erases what was known."""
 
     destination: str | None = Field(
-        None, max_length=80, description="Place or country the user named, nominative case: 'Турция'."
+        None,
+        max_length=80,
+        description="Place, country or region the user named, nominative case: 'Турция', 'Европа', 'Кавказ' "
+        "(«в Европу» = 'Европа'). The search then stays inside it.",
     )
     origin: str | None = Field(
         None,
@@ -173,12 +176,20 @@ def per_night_budget(patch: "BriefPatch") -> bool:
     return any(PER_NIGHT.search(w) and digits in re.sub(r"\D", "", w) for w in patch.wishes or [])
 
 
+def _open_search(b: TripBrief) -> bool:
+    """No destination, or only a region («Европа»): the kind of trip and the visa still choose the places."""
+    if not b.destination:
+        return True
+    needle = b.destination.strip().casefold()
+    return country_names(needle) is None and countries_in(needle) is not None
+
+
 def _gaps(b: TripBrief) -> list[Slot]:
     result: list[Slot] = []
     # every ticket depends on it: asked only when the city is a fallback, never when it was detected
     if b.origin_guess and not b.origin_code:
         result.append("origin")
-    if not b.destination and not b.kinds:
+    if _open_search(b) and not b.kinds:
         result.append("vibe")
     if not (b.month or b.date_from) or night_range(b) == (None, None):
         result.append("when")
@@ -190,7 +201,7 @@ def _gaps(b: TripBrief) -> list[Slot]:
     if any(s != "origin" for s in result) and route_fits(b):
         result.insert(len([s for s in result if SLOTS.index(s) < SLOTS.index("route")]), "route")
     # rides along too, and only for an open search: a place the user named is wanted whatever its visa
-    if any(s != "origin" for s in result) and not b.destination and b.visa_free_only is None:
+    if any(s != "origin" for s in result) and _open_search(b) and b.visa_free_only is None:
         result.append("visa")
     return result
 

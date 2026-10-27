@@ -277,6 +277,9 @@ def trip_tools(
             query = query.model_copy(update={"nights": high or low})
         if query.month is None and state.brief.month:
             query = query.model_copy(update={"month": state.brief.month})
+        if query.countries is None and (named := search_hint(state.brief, catalog).get("countries")):
+            # the region the user named («по Европе») holds even when the model leaves it out
+            query = query.model_copy(update={"countries": named})
         if state.brief.by_land and not query.by_land:
             query = query.model_copy(update={"by_land": True})
         async with sessionmaker() as db:

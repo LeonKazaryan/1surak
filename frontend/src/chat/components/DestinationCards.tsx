@@ -156,7 +156,7 @@ interface CardProps {
   onDetails: () => void
 }
 
-function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, withKids }: CardProps & { withKids: boolean }) {
+function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDetails, withKids, wide }: CardProps & { withKids: boolean; wide: boolean }) {
   const travel = travelText(card)
   const kind = card.kinds[0] ?? 'sea'
 
@@ -167,6 +167,7 @@ function Card({ card, best, picked, dimmed, canPick, onPick, detailsOpen, onDeta
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-3xl border bg-card transition-[box-shadow,border-color,opacity] duration-300',
+        wide && 'sm:col-span-2',
         picked
           ? 'border-primary shadow-[0_0_0_3px_rgba(173,239,129,0.7)]'
           : cn('shadow-[0_8px_24px_-18px_rgba(15,23,42,0.25)] hover:border-faintest', detailsOpen ? 'border-faintest' : 'border-border'),
@@ -293,6 +294,9 @@ interface DestinationCardsProps {
 export function DestinationCards({ widget, canPick, onPick, detailsId = null, onDetails }: DestinationCardsProps) {
   const [picked, setPicked] = useState<string | null>(null)
   const currency = widget.currency ?? RUB
+  // routes take a whole row, so an odd count of places leaves one alone: it widens instead of leaving a hole
+  const places = widget.cards.filter((card) => card.type !== 'route')
+  const lone = places.length % 2 === 1 ? places[places.length - 1].id : null
 
   return (
     <CurrencyContext value={currency}>
@@ -329,7 +333,7 @@ export function DestinationCards({ widget, canPick, onPick, detailsId = null, on
             return card.type === 'route' ? (
               <RouteCardView key={card.id} card={card} {...props} />
             ) : (
-              <Card key={card.id} card={card} withKids={Boolean(widget.with_kids)} {...props} />
+              <Card key={card.id} card={card} withKids={Boolean(widget.with_kids)} wide={card.id === lone} {...props} />
             )
           })}
         </motion.div>
