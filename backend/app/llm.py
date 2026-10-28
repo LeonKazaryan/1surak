@@ -287,5 +287,6 @@ def build_llm(settings: Settings) -> LLM:
         openai=not settings.llm_base_url,
         reasoning_effort=settings.llm_reasoning_effort,
         idle_s=settings.llm_timeout_s,
-        total_s=3 * settings.llm_timeout_s,
+        # a model call takes 5 to 30 s; one that runs past this is stuck at the provider and is asked once more
+        total_s=1.5 * settings.llm_timeout_s,
     )

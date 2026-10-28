@@ -337,3 +337,16 @@ def test_should_offer_the_live_search_and_a_way_through_the_main_airport():
         mekele.via["price_rub"] == 69_000 and mekele.via["estimate"]
     )  # both on the same hour: not connectable
     assert search_link("NQZ", "MQX", 12, date(2026, 10, 26)) == "https://www.aviasales.ru/search/NQZ1512MQX1"
+
+
+def test_should_wait_and_ask_open_meteo_again_instead_of_dropping_a_city(monkeypatch):
+    from app.destinations import climate
+
+    monkeypatch.setattr(climate, "BUSY_WAITS_S", (0.0, 0.0, 0.0))
+    answers = iter([httpx.Response(429), httpx.Response(200, json={"daily": {"time": []}})])
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: next(answers)))
+    fetcher = ClimateFetcher(None, client, per_minute=60_000)
+
+    assert asyncio.run(fetcher._get("https://archive-api.open-meteo.com/v1/archive", {}, gap=0)) == {
+        "daily": {"time": []}
+    }

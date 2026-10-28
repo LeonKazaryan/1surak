@@ -47,7 +47,7 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
         {/* the nearest cached ticket flies on another day than the plan's: that day's fares are in the search */}
         {leg.search_link && leg.date && (
           <span className="mt-1 block text-[12px] leading-snug text-amber-700">
-            {`ближайший билет в кэше на ${shortDate(ticket.departure)}, на ${shortDate(leg.date)} цены в поиске`}
+            {`ближайший найденный билет на ${shortDate(ticket.departure)}, на ${shortDate(leg.date)} цены в живом поиске`}
           </span>
         )}
         <span className="flex flex-wrap gap-x-2">
@@ -109,7 +109,7 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
             </span>
           </span>
         ) : (
-          <span className="mt-1 block text-[12px] text-muted-foreground">в кэше Aviasales цен на этот день пока нет</span>
+          <span className="mt-1 block text-[12px] text-muted-foreground">цену на этот день покажет живой поиск</span>
         )}
         {leg.search_link && <LiveSearchLink href={forPassengers(leg.search_link, seats)} day={leg.date} from={leg.from} to={leg.to} />}
       </>

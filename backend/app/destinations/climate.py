@@ -29,10 +29,11 @@ YEAR = 2025
 WINDOW_FROM, WINDOW_TO = 8, 21  # two weeks in the middle of every month: one call each
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
-CALLS_PER_MINUTE = 60  # well under the free 600 a minute and 5,000 an hour
+CALLS_PER_MINUTE = 40  # the background's pace: 2,400 an hour, leaving the free 5,000 room for searches
 NOW_GAP_S = 0.05  # a search's few cities at once: a burst well inside 600 a minute
 NOW_TIMEOUT_S = 15.0
 BURST = 20  # requests in flight at once
+BUSY_WAITS_S = (2.0, 4.0, 0.0)  # pauses before asking again after a 429; the last answer stands
 SOURCE = "open-meteo-2025"
 
 
@@ -155,8 +156,14 @@ class ClimateFetcher:
 
     async def _get(self, url: str, params: dict, gap: float | None = None) -> dict:
         await asyncio.sleep(self._gap if gap is None else gap)  # a steady pace keeps the free tier's limits
-        async with self._burst:  # a search's cities side by side, but never more than this many at once
-            response = await self._client.get(url, params=params)
+        for (
+            wait_s
+        ) in BUSY_WAITS_S:  # «too many requests»: a city is not dropped from a search for a busy minute
+            async with self._burst:  # a search's cities side by side, but never more than this many at once
+                response = await self._client.get(url, params=params)
+            if response.status_code != 429:
+                break
+            await asyncio.sleep(wait_s)
         response.raise_for_status()
         return response.json()
 

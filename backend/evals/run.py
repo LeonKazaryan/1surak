@@ -260,7 +260,8 @@ async def provider_answers(settings: Settings) -> str | None:
 
 
 async def main(args: argparse.Namespace) -> int:
-    settings = Settings(seed_catalog=True, fare_refresh_minutes=0)
+    # no climate prefetch: the app already running keeps it, and two would spend Open-Meteo's free limit twice
+    settings = Settings(seed_catalog=True, fare_refresh_minutes=0, destination_prefetch="")
     if args.model:
         settings.llm_model = args.model
     if not (settings.llm_api_key and settings.llm_model):

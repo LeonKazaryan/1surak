@@ -429,7 +429,9 @@ def describe(s: Snapshot, month: int | None = None, sea: bool | None = None) -> 
     if not s.flights and s.via:
         result["flight_via"] = {k: s.via[k] for k in ("via", "price", "estimate")}
     if not s.flights and s.search_link:
-        result["no_cached_ticket"] = "Aviasales has no cached price: the card links to its live search"
+        result["ticket_price"] = (
+            "the price for these dates is in the live search on Aviasales: the card links to it"
+        )
     return {k: v for k, v in result.items() if v is not None}
 
 

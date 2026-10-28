@@ -87,7 +87,7 @@ describe('TripPlan', () => {
     renderPlan({}, { ...PLAN, legs })
 
     const road = screen.getByRole('region', { name: 'Дорога' })
-    expect(within(road).getByText('ближайший билет в кэше на 6 ноя, на 20 ноя цены в поиске')).toBeInTheDocument()
+    expect(within(road).getByText('ближайший найденный билет на 6 ноя, на 20 ноя цены в живом поиске')).toBeInTheDocument()
     expect(within(road).getByRole('link', { name: /Цены на 20 ноя.* в Aviasales/ })).toHaveAttribute(
       'href',
       'https://www.aviasales.ru/search/MOW2011AYT3',

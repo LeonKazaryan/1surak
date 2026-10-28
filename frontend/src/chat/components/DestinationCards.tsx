@@ -100,7 +100,7 @@ export function NoCachedTicket({ card }: { card: DestinationCard }) {
           <span className="text-muted-foreground">{` с пересадкой в ${via.via_in ?? via.via}, два билета`}</span>
         </p>
       ) : (
-        <p className="m-0 text-muted-foreground">В кэше Aviasales цены пока нет</p>
+        <p className="m-0 text-muted-foreground">Цену на ваши даты покажет живой поиск</p>
       )}
       {card.search_link && (
         <a

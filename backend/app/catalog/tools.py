@@ -28,7 +28,8 @@ if TYPE_CHECKING:
     from app.destinations.climate import ClimateFetcher
 
 SEARCH_DESCRIPTION = (
-    "Find travel destinations in our catalogue (about 50 places) by exact filters: month, kind of trip, sea "
+    "Find travel destinations among the hand-checked places and every city the user's flights reach (thousands, "
+    "climate from Open-Meteo) by exact filters: month, kind of trip, sea "
     "and air temperature, flight time, direct flights, ticket price, visa for the user's passport (the "
     "departure country's, Passport Index), kids, budget. "
     "Flights are real Aviasales tickets from the user's departure city: `flight` has the cheapest one-way "
