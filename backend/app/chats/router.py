@@ -14,9 +14,12 @@ from app.chats.schemas import (
     ChatMessagesResponse,
     ChatMeta,
     ChatRequest,
+    MemoryRequest,
+    MemoryResponse,
     RefreshResponse,
 )
 from app.deps import Db, FlightPrices, Hotels, Llm, SessionFactory, Tools, rate_limited
+from app.memory import ideas, remember
 
 router = APIRouter(prefix="/api", tags=["Chats"])
 
@@ -66,8 +69,20 @@ async def chat_stream(
         body.origin_known,
         hotels,
         body.currency,
+        [str(i) for i in body.history],
+        set(body.forget),
     )
     return StreamingResponse(_ndjson(events), media_type="application/x-ndjson")
+
+
+@router.post("/memory", response_model=MemoryResponse)
+async def memory(body: MemoryRequest, db: Db) -> MemoryResponse:
+    """What the traveller's trips in this browser say about them, and the start screen's ideas from it.
+    POST for the body only: nothing is stored."""
+    chats = await repository.list_chats(db, [str(i) for i in body.history]) if body.history else []
+    today = datetime.now(UTC).date()
+    found = remember(chats, today, set(body.forget))
+    return MemoryResponse(facts=[f.view() for f in found.facts], ideas=ideas(found, today))
 
 
 @router.get("/chats", response_model=ChatListResponse)

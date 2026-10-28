@@ -17,6 +17,7 @@ from app.destinations.gateway import fill_missing
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
 from app.flights.dictionary import find_city
 from app.flights.network import network
+from app.memory import Memory
 from app.money import current_currency
 from app.photos import ensure_photos
 from app.plan.live_guide import guides
@@ -84,7 +85,8 @@ SHOW_DESCRIPTION = (
     "Show destinations as cards: single places from search_destinations (pass `id`) and multi-city routes "
     "from search_routes (pass `route`, the city ids in travel order); both can be mixed. The cards already "
     "show the facts (weather, tickets, visa, nights per city), so `why` explains the fit for this user in "
-    "their words and `tradeoff` names what they give up. Ends your turn."
+    "their words and `tradeoff` names what they give up. `intro` is your whole reply: write no message besides "
+    "this call. Ends your turn."
 )
 ROUTES_DESCRIPTION = (
     "Multi-city routes of 2 to 7 places (our catalogue, plus the main airports of the countries you pass in "
@@ -109,7 +111,19 @@ ROUTES_DESCRIPTION = (
 ROUTE_CITIES_PER_COUNTRY = 8  # a country's best connected airports a route may pass through
 
 # kept for the code, not the model
-INTERNAL = {"asked", "shown", "priced_from", "priced_at", "plan", "origin_over", "origin_guess", "currency"}
+INTERNAL = {
+    "asked",
+    "shown",
+    "priced_from",
+    "priced_at",
+    "plan",
+    "origin_over",
+    "origin_guess",
+    "currency",
+    "booked",
+    "nudge",
+    "nudged",
+}
 
 
 @dataclass
@@ -117,6 +131,7 @@ class TripState:
     brief: TripBrief
     routes: dict[str, RoutePlan] = field(default_factory=dict)  # found this turn, by id, for the cards
     answered: bool = False  # this turn carries the card answers: the same trip, whatever the model thinks
+    memory: Memory = field(default_factory=Memory)  # the traveller's earlier trips in this browser
 
 
 class UpdateArgs(BriefPatch):
@@ -232,6 +247,8 @@ def trip_tools(
             result["next"] = (
                 "Call ask_user now, before any search or build_trip: the user confirms on the cards."
             )
+        if state.memory.facts:
+            result["remembered"] = state.memory.for_model()
         if brief.destination and (place := catalog.find(brief.destination)):
             result["named_place"] = place.id
         if args.origin and find_city(args.origin) is None:
@@ -266,15 +283,18 @@ def trip_tools(
         ]
         wanted = [q["slot"] for q in questions]
         state.brief = brief.model_copy(update={"asked": True})
+        event = {
+            "type": "clarify",
+            "questions": questions,
+            "prefill": prefill(brief),
+            "currency": current_currency.get().view(),
+        }
+        if remembered := state.memory.cards(wanted):
+            event["remembered"] = remembered  # offered on the cards as «как в прошлый раз», never applied
         return ToolReply(
             result={"asked": list(wanted), "note": "The cards are on screen. Your turn is over."},
             text=args.intro,
-            event={
-                "type": "clarify",
-                "questions": questions,
-                "prefill": prefill(brief),
-                "currency": current_currency.get().view(),
-            },
+            event=event,
             ends_turn=True,
         )
 

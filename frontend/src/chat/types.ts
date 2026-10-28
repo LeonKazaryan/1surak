@@ -23,6 +23,8 @@ export interface ChatTraceStep {
   /** A few numbers about the work: «120 направлений → 5 подходят». */
   facts?: ToolFact[]
   status: 'running' | 'done'
+  /** Announced while the model writes its arguments; the start fills them in. */
+  preparing?: boolean
 }
 
 /** What the agent shows under its message: questions, destinations, the trip plan, or a booking. */

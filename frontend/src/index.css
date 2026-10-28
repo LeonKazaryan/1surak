@@ -178,6 +178,16 @@
   animation: cover-drift 24s ease-in-out infinite alternate;
   will-change: transform;
 }
+/* a soft light passing over a card while it is being put together */
+@keyframes cover-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.cover-sweep {
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+  animation: cover-sweep 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
 @keyframes blob-drift {
   0% { transform: translate3d(0, 0, 0) scale(1); }
   50% { transform: translate3d(6%, -8%, 0) scale(1.12); }
@@ -262,6 +272,11 @@
   .text-shimmer {
     animation: none;
     color: var(--foreground);
+  }
+
+  .cover-sweep {
+    animation: none;
+    background: none;
   }
 }
 

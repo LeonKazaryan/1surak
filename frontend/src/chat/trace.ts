@@ -15,7 +15,17 @@ function nextId(steps: ChatTraceStep[]): string {
 
 export function applyTraceEvent(steps: ChatTraceStep[], event: ChatStreamEvent): ChatTraceStep[] {
   switch (event.type) {
-    case 'tool_start':
+    case 'tool_preparing':
+      return [
+        ...steps,
+        { id: nextId(steps), kind: 'tool', name: event.name, title: event.title ?? event.name, status: 'running', preparing: true },
+      ]
+    case 'tool_start': {
+      // the step announced while the arguments were written becomes the call itself
+      const announced = steps.findLastIndex((s) => s.preparing && s.name === event.name)
+      if (announced !== -1) {
+        return steps.map((s, i) => (i === announced ? { ...s, title: event.title ?? s.title, args: event.args, preparing: false } : s))
+      }
       return [
         ...steps,
         {
@@ -27,6 +37,7 @@ export function applyTraceEvent(steps: ChatTraceStep[], event: ChatStreamEvent):
           status: 'running',
         },
       ]
+    }
     case 'tool_end': {
       const resultLine = summarizeResult(event.output_preview)
       const index = steps.findLastIndex(

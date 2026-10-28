@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { bookTrip, fetchChatMessages, fetchChatMeta, refreshChat, sendChatStream } from '@/api/client'
 import type { BookingEvent, BriefAnswers, ChatMeta, ChatStreamDone, PlanFix, TripStatus } from '@/types/api'
-import { addMyChat } from '@/chat/chatStorage'
+import { addMyChat, getMyChats } from '@/chat/chatStorage'
+import { getForgotten } from '@/chat/memory/forgotten'
 import { createTextPump } from '@/chat/textPump'
 import { applyTraceEvent, isFailed, rehydrateTrace } from '@/chat/trace'
 import { isWidgetEvent, widgetFromTrace } from '@/chat/widgets'
@@ -29,8 +30,8 @@ function isAbortError(err: unknown): boolean {
 }
 
 function tripStatus(source: Partial<TripStatus>): Partial<TripStatus> {
-  const { summary, passport, departure, priced_at, stale, dates_passed } = source
-  return { summary, passport, departure, priced_at, stale, dates_passed }
+  const { summary, passport, departure, priced_at, stale, dates_passed, nudge } = source
+  return { summary, passport, departure, priced_at, stale, dates_passed, nudge }
 }
 
 function upsertRecent(prev: ChatMeta[], done: ChatStreamDone): ChatMeta[] {
@@ -176,6 +177,9 @@ export function useChatSession(urlChatId: string | undefined) {
           currency: getCurrencyChoice() ?? undefined,
           answers,
           retry,
+          // the traveller's other trips: the agent may offer what they say, never apply it
+          history: getMyChats().filter((id) => id !== run.chatId),
+          forget: getForgotten(),
         },
         (event) => {
           if (!isCurrent()) return

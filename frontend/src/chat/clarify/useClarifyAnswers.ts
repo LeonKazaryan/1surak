@@ -6,7 +6,7 @@ import { prefilledParty, type Party } from './plan'
 const PARTY_ADULTS: Record<Party, number> = { solo: 1, couple: 2, kids: 2, group: 3, oneAdult: 1, twoAdults: 2 }
 
 /** The answers being picked on the cards. Starts from what the agent already understood. */
-export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent) {
+export function useClarifyAnswers({ questions, prefill, currency, remembered = {} }: ClarifyEvent) {
   const [kinds, setKinds] = useState<TripKind[]>(prefill.kinds)
   const [month, setMonth] = useState<number | null>(prefill.month)
   const [nights, setNights] = useState<[number, number] | null>(prefill.nights)
@@ -101,6 +101,20 @@ export function useClarifyAnswers({ questions, prefill, currency }: ClarifyEvent
     },
     answered,
     collect,
+    /** Takes what an earlier trip answered to this question: only when the traveller taps «Как в прошлый раз». */
+    recall: (slot: ClarifySlot) => {
+      const { travelers, budget, visa } = remembered
+      if (slot === 'travelers' && travelers) {
+        setParty(travelers.children ? 'kids' : prefilledParty({ ...prefill, adults: travelers.adults, children: 0 }))
+        setAdults(travelers.adults)
+        setAges(travelers.children_ages)
+      }
+      if (slot === 'budget' && budget) {
+        setTotalState(budget.budget_total ?? null)
+        setLevelState(budget.budget_total ? null : (budget.budget_level ?? null))
+      }
+      if (slot === 'visa' && visa) setVisaFreeOnly(visa.visa_free_only)
+    },
   }
 }
 

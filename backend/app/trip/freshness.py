@@ -29,4 +29,5 @@ def trip_status(brief: TripBrief, now: datetime) -> dict:
         "priced_at": brief.priced_at.isoformat() if brief.priced_at else None,
         "stale": brief.priced_at is not None and now - brief.priced_at > STALE_AFTER,
         "dates_passed": dates_passed(brief, now),
+        "nudge": brief.nudge,  # a quick reply from the traveller's earlier trips, under this turn's cards
     }

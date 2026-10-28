@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.llm import OpenAICompatibleLLM, StubLLM, TextDelta, ToolCall, Usage, build_llm
+from app.llm import OpenAICompatibleLLM, StubLLM, TextDelta, ToolCall, ToolStarting, Usage, build_llm
 
 
 async def collect(stream) -> list[str]:
@@ -87,6 +87,8 @@ def test_should_assemble_tool_calls_from_streamed_fragments():
 
     assert out == [
         TextDelta("Сейчас посмотрю."),
+        ToolStarting("get_weather"),  # as soon as the name is known, before its arguments are written
+        ToolStarting("get_flights"),
         ToolCall(id="call_a", name="get_weather", arguments='{"city": "Сочи"}'),
         ToolCall(id="call_b", name="get_flights", arguments="{}"),
     ]

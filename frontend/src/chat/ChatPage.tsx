@@ -3,13 +3,11 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { ArrowPathIcon } from '@heroicons/react/20/solid'
 import { LogoMark } from '@/components/LogoMark'
-import { ScrollRow } from '@/components/ScrollRow'
 import { PageHeader, type Crumb } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
-import type { BookingEvent, BriefAnswers, Currency, DestinationsCard } from '@/types/api'
+import type { BookingEvent, BriefAnswers, Currency, DestinationsCard, Idea } from '@/types/api'
 import { ClarifyFlow } from './clarify/ClarifyOverlay'
 import { ClarifyPrompt } from './clarify/ClarifyPrompt'
 import { AgentTracePanel } from './components/AgentTracePanel'
@@ -17,6 +15,7 @@ import { MessagesSkeleton } from './components/ChatSkeletons'
 import { Composer } from './components/Composer'
 import { DestinationCards } from './components/DestinationCards'
 import { FlightLoader } from './components/FlightLoader'
+import { PlanPending } from './components/PlanPending'
 import { MessageContent } from './components/MessageContent'
 import type { TextPlace } from './components/highlight'
 import { DetailsPanel } from './components/DetailsPanel'
@@ -34,9 +33,13 @@ import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { isFailed } from './trace'
 import { AnswerReceipt } from './components/AnswerReceipt'
 import { QuickReplies } from './components/QuickReplies'
+import { IdeaChips } from './memory/IdeaChips'
+import { MemoryPanel } from './memory/MemoryPanel'
+import { useMemory } from './memory/useMemory'
 import { CompactPassport, TripCover } from './passport/TripCover'
 import { BrandBackdrop } from './map/BrandBackdrop'
 import { coverPhoto, EDIT_PROMPTS, stageOf, type PassportField, type TripStage } from './passport/passport'
+import { pendingCard } from './pendingCard'
 import { quickReplies } from './quickReplies'
 import type { WorkspaceChatMessage } from './types'
 
@@ -71,6 +74,14 @@ function readHandoffQuery(state: unknown): string | null {
   return null
 }
 
+/** A message put in the composer, not sent: an idea that opens an earlier trip leaves sending to the traveller. */
+function readHandoffDraft(state: unknown): string | null {
+  if (state && typeof state === 'object' && 'draft' in state && typeof state.draft === 'string') {
+    return state.draft.trim() || null
+  }
+  return null
+}
+
 interface MessageBubbleProps {
   message: WorkspaceChatMessage
   isStreaming: boolean
@@ -89,6 +100,9 @@ interface MessageBubbleProps {
   onRetry: () => void
   /** A user message that answers the question cards: drawn as a receipt. */
   answered?: boolean
+  /** The trip's place and its cover photo, for the card being put together while the reply streams. */
+  place?: string | null
+  photo?: string | null
 }
 
 /** The places on a message's cards and plan, for the chips in its text. */
@@ -118,6 +132,8 @@ function MessageBubble(props: MessageBubbleProps) {
   }
   const { widget, content } = message
   const working = isStreaming && !widget && (!content || message.phase === 'working')
+  // the plan or the cards are on their way: their card shows up already, being put together
+  const pending = isStreaming && !widget ? pendingCard(message.traceSteps ?? []) : null
   return (
     <div className="min-w-0">
       {!working && <AgentTracePanel steps={message.traceSteps ?? []} isStreaming={false} />}
@@ -129,10 +145,16 @@ function MessageBubble(props: MessageBubbleProps) {
         </Button>
       )}
       <AnimatePresence>
-        {working && (
-          <div key="loader" className={content ? 'mt-3' : undefined}>
-            <FlightLoader steps={message.traceSteps ?? []} />
+        {pending ? (
+          <div key={`pending-${pending}`} className={content ? 'mt-4' : undefined}>
+            <PlanPending kind={pending} place={props.place} photo={props.photo} />
           </div>
+        ) : (
+          working && (
+            <div key="loader" className={content ? 'mt-3' : undefined}>
+              <FlightLoader steps={message.traceSteps ?? []} />
+            </div>
+          )
         )}
       </AnimatePresence>
       {widget?.type === 'clarify' && <ClarifyPrompt widget={widget} pending={isLast} onOpen={onOpenClarify} />}
@@ -161,6 +183,7 @@ export default function ChatPage() {
   const coverRef = useRef<HTMLDivElement>(null)
   // messages already there when the page opened stay put; new ones come in with a spring
   const [openedAt] = useState(() => Date.now())
+  const memory = useMemory()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastMessageRef = useRef<HTMLDivElement>(null)
@@ -224,6 +247,18 @@ export default function ChatPage() {
   }, [messages, lastWidget])
 
   useEffect(() => {
+    const draft = readHandoffDraft(location.state)
+    if (!draft || chatLoading) return
+    // once the trip has loaded, so its messages do not reset the composer
+    const timer = setTimeout(() => {
+      navigate(location.pathname, { replace: true, state: null })
+      setInput(draft)
+      composerRef.current?.focus()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [location.state, location.pathname, navigate, chatLoading])
+
+  useEffect(() => {
     const query = readHandoffQuery(location.state)
     if (!query) return
     // Deferred so StrictMode's mount-unmount-mount does not abort the run it just started.
@@ -254,6 +289,11 @@ export default function ChatPage() {
     // a new trip gets the whole screen; the user can bring the sidebar back
     if (!messages.length) setSidebarOpen(false)
     send(text)
+  }
+  // an idea for a new trip is sent; one about an earlier trip opens it with the question ready to send
+  const pickIdea = (idea: Idea) => {
+    if (idea.chat_id) navigate(`/chat/${idea.chat_id}`, { state: idea.query ? { draft: idea.query } : null })
+    else if (idea.query) submit(idea.query)
   }
   const breadcrumb: Crumb[] = chatLoading
     ? [{ label: 'Поездки', href: '/chat' }, { label: 'Загрузка', pending: true }]
@@ -346,8 +386,10 @@ export default function ChatPage() {
                             onBook={book}
                             onRetry={retry}
                             answered={m.role === 'user' && (Boolean(m.answers) || messages[i - 1]?.widget?.type === 'clarify')}
+                            place={passport?.destination?.name}
+                            photo={photo?.url}
                           />
-                          {i === messages.length - 1 && <QuickReplies key={m.id} replies={replies} onPick={submit} />}
+                          {i === messages.length - 1 && <QuickReplies key={m.id} replies={replies} onPick={submit} nudge={trip?.nudge} />}
                         </motion.div>
                       ))}
                       <div ref={messagesEndRef} />
@@ -380,20 +422,8 @@ export default function ChatPage() {
                   <DepartureCityPicker prefix="Вылет:" />
                   <CurrencyPicker />
                 </div>
-                <ScrollRow label="Примеры поездок" className="self-stretch max-md:-mx-4">
-                  {EXAMPLE_TRIPS.map((trip) => (
-                    <button
-                      key={trip.label}
-                      type="button"
-                      onClick={() => submit(trip.query)}
-                      disabled={isLoading}
-                      title={trip.query}
-                      className="min-h-[36px] rounded-full border border-border bg-card px-4 py-1.5 text-sm text-muted-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:text-foreground disabled:opacity-50"
-                    >
-                      {trip.label}
-                    </button>
-                  ))}
-                </ScrollRow>
+                <IdeaChips ideas={memory.ideas} failed={memory.failed} onPick={pickIdea} disabled={isLoading} className="self-stretch max-md:-mx-4" />
+                <MemoryPanel facts={memory.facts} onForget={memory.forget} />
               </div>
             </div>
           )}

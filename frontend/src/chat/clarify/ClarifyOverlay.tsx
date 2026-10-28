@@ -1,10 +1,10 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useMotionValueEvent, useSpring, type Variants } from 'motion/react'
-import { ArrowLeftIcon, MapPinIcon, XMarkIcon } from '@heroicons/react/20/solid'
+import { ArrowLeftIcon, ClockIcon, MapPinIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import { buildRoute } from '@/landing/route'
 import { getDepartureCity, saveDepartureCity } from '@/lib/departureCity'
-import type { BriefAnswers, ClarifyEvent } from '@/types/api'
+import type { BriefAnswers, ClarifyEvent, ClarifySlot } from '@/types/api'
 import { describeAnswers, plural } from '../widgets'
 import { buildSteps, knownFacts, partyOptions, planCards, progressAt, type Step } from './plan'
 import { AgeStep, BudgetStep, CountStep, MonthStep, NightsStep, OriginStep, PartyStep, RouteStep, VibeStep, VisaStep } from './questions'
@@ -127,6 +127,38 @@ const card: Variants = {
 }
 
 type StepPosition = [index: number, direction: number]
+type RememberedSlot = keyof NonNullable<ClarifyEvent['remembered']>
+
+interface RecallOfferProps {
+  text: string
+  source: string
+  chosen: boolean
+  onPick: () => void
+}
+
+/** What an earlier trip answered, as one more choice on the card: nothing is filled until it is tapped. */
+function RecallOffer({ text, source, chosen, onPick }: RecallOfferProps) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onPick}
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0, scale: chosen ? 0.98 : 1 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+      className={cn(
+        'mb-3 flex w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors',
+        chosen ? 'border-primary bg-primary/40' : 'border-primary/60 bg-accent/70 hover:bg-accent',
+      )}
+    >
+      <ClockIcon aria-hidden className="h-5 w-5 shrink-0 text-[#3f7d22]" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] leading-snug font-semibold text-foreground">Как в прошлый раз: {text}</span>
+        <span className="block truncate text-[12px] text-muted-foreground">помню из поездки «{source}»</span>
+      </span>
+      <span className="shrink-0 text-[13px] font-semibold text-[#3f7d22]">{chosen ? 'Беру' : 'Взять'}</span>
+    </motion.button>
+  )
+}
 
 interface ClarifyOverlayProps {
   widget: ClarifyEvent
@@ -145,6 +177,7 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
   const steps = buildSteps(widget, { party: answers.party, ages: answers.ages, kinds: answers.kinds })
   const [index, direction] = position
   const [picked, setPicked] = useState<number | null>(null) // the step just answered, about to move on
+  const [recalled, setRecalled] = useState<ClarifySlot | null>(null) // answered from memory: skip the rest of it
   const [arriving, setArriving] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const dialog = useRef<HTMLDivElement>(null)
@@ -176,6 +209,19 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
     return () => clearTimeout(t)
   }, [picked])
 
+  // Runs once the recalled answer has re-rendered the deck: on to the first card of the next question.
+  const skipPast = useEffectEvent((slot: ClarifySlot) => {
+    setRecalled(null)
+    const next = steps.findIndex((s) => slots.indexOf(s.slot) > slots.indexOf(slot))
+    if (next < 0) finish()
+    else go(next)
+  })
+  useEffect(() => {
+    if (recalled === null) return
+    const t = setTimeout(() => skipPast(recalled), PICK_SHOW_MS)
+    return () => clearTimeout(t)
+  }, [recalled])
+
   const close = useEffectEvent(() => onClose())
   useEffect(() => {
     dialog.current?.focus()
@@ -192,6 +238,13 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
     apply()
     setPicked(current)
   }
+  const recall = (slot: ClarifySlot) => {
+    if (arriving || busy || picked !== null || recalled !== null) return
+    answers.recall(slot)
+    setRecalled(slot)
+  }
+  // offered on the first card of its question only, as a choice next to the others
+  const offer = steps.findIndex((s) => s.slot === step.slot) === current ? widget.remembered?.[step.slot as RememberedSlot] : undefined
   const child = step.child ?? 0
   const body: Record<Step['kind'], () => ReactNode> = {
     origin: () => (
@@ -340,7 +393,10 @@ function ClarifyOverlay({ widget, intro, answers, position, onPosition, busy, on
                   </div>
                   <h2 className="m-0 mt-1 text-[24px] leading-tight font-semibold tracking-tight text-foreground sm:text-[26px]">{step.title}</h2>
                   {step.hint && <p className="m-0 mt-1 text-sm leading-snug text-muted-foreground">{step.hint}</p>}
-                  <div className={cn('mt-4', picked !== null && 'pointer-events-none')}>{body[step.kind]()}</div>
+                  <div className={cn('mt-4', (picked !== null || recalled !== null) && 'pointer-events-none')}>
+                    {offer && <RecallOffer text={offer.text} source={offer.source} chosen={recalled === step.slot} onPick={() => recall(step.slot)} />}
+                    {body[step.kind]()}
+                  </div>
                 </motion.section>
               </AnimatePresence>
             </div>

@@ -37,6 +37,7 @@ def test_should_never_call_a_trip_without_prices_stale():
         "priced_at": None,
         "stale": False,
         "dates_passed": False,
+        "nudge": None,
     }
     assert status["passport"]["destination"] is None and status["passport"]["when"] is None
 

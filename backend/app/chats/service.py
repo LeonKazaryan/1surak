@@ -12,6 +12,7 @@ from app.destinations import snapshots_by_id
 from app.flights import DEFAULT_ORIGIN, Flights, city, currency_for, current_origin
 from app.hotels import HotelSource
 from app.llm import LLM
+from app.memory import nudge, remember
 from app.money import chosen_currency, current_currency
 from app.plan.tools import plan_tools
 from app.tools import ToolRegistry
@@ -117,6 +118,13 @@ def pick_origin(brief: TripBrief, requested: str | None, known: bool) -> tuple[T
     return brief.model_copy(update={"origin_guess": not stated and not known}), code
 
 
+def _offer_nudge(trip: TripState, trace: list[dict]) -> None:
+    """Under the trip's first cards or plan, once: a wish or habit from earlier trips, as a quick reply."""
+    showed = any(e.get("type") in ("destinations", "trip_plan") for e in trace)
+    if showed and not trip.brief.nudged and (offered := nudge(trip.memory, trip.brief)):
+        trip.brief = trip.brief.model_copy(update={"nudge": offered, "nudged": True})
+
+
 def _final_answer(parts: list[str], failed: bool, finished: bool) -> str:
     if parts:
         return "".join(parts)
@@ -139,6 +147,8 @@ async def stream_reply(
     origin_known: bool = True,
     hotels: HotelSource | None = None,
     currency: str | None = None,
+    earlier: list[str] | None = None,
+    forget: set[str] = frozenset(),
 ) -> AsyncIterator[dict]:
     # Sessions are opened here, not injected: the stream outlives the request handler.
     async with sessionmaker() as db:
@@ -147,8 +157,13 @@ async def stream_reply(
         title = await repository.ensure_chat(db, chat_id, title_from(query))
         history = await repository.recent_turns(db, chat_id, HISTORY_TURNS)
         trip = TripState(_load_brief(await repository.get_brief(db, chat_id)))
+        # the traveller's other trips in this browser: what they say is offered, never applied
+        others = [i for i in earlier or [] if i != chat_id]
+        if others:
+            trip.memory = remember(await repository.list_chats(db, others), _now().date(), forget)
         await repository.add_message(db, chat_id, "user", query)
         await db.commit()
+    trip.brief = trip.brief.model_copy(update={"nudge": None})  # last turn's quick reply is gone with it
     # the tools search flights from this city and show money in its currency; reset when the turn ends
     requested_code = origin_code
     if currency:
@@ -191,6 +206,7 @@ async def stream_reply(
             if event["type"] == "tool_end" and event.get("name") == "update_trip_brief":
                 yield {"type": "brief", "passport": passport(trip.brief)}
         finished = True
+        _offer_nudge(trip, trace)
     except Exception:
         log.exception("Agent failed for chat %s", chat_id)
         failed = True

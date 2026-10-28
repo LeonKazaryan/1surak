@@ -78,7 +78,8 @@ HOTELS_DESCRIPTION = (
 )
 SHOW_DESCRIPTION = (
     "Show the plan from build_trip on screen, with a checkout button. `intro` is what you say as the travel "
-    "agent who put it together. Ends your turn."
+    "agent who put it together, and all of it: write no message besides this call, the intro is shown as your "
+    "reply. Ends your turn."
 )
 
 

@@ -8,11 +8,12 @@ import { DepartureCityPicker } from '@/components/DepartureCityPicker'
 import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { Footer } from '@/components/Footer'
 import { HeroBackground } from '@/components/HeroBackground'
-import { ScrollRow } from '@/components/ScrollRow'
 import { Reveal } from '@/components/Reveal'
 import { TextType } from '@/components/TextType'
 import { useSmoothScroll } from '@/hooks/use-smooth-scroll'
-import { EXAMPLE_TRIPS } from '@/lib/exampleTrips'
+import { IdeaChips } from '@/chat/memory/IdeaChips'
+import { useMemory } from '@/chat/memory/useMemory'
+import type { Idea } from '@/types/api'
 import { HERO_HIGHLIGHTS, HERO_PHRASES, HERO_TITLE, HERO_VIDEO_SRC } from './content'
 import { TripPrompt } from './TripPrompt'
 import { TripRoute } from './TripRoute'
@@ -34,6 +35,12 @@ export default function LandingPage() {
   }, [tripIds])
   useSmoothScroll()
 
+  const memory = useMemory()
+  // an idea about an earlier trip opens it with the question ready, the traveller sends it
+  const pickIdea = (idea: Idea) => {
+    if (idea.chat_id) navigate(`/chat/${idea.chat_id}`, { state: idea.query ? { draft: idea.query } : null, viewTransition: true })
+    else if (idea.query) startChat(idea.query)
+  }
   const startChat = (query: string) => {
     const trimmed = query.trim()
     if (trimmed) navigate('/chat', { state: { query: trimmed }, viewTransition: true })
@@ -80,18 +87,7 @@ export default function LandingPage() {
           </Reveal>
 
           <Reveal delay={230} className="self-stretch">
-            <ScrollRow label="Примеры поездок" className="-mx-4">
-              {EXAMPLE_TRIPS.map((trip) => (
-                <button
-                  key={trip.label}
-                  type="button"
-                  onClick={() => startChat(trip.query)}
-                  className="min-h-[36px] rounded-full border border-border bg-card/70 px-4 py-1.5 text-sm text-muted-foreground backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:text-foreground"
-                >
-                  {trip.label}
-                </button>
-              ))}
-            </ScrollRow>
+            <IdeaChips ideas={memory.ideas} failed={memory.failed} onPick={pickIdea} className="-mx-4" surface="bg-card/70 backdrop-blur-sm" />
           </Reveal>
         </div>
       </section>

@@ -83,5 +83,15 @@ async def book(
             "Оплата и бронирование имитируются."
         )
         saved = await repository.add_message(db, chat_id, "assistant", text, [event])
+        # the brief keeps the booking in short: the traveller's next trips remember it without reading messages
+        brief = await repository.get_brief(db, chat_id) or {}
+        booked = {
+            "number": event["number"],
+            "name": plan["name"],
+            "span": span,
+            "from": dates["from"],
+            "to": dates["to"],
+        }
+        await repository.save_brief(db, chat_id, {**brief, "booked": booked})
         await db.commit()
     return saved

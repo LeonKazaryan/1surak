@@ -17,6 +17,7 @@ vi.mock('@/api/client', () => ({
   deleteChat: vi.fn().mockResolvedValue(undefined),
   refreshChat: vi.fn(),
   bookTrip: vi.fn(),
+  fetchMemory: vi.fn().mockRejectedValue(new Error('offline')),
 }))
 
 const sendChatStream = vi.mocked(client.sendChatStream)
@@ -212,10 +213,10 @@ describe('ChatPage', () => {
     )
   })
 
-  it('should show example trips in the empty state', () => {
+  it('should fall back to example trips in the empty state when memory does not answer', async () => {
     renderChat()
 
-    expect(screen.getByRole('button', { name: 'Тёплое море в ноябре' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Тёплое море в ноябре' })).toBeInTheDocument()
   })
 
   it('should send the typed message and render the streamed answer and tool steps', async () => {
@@ -411,13 +412,13 @@ describe('ChatPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить')
   })
 
-  it('should put the intro under the heading and the example trips under the composer', () => {
+  it('should put the intro under the heading and the trip ideas under the composer', () => {
     renderChat()
 
     const heading = screen.getByRole('heading', { level: 1, name: 'Куда отправимся?' })
     const intro = screen.getByText(/Напишите, куда и как хотите поехать/)
     const composer = screen.getByRole('textbox', { name: 'Сообщение агенту' })
-    const examples = screen.getByRole('group', { name: 'Примеры поездок' })
+    const examples = screen.getByRole('group', { name: 'Идеи для поездки' })
     const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
     expect(follows(heading, intro) && follows(intro, composer) && follows(composer, examples)).toBe(true)
   })
@@ -504,6 +505,92 @@ describe('ChatPage', () => {
     )
     expect(await screen.findByText('Уточнили: кто едет, бюджет')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('should offer what an earlier trip answered on its card and take it only on a tap', async () => {
+    localStorage.setItem('1surak.myChats', JSON.stringify(['old-trip']))
+    localStorage.setItem('1surak.forgotten', JSON.stringify(['budget']))
+    streamReply(
+      [
+        { type: 'assistant_token', text: 'Уточню' },
+        {
+          type: 'clarify',
+          questions: [
+            { slot: 'travelers', title: 'Кто едет?', hint: null },
+            { slot: 'visa', title: 'Учитывать визы?', hint: null },
+          ],
+          prefill: { kinds: ['sea'], month: 1, nights: [7, 7], adults: null, children: null, children_ages: [], budget_level: null, multi_city: null },
+          remembered: { travelers: { adults: 2, children: 1, children_ages: [6], text: 'двое взрослых + ребёнок 6 лет', source: 'Хургада · ноябрь' } },
+        },
+      ],
+      { type: 'done', answer: 'Уточню', chat_id: 'chat-1', title: 'Море' },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Хочу на море в январе{Enter}')
+
+    // the earlier trips go with the message, the hidden fact too, so the agent never uses it
+    expect(sendChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ history: ['old-trip'], forget: ['budget'] }),
+      expect.any(Function),
+      expect.anything(),
+    )
+    const dialog = await screen.findByRole('dialog', { name: 'Уточняющие вопросы' }, { timeout: 3000 })
+    const offer = within(dialog).getByRole('button', { name: /Как в прошлый раз: двое взрослых \+ ребёнок 6 лет/ })
+    expect(offer).toHaveTextContent('помню из поездки «Хургада · ноябрь»')
+    expect(within(dialog).getByRole('button', { name: /Вдвоём/ })).not.toHaveClass('border-primary') // nothing picked for them
+
+    await userEvent.click(offer)
+    expect(await within(dialog).findByText('Учитывать визы?', {}, { timeout: 2000 })).toBeInTheDocument() // the ages are not asked
+    streamReply([], { type: 'done', answer: 'Ищу', chat_id: 'chat-1', title: 'Море' })
+    await userEvent.click(within(dialog).getByRole('button', { name: /Не важно/ }))
+
+    await waitFor(() => expect(sendChatStream).toHaveBeenCalledTimes(2), { timeout: 5000 })
+    expect(sendChatStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({ answers: { adults: 2, children: 1, children_ages: [6], visa_free_only: false } }),
+      expect.any(Function),
+      expect.anything(),
+    )
+  })
+
+  it('should show the plan being put together between the reply and the plan itself', async () => {
+    let finish!: () => void
+    sendChatStream.mockImplementation(async (_body, onEvent) => {
+      onEvent({ type: 'tool_start', name: 'build_trip', title: 'Собираю поездку' })
+      onEvent({ type: 'tool_end', name: 'build_trip', output_preview: 'Нячанг' })
+      onEvent({ type: 'assistant_token', text: 'Собрал Нячанг на двоих.' })
+      onEvent({ type: 'tool_preparing', name: 'show_trip', title: 'Показываю план' })
+      await new Promise<void>((resolve) => (finish = resolve))
+      return { type: 'done', answer: 'Собрал Нячанг на двоих.', chat_id: 'chat-1', title: 'Нячанг' }
+    })
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Выбираю Нячанг{Enter}')
+
+    const pending = await screen.findByLabelText('Собираю план поездки')
+    expect(within(pending).getByRole('status')).toHaveTextContent('Подбираю фотографии')
+    expect(within(pending).getByRole('heading')).toHaveTextContent('Ваша поездка')
+
+    finish()
+    await waitFor(() => expect(screen.queryByLabelText('Собираю план поездки')).toBeNull())
+  })
+
+  it('should put the quick reply from memory first and say where it comes from', async () => {
+    streamReply(
+      [{ type: 'destinations', summary: [], cards: [HURGHADA] }],
+      {
+        type: 'done',
+        answer: '',
+        chat_id: 'chat-1',
+        title: 'Море',
+        nudge: { text: 'Как в прошлый раз: с видом на море', source: 'Хургада · ноябрь' },
+      },
+    )
+    renderChat()
+    await userEvent.type(screen.getByRole('textbox'), 'Море в ноябре{Enter}')
+
+    const replies = await screen.findByRole('list', { name: 'Быстрые ответы' })
+    const first = within(replies).getAllByRole('button')[0]
+    expect(first).toHaveTextContent('Как в прошлый раз: с видом на море')
+    expect(first).toHaveAttribute('title', 'Помню из поездки «Хургада · ноябрь»')
   })
 
   it('should open place details in a side panel and close it', async () => {

@@ -105,6 +105,9 @@ class TripBrief(BriefPatch):
     origin_over: str | None = None  # the guess it replaced: the picker still says so until it syncs
     origin_guess: bool = False  # set per turn: the city is the fallback, nobody picked or confirmed it
     currency: str | None = None  # picked by the user on the start screen; None follows the departure city
+    booked: dict | None = None  # the simulated booking: {"number", "name", "span", "from", "to"}, for memory
+    nudge: dict | None = None  # one quick reply from memory under this turn's cards: {"text", "source"}
+    nudged: bool = False  # it was offered once in this trip: never again
 
 
 def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:

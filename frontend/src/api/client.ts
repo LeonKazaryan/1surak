@@ -5,6 +5,7 @@ import type {
   ChatRequest,
   ChatStreamDone,
   ChatStreamEvent,
+  MemoryResponse,
   RefreshResponse,
   VisaInfo,
 } from '../types/api'
@@ -102,6 +103,16 @@ export async function deleteChat(chatId: string): Promise<void> {
   if (!res.ok && res.status !== 404) {
     throw new Error(`${res.status} ${res.statusText}`)
   }
+}
+
+/** What the browser's trips say about the traveller, and the start screen's ideas from it. Nothing is stored. */
+export function fetchMemory(history: string[], forget: string[], signal?: AbortSignal): Promise<MemoryResponse> {
+  return request<MemoryResponse>(`${BASE}/memory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ history, forget }),
+    signal,
+  })
 }
 
 /** The visa rule and its fee for «KZ-US»; the first time a pair is asked, the server looks the fee up. */

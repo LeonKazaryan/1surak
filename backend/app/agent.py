@@ -11,7 +11,7 @@ import re
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone
 
-from app.llm import LLM, TextDelta, ToolCall, Usage
+from app.llm import LLM, TextDelta, ToolCall, ToolStarting, Usage
 from app.money import RUB, Currency, current_currency
 from app.tools import ToolRegistry
 
@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 8
 # Text this short followed by tool calls is the model thinking aloud, not the answer.
 NARRATION_MAX_CHARS = 280
+SAME_TEXT_SHARE = 0.6  # this much of the shorter text's words in the other: the same text said twice
 MSK = timezone(timedelta(hours=3), "MSK")  # Moscow has no DST, so a fixed offset is exact
 WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
@@ -60,6 +61,11 @@ research, если пользователь сам не спросил о док
 Как вести диалог:
 1. На каждое сообщение о поездке сначала вызови update_trip_brief. Передавай только сказанное явно \
 или однозначно следующее из слов. Возраст, бюджет и число людей не придумывай.
+   Если update_trip_brief вернул remembered, это из прошлых поездок пользователя в этом браузере. Не передавай \
+это в update_trip_brief и не говори так, будто он это сказал: карточки сами предложат «как в прошлый раз». \
+Один раз за поездку можешь коротко сказать то, что меняет подбор, с прошлой поездкой («Помню, в Хургаде вам был \
+важен вид на море»). Если сообщение говорит иначе, верь сообщению. В hint вопросов для ask_user память не пиши: \
+карточки сами покажут «как в прошлый раз» с источником.
 2. Не устраивай анкету. Если missing не пуст и уточнений ещё не было, вызови ask_user один раз \
 со всеми пунктами из missing: пользователь ответит на карточках. Вопросы о датах, составе и бюджете \
 обычным текстом не задавай.
@@ -188,15 +194,17 @@ def _tokens(chunks: list[str], after_text: bool) -> list[dict]:
     return separator + [{"type": "assistant_token", "text": chunk} for chunk in chunks]
 
 
-def _words(text: str) -> str:
-    return " ".join(text.split())
+def _same_text(a: str, b: str) -> bool:
+    """Two texts that say the same in nearly the same words: the answer the model writes and the intro it then
+    passes to a tool, written twice with a date or a word changed. Shared words over the shorter text."""
+    x, y = set(re.findall(r"\w+", a.casefold())), set(re.findall(r"\w+", b.casefold()))
+    return bool(x and y) and len(x & y) / min(len(x), len(y)) >= SAME_TEXT_SHARE
 
 
 def _repeats_an_argument(text: str, calls: list[ToolCall]) -> bool:
     """The model often says aloud the very intro it passes to a tool; the tool shows it anyway."""
-    said = _words(text)
     return any(
-        isinstance(value, str) and _words(value) == said
+        isinstance(value, str) and _same_text(value, text)
         for call in calls
         for value in _display_args(call.arguments).values()
     )
@@ -269,6 +277,7 @@ async def _run(
     language = _language_note(turns)
     checklist = [{"role": "system", "content": REPLY_CHECKLIST}]
     said_something = False
+    spoken = ""  # the reply already streamed to the screen this turn, whichever round wrote it
     owed: str | None = None  # a call the model still has to make before answering (Tool.then)
     force: str | None = None
 
@@ -290,15 +299,21 @@ async def _run(
                 text_parts.append(event.text)
                 if streaming:
                     yield {"type": "assistant_token", "text": event.text}
-                elif sum(map(len, text_parts)) > NARRATION_MAX_CHARS:
+                # with a reply already on screen, a later round's text waits: it is often the same reply again
+                elif not spoken and sum(map(len, text_parts)) > NARRATION_MAX_CHARS:
                     streaming = True
                     for token in _tokens(text_parts, said_something):
                         yield token
+            elif isinstance(event, ToolStarting):
+                # the arguments are still being written: the screen says what is coming
+                yield {"type": "tool_preparing", "name": event.name, "title": tools.title(event.name)}
             elif isinstance(event, ToolCall):
                 calls.append(event)
             elif isinstance(event, Usage):
                 meter.add(event)
         text = "".join(text_parts)
+        if spoken and not streaming and _same_text(text, spoken):
+            text_parts, text = [], ""  # the reply said again, often when the owed call is made: said once
         force = None
         # The model answers in words while it still owes a call (found places, showed none): its words become
         # a step, and the next round makes the call. Once, so a refusing model cannot loop.
@@ -313,6 +328,8 @@ async def _run(
             elif not _repeats_an_argument(text, calls):
                 yield {"type": "assistant_note", "text": text.strip()}
         said_something = said_something or streaming
+        if streaming:
+            spoken = text
 
         if insist:
             if text.strip():
@@ -341,8 +358,9 @@ async def _run(
                 owed = None
             if result.ok and tool and tool.then and tools.get(tool.then):
                 owed = tool.then
-            # a long intro streams before the call that carries it; saying it again would double the reply
-            if result.text and not (streaming and _words(result.text) == _words(text)):
+            # the model often writes its reply, then passes the same words to the tool that shows the plan (in
+            # the same round, or the next one when the call was still owed): the reply is said once
+            if result.text and not (spoken and _same_text(result.text, spoken)):
                 separator = "\n\n" if said_something else ""
                 yield {"type": "assistant_token", "text": separator + result.text}
                 said_something = True

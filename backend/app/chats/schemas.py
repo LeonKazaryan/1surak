@@ -18,6 +18,11 @@ Origin = Annotated[
 ]
 
 
+MAX_HISTORY = 50  # as many chats as the browser keeps
+MAX_FORGET = 60
+ForgetKey = Annotated[str, StringConstraints(min_length=1, max_length=120, pattern=r"^[^\x00-\x1f\x7f]+$")]
+
+
 class ChatRequest(BaseModel):
     query: Query
     chat_id: UUID | None = None
@@ -26,10 +31,12 @@ class ChatRequest(BaseModel):
     # False when the browser could not detect the city and fell back to Moscow: then the agent asks
     origin_known: bool = True
     answers: BriefPatch | None = None  # what the user picked on the question cards
-    retry: bool = False
-    currency: CurrencyCode | None = (
-        None  # picked on the start screen; None follows the departure city  # ask again in place of the last turn, when that turn failed
-    )
+    retry: bool = False  # ask again in place of the last turn, when that turn failed
+    # picked on the start screen; None follows the departure city
+    currency: CurrencyCode | None = None
+    # the browser's other chats: the traveller's earlier trips, offered from memory, never applied
+    history: list[UUID] = Field(default_factory=list, max_length=MAX_HISTORY)
+    forget: list[ForgetKey] = Field(default_factory=list, max_length=MAX_FORGET)  # facts hidden on screen
 
 
 class ChatMeta(BaseModel):
@@ -43,6 +50,32 @@ class ChatMeta(BaseModel):
     priced_at: str | None = None
     stale: bool = False
     dates_passed: bool = False
+    nudge: dict | None = None  # {"text", "source"}: a quick reply from the traveller's earlier trips
+
+
+class MemoryFact(BaseModel):
+    key: str
+    label: str
+    text: str
+    source: str
+    chat_id: str
+
+
+class Idea(BaseModel):
+    label: str
+    query: str | None = None  # sent as the message; None for a trip to open as it is
+    chat_id: str | None = None  # an earlier trip this idea opens
+    why: str | None = None  # what in memory it comes from: «бронь 1S-ABC234», «помню: вдвоём + ребёнок 6 лет»
+
+
+class MemoryRequest(BaseModel):
+    history: list[UUID] = Field(default_factory=list, max_length=MAX_HISTORY)  # the browser's chats
+    forget: list[ForgetKey] = Field(default_factory=list, max_length=MAX_FORGET)
+
+
+class MemoryResponse(BaseModel):
+    facts: list[MemoryFact]
+    ideas: list[Idea]
 
 
 class ChatMessageOut(BaseModel):

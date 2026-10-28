@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app import agent
-from app.llm import ToolCall
+from app.llm import ToolCall, ToolStarting
 from app.tools import Tool, ToolRegistry, ToolReply
 from tests.conftest import FakeLLM
 
@@ -201,6 +201,66 @@ def test_should_say_a_long_intro_once_when_the_tool_shows_it_too():
     events = run(llm, ToolRegistry([show]))
 
     assert text_of(events) == intro
+
+
+def test_should_say_the_reply_once_when_the_intro_says_it_again_in_other_words():
+    said = (
+        "Собрал Нячанг на двоих. Отель Luxury Nha Trang Hotel настоящий, трёхзвёздочный и в центре, цена "
+        "ориентировочная, условия уточним при бронировании. Прилёт в 04:25, в отеле будете около 05:15, а заселение "
+        "обычно с 14:00, предупредим о раннем заезде. Если хочется дешевле, есть хостел в центре."
+    )
+    intro = (
+        "Собрал Нячанг на двоих с 7 по 16 ноября, 9 ночей. Отель Luxury Nha Trang Hotel настоящий, 3 звезды и в "
+        "центре, цена ориентировочная, условия уточним при бронировании. Прилёт в 04:25, заселение обычно с 14:00, "
+        "в отеле будете около 05:15, предупредим отель о раннем заезде. Если нужен вариант дешевле, есть хостел."
+    )
+    show = Tool(name="show", title="Показываю план", description="Show", args=IntroArgs, handler=_show)
+    llm = FakeLLM(rounds=[[said, call("show", json.dumps({"intro": intro}, ensure_ascii=False))]])
+
+    events = run(llm, ToolRegistry([show]))
+
+    assert text_of(events) == said  # the streamed answer stays, its near copy is not added
+
+
+def test_should_say_the_reply_once_when_the_owed_call_repeats_it_in_the_next_round():
+    said = "Собрал Нячанг под вашу семью: отель в центре, три звезды, прилёт к восьми утра. " * 5
+    intro = "Собрал Нячанг для вас с ребёнком: отель в центре, три звезды, прилёт к восьми утра. " * 5
+    build = Tool(
+        name="build", title="Собираю", description="Build", args=IntroArgs, handler=_built, then="show"
+    )
+    show = Tool(name="show", title="Показываю план", description="Show", args=IntroArgs, handler=_show)
+    llm = FakeLLM(
+        rounds=[
+            [call("build", '{"intro": ""}')],
+            [said],  # the reply in words while the plan is still owed
+            # the next round makes the call and writes the reply once more besides
+            [intro, call("show", json.dumps({"intro": intro}, ensure_ascii=False))],
+        ]
+    )
+
+    events = run(llm, ToolRegistry([build, show]))
+
+    assert text_of(events) == said
+    assert any(e["type"] == "trip_plan" for e in events)
+
+
+async def _built(args: IntroArgs) -> dict:
+    return {"built": True}
+
+
+def test_should_say_which_tool_is_coming_while_its_arguments_are_written():
+    show = Tool(name="show", title="Показываю план", description="Show", args=IntroArgs, handler=_show)
+    llm = FakeLLM(rounds=[[ToolStarting("show"), call("show", '{"intro": "Готово"}')]])
+
+    events = run(llm, ToolRegistry([show]))
+
+    kinds = [e["type"] for e in events]
+    assert kinds.index("tool_preparing") < kinds.index("tool_start")
+    assert next(e for e in events if e["type"] == "tool_preparing") == {
+        "type": "tool_preparing",
+        "name": "show",
+        "title": "Показываю план",
+    }
 
 
 def test_should_force_a_final_answer_without_tools_after_the_round_limit():

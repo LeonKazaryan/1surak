@@ -10,6 +10,7 @@ vi.mock('@/api/client', () => ({
   fetchChatMeta: vi.fn(),
   fetchChatMessages: vi.fn(),
   deleteChat: vi.fn(),
+  fetchMemory: vi.fn().mockRejectedValue(new Error('offline')),
 }))
 
 function renderAt(path: string) {

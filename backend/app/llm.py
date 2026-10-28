@@ -21,6 +21,14 @@ class TextDelta:
 
 
 @dataclass(frozen=True)
+class ToolStarting:
+    """The model has begun a call to this tool and is still writing its arguments: a long intro takes seconds,
+    and the screen can say what is coming meanwhile."""
+
+    name: str
+
+
+@dataclass(frozen=True)
 class ToolCall:
     id: str
     name: str
@@ -36,7 +44,7 @@ class Usage:
     cached: int = 0
 
 
-LLMEvent = TextDelta | ToolCall | Usage
+LLMEvent = TextDelta | ToolStarting | ToolCall | Usage
 
 # OpenAI routes requests with the same key to the same cache, so the shared prefix (tools and system prompt)
 # is cached across chats, not only within one.
@@ -108,6 +116,8 @@ class OpenAICompatibleLLM:
         async for event in response:
             if event.type == "response.output_text.delta":
                 yield TextDelta(event.delta)
+            elif event.type == "response.output_item.added" and event.item.type == "function_call":
+                yield ToolStarting(event.item.name)
             elif event.type == "response.output_item.done" and event.item.type == "function_call":
                 calls.append(
                     ToolCall(id=event.item.call_id, name=event.item.name, arguments=event.item.arguments)
@@ -158,8 +168,11 @@ class OpenAICompatibleLLM:
                     call["id"] = fragment.id
                 function = fragment.function
                 if function is not None:
+                    named = bool(call["name"])
                     call["name"] += function.name or ""
                     call["arguments"] += function.arguments or ""
+                    if call["name"] and not named:  # the name comes first, the arguments take a while
+                        yield ToolStarting(call["name"])
 
         for index in sorted(calls):
             call = calls[index]

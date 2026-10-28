@@ -102,3 +102,15 @@ describe('rehydrateTrace', () => {
     expect(steps).toEqual([expect.objectContaining({ title: 'Шаг А', status: 'done', resultLine: 'ok' })])
   })
 })
+
+describe('a tool announced while its arguments are written', () => {
+  it('should show it running at once and fill in its arguments when it starts', () => {
+    const announced = applyTraceEvent([], { type: 'tool_preparing', name: 'show_trip', title: 'Показываю план' })
+    expect(announced).toEqual([expect.objectContaining({ name: 'show_trip', status: 'running', preparing: true })])
+
+    const started = applyTraceEvent(announced, { type: 'tool_start', name: 'show_trip', title: 'Показываю план', args: { intro: 'Собрал' } })
+    expect(started).toHaveLength(1) // the same step, not a second one
+    expect(started[0]).toEqual(expect.objectContaining({ args: { intro: 'Собрал' }, preparing: false, status: 'running' }))
+  })
+})
+

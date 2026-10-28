@@ -11,6 +11,43 @@ export interface ChatRequest {
   origin_known?: boolean
   /** The currency picked on the start screen; omitted to follow the departure city. */
   currency?: string
+  /** The browser's other chats: the traveller's earlier trips, which the agent may offer, never apply. */
+  history?: string[]
+  /** Facts the traveller hid on «Что я о вас помню». */
+  forget?: string[]
+}
+
+/** Something the traveller's earlier trips say about them, with the trip it comes from. */
+export interface MemoryFact {
+  /** «party», «budget», «wish:с видом на море»: sent back in `forget` to hide it. */
+  key: string
+  /** «Кто едет» */
+  label: string
+  /** «вдвоём + ребёнок 6 лет» */
+  text: string
+  /** «Хургада · ноябрь» */
+  source: string
+  chat_id: string
+}
+
+/** An idea on the start screen: a message to send, or an earlier trip to open. */
+export interface Idea {
+  label: string
+  query?: string | null
+  chat_id?: string | null
+  /** What in memory it comes from: «бронь 1S-ABC234», «помню: вдвоём + ребёнок 6 лет». */
+  why?: string | null
+}
+
+export interface MemoryResponse {
+  facts: MemoryFact[]
+  ideas: Idea[]
+}
+
+/** A quick reply from the traveller's earlier trips, once per trip: «Как в прошлый раз: с видом на море». */
+export interface MemoryNudge {
+  text: string
+  source: string
 }
 
 export type TripKind = 'sea' | 'mountains' | 'city' | 'nature' | 'ski'
@@ -67,11 +104,27 @@ export interface ClarifyPrefill {
   budget_total?: number | null
 }
 
+/** What an earlier trip answered to a question, offered on its card as «Как в прошлый раз». */
+interface Recalled {
+  /** «вдвоём + ребёнок 6 лет» */
+  text: string
+  /** «Хургада · ноябрь» */
+  source: string
+}
+
+export interface ClarifyRemembered {
+  travelers?: Recalled & { adults: number; children: number; children_ages: number[] }
+  budget?: Recalled & { budget_level?: number; budget_total?: number; budget_currency?: string }
+  visa?: Recalled & { visa_free_only: boolean }
+}
+
 export interface ClarifyEvent {
   type: 'clarify'
   questions: ClarifyQuestion[]
   prefill: ClarifyPrefill
   currency?: Currency
+  /** From the traveller's earlier trips, per question: one tap fills it, nothing is filled by itself. */
+  remembered?: ClarifyRemembered
 }
 
 export interface DestinationClimate {
@@ -643,6 +696,7 @@ export interface TripStatus {
   /** The tickets were found more than a day ago. */
   stale: boolean
   dates_passed: boolean
+  nudge?: MemoryNudge | null
 }
 
 /** How a card's price moved since the last check: positive got dearer. */
@@ -662,6 +716,8 @@ export interface ChatStreamDone extends Partial<TripStatus> {
 export type ChatStreamEvent =
   | { type: 'assistant_token'; text: string }
   | { type: 'assistant_note'; text: string }
+  /** The model began a call and is still writing its arguments: the screen says what is coming. */
+  | { type: 'tool_preparing'; name: string; title?: string }
   | { type: 'tool_start'; name: string; title?: string; args?: Record<string, unknown> }
   | { type: 'tool_end'; name: string; output_preview?: string; facts?: ToolFact[] }
   | { type: 'brief'; passport: TripPassport }
