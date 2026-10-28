@@ -184,7 +184,7 @@ async def stream_reply(
         origin = home.name  # the agent is told the city its tickets really fly from
     tools = (tools or ToolRegistry()).extended(
         [
-            *trip_tools(trip, sessionmaker, flights=flights),
+            *trip_tools(trip, sessionmaker, flights=flights, hotels=hotels),
             *plan_tools(trip, sessionmaker, flights=flights, hotels=hotels),
         ]
     )

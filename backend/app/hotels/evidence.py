@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.catalog.catalog import Place
 from app.facts.model import TIERS, Fact
 from app.facts.repository import list_facts_many, save_facts
+from app.hotels.amenities import need_of
 from app.kb.page import PageReader, _words
 from app.kb.text import sections
 from app.kb.web import WebSearch, excluded
@@ -75,13 +76,26 @@ KNOWN_FOR = timedelta(days=90)
 UNKNOWN_FOR = timedelta(days=14)
 
 
+def _web_checked(wish: str) -> bool:
+    return any(stem in wish.casefold() for stem in HOTEL_WISH_STEMS)
+
+
 def hotel_wishes(words: list[str] | None) -> list[str]:
-    """The wishes about the hotel or the room, in the guest's words: these are checked hotel by hotel."""
-    return [
-        w
-        for w in words or []
-        if any(stem in w.casefold() for stem in HOTEL_WISH_STEMS) and not PER_NIGHT.search(w)
-    ][:MAX_WISHES]
+    """The wishes about the hotel or the room, in the guest's words: these are checked hotel by hotel, on the rooms
+    on sale (amenities.py: the meal plan and the refund too) or on the hotel's site and reviews."""
+    found, needs = [], set()
+    for w in words or []:
+        need = need_of(w)
+        if PER_NIGHT.search(w) or not (need or _web_checked(w)) or (need and need.key in needs):
+            continue  # «с ванной» and «отель с ванной» are one wish
+        found.append(w)
+        needs.add(need.key if need else None)
+    return found[:MAX_WISHES]
+
+
+def web_wishes(wishes: list[str]) -> list[str]:
+    """The ones a hotel's site and reviews can answer: not the meal plan or the refund, which only a rate knows."""
+    return [w for w in wishes if _web_checked(w)]
 
 
 @dataclass(frozen=True)

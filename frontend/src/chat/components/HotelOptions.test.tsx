@@ -47,6 +47,29 @@ describe('HotelOptionsCards', () => {
     expect(screen.queryByText(/завтраки/)).toBeNull() // the meal plan is not known yet: not claimed
   })
 
+  it('should show a live offer: the photos, the room, the rating and the refund deadline, no «около»', () => {
+    const live = hotel({
+      price_estimate: false,
+      terms_known: true,
+      rating: 9.4,
+      reviews: 841,
+      photos: ['https://static.cupid.travel/rooms/1.jpg', 'https://static.cupid.travel/hotels/1.jpg'],
+      room: { name: 'Guest room, 1 King, Ocean view', size_m2: 41, beds: null, view: 'вид на океан', amenities: [], photos: 1 },
+      cancel_until: '2026-12-07',
+      price_source: 'LiteAPI',
+      sandbox: false,
+    })
+    render(<HotelOptionsCards widget={{ ...WIDGET, hotels: [live] }} canPick onPick={() => {}} />)
+
+    expect(screen.getByRole('button', { name: 'Фото 1 из 2, ваш номер: открыть' })).toBeInTheDocument()
+    expect(screen.getByText('Guest room, 1 King, Ocean view').parentElement).toHaveTextContent('· 41 м² · вид на океан')
+    expect(screen.getByText('9,4')).toHaveAttribute('title', '841 отзыв')
+    expect(screen.getByText('Бесплатная отмена до 7 декабря')).toBeInTheDocument()
+    expect(screen.queryByText(/около/)).toBeNull()
+    expect(screen.queryByText('цена ориентировочная')).toBeNull()
+    expect(screen.getByText('Цена и фото: LiteAPI на ваши даты')).toBeInTheDocument()
+  })
+
   it('should ask for the picked hotel by name', async () => {
     const onPick = vi.fn()
     render(<HotelOptionsCards widget={WIDGET} canPick onPick={onPick} />)

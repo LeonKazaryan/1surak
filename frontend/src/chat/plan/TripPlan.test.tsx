@@ -126,6 +126,47 @@ describe('TripPlan', () => {
     expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
   })
 
+  it('should show a live hotel: the booked room first, its photos, the price for the dates and the refund deadline', async () => {
+    const stop = PLAN.stops[0]
+    const live = {
+      ...stop.hotel,
+      demo: false,
+      real: true,
+      price_estimate: false,
+      terms_known: true,
+      meal_label: 'завтраки',
+      reasons: ['4★', 'бесплатная отмена'],
+      photos: ['https://static.cupid.travel/rooms/1.jpg', 'https://static.cupid.travel/rooms/2.jpg', 'https://static.cupid.travel/hotels/1.jpg'],
+      room: { name: 'Superior Sea View Double Room', size_m2: 28, beds: '1 двуспальная кровать', view: 'вид на море', amenities: ['ванна', 'балкон'], photos: 2 },
+      scores: [{ label: 'Расположение', score: 9.1 }],
+      cancel_until: '2026-11-02',
+      price_source: 'LiteAPI',
+      sandbox: true,
+      evidence: [{ wish: 'с видом на море', verdict: 'yes' as const, quote: 'Superior Sea View Double Room', note: null, source: 'LiteAPI', source_url: null }],
+    }
+    renderPlan({}, { ...PLAN, stops: [{ ...stop, hotel: live }, ...PLAN.stops.slice(1)] })
+
+    const stay = screen.getByRole('region', { name: 'Где живёте' })
+    const room = within(stay).getByText('Ваш номер', { selector: 'p' }).parentElement!
+    expect(room).toHaveTextContent('Superior Sea View Double Room28 м² · 1 двуспальная кровать · вид на море')
+    expect(within(stay).getByRole('list', { name: 'В номере' })).toHaveTextContent('ваннабалкон')
+    expect(within(stay).getByText('Бесплатная отмена до 2 ноября')).toBeInTheDocument()
+    expect(within(stay).getByText('тестовая цена')).toBeInTheDocument()
+    expect(within(stay).getByText('Цена и фото: LiteAPI на ваши даты · тестовый режим')).toBeInTheDocument()
+    expect(within(stay).queryByText(/около .* за ночь/)).toBeNull()
+    expect(within(stay).queryByText('4★')).toBeNull() // the stars are drawn, not said again as a reason
+    expect(within(stay).getByRole('list', { name: 'Оценки гостей' })).toHaveTextContent('Расположение9,1')
+    expect(screen.getByText('Цены отелей LiteAPI в тестовом режиме, оплата имитируется')).toBeInTheDocument()
+
+    await userEvent.click(within(stay).getByRole('button', { name: 'Фото 1 из 3, ваш номер: открыть' }))
+    const viewer = await screen.findByRole('dialog', { name: live.name })
+    expect(within(viewer).getByText('Ваш номер · 1 / 3')).toBeInTheDocument()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(within(viewer).getByText('3 / 3')).toBeInTheDocument()
+    await userEvent.click(within(viewer).getByRole('button', { name: 'Закрыть' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('should show each wish with the proof word for word and its source, and which ones are not confirmed', () => {
     const stop = PLAN.stops[0]
     const sea = { wish: 'с видом на море', verdict: 'yes' as const, quote: 'Потрясающий вид на море открывается с балкона', note: null, source: 'otzovik.com', source_url: 'https://otzovik.com/r' }
@@ -171,6 +212,18 @@ describe('TripPlan', () => {
 
     await userEvent.click(within(stay).getByRole('button', { name: 'Выбрать «Дом у маяка»' }))
     expect(onAsk).toHaveBeenCalledWith('Хочу отель «Дом у маяка» вместо «Морской бриз»')
+  })
+
+  it('should show the first ruled-out hotels and the rest on request', async () => {
+    const stop = PLAN.stops[0]
+    const excluded = ['А', 'Б', 'В', 'Г', 'Д'].map((name) => ({ name, stars: 4, reason: '«с ванной»: на ваши даты таких номеров нет' }))
+    renderPlan({}, { ...PLAN, stops: [{ ...stop, excluded }, ...PLAN.stops.slice(1)] })
+
+    const out = screen.getByRole('list', { name: 'Не предлагаю' })
+    expect(within(out).getAllByRole('listitem')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: 'Ещё 2 отеля не подходят' }))
+    expect(within(out).getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: /не подходят/ })).toBeNull()
   })
 
   it('should walk through the trip day by day', async () => {

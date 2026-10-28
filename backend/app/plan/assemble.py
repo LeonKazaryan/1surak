@@ -411,92 +411,109 @@ async def assemble(
     # the flight home lands in the zone it left from on the way out
     home_tz = outbound.departs.tzinfo if outbound and outbound.departs else None
 
-    planned: list[StopPlan] = []
-    per_stop = []
-    moves: dict[int, Move] = {}
     checks = _ticket_checks(route, fixed, brief)
     checks += [c for leg in route.legs if (c := _smart_check(leg))]
-    cursor: datetime | None = None
     nominals = [start + timedelta(days=sum(route.nights[:i])) for i in range(len(route.stops))]
 
-    async def stay(i: int, place: Place) -> list[Hotel]:
-        found = await hotels.hotels(place, nominals[i], route.nights[i], party)
+    async def hotels_at(
+        i: int, place: Place, check_in: date | None = None, nights: int | None = None
+    ) -> list[Hotel]:
+        found = await hotels.hotels(place, check_in or nominals[i], nights or route.nights[i], party)
         return await hotels.checked(place, found, asked, party, level, (prefer or {}).get(place.id))
 
     # the hotels and the cities' taxi fares at once; the fares are usually cached since the cards were shown
     # usually all cached since the cards were shown: the guide of a city found live, its taxi fare
     stays, fares, found_guides = await asyncio.gather(
-        asyncio.gather(*(stay(i, s.place) for i, s in enumerate(route.stops))),
+        asyncio.gather(*(hotels_at(i, s.place) for i, s in enumerate(route.stops))),
         taxi().fares([s.place.id for s in route.stops], TAXI_WAIT_S),
         asyncio.gather(*(guides().guide(s.place, GUIDE_WAIT_S) for s in route.stops)),
     )
     fare_rubs = {pid: await rates().to_rub(f.amount, f.currency) for pid, f in fares.items() if f}
-    for i, s in enumerate(route.stops):
-        place, info = s.place, place_info(s.place.id)
-        j_in, j_out = (i, i + 1) if home else (i - 1, i)
-        # a smart way is seen from each city by its own end: a train out of here, a flight landing there
-        leg_in = arriving(legs[j_in]) if 0 <= j_in < len(legs) else None
-        leg_out = leaving(legs[j_out]) if 0 <= j_out < len(legs) else None
-        nominal = nominals[i]
-        month = nominal.month
-        pick = choose_hotel(stays[i], party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
-        hotel = pick.best.hotel
-        fare, fare_rub = fares.get(place.id), fare_rubs.get(place.id)
-        ride_in = (
-            transfer_to(hotel, place, info, party, fare, fare_rub)
-            if leg_in and leg_in.mode == "flight"
-            else None
-        )
-        ride_out = (
-            transfer_to(hotel, place, info, party, fare, fare_rub)
-            if leg_out and leg_out.mode == "flight"
-            else None
-        )
-        arrival = _arrival(leg_in, fixed, nominal, cursor, info, hotel.name, ride_in)
-        check_in = (arrival.reached - NIGHT_ENDS).date()
-        if i < len(route.stops) - 1:
-            abroad = route.stops[i + 1].place.country.code != place.country.code
-        else:
-            abroad = place.country.name != origin.country if origin else not place.domestic
-        last = i == len(route.stops) - 1
-        departure = _departure(
-            leg_out, fixed, check_in, route.nights[i], info, abroad, ride_out, hotel.check_out, last
-        )
-        pick = _with_nights(pick, (departure.check_out - check_in).days)
-        stop = StopPlan(s, check_in, departure.check_out, pick, found_guides[i], ride_in, ride_out)
-        if arrival.landing:
-            checks += arrival_checks(arrival.landing, hotel, info, ride_in.minutes if ride_in else 0)
-        if departure.back:
-            checks += departure_checks(
-                departure.back, hotel, info, ride_out.minutes if ride_out else 0, abroad, last
+    base_checks = checks
+    for priced in (False, True):
+        checks, planned, per_stop, stayed = list(base_checks), [], [], []
+        moves: dict[int, Move] = {}
+        cursor: datetime | None = None
+        for i, s in enumerate(route.stops):
+            place, info = s.place, place_info(s.place.id)
+            j_in, j_out = (i, i + 1) if home else (i - 1, i)
+            # a smart way is seen from each city by its own end: a train out of here, a flight landing there
+            leg_in = arriving(legs[j_in]) if 0 <= j_in < len(legs) else None
+            leg_out = leaving(legs[j_out]) if 0 <= j_out < len(legs) else None
+            nominal = nominals[i]
+            month = nominal.month
+            pick = choose_hotel(stays[i], party, wishes, level, route.nights[i], (prefer or {}).get(place.id))
+            hotel = pick.best.hotel
+            fare, fare_rub = fares.get(place.id), fare_rubs.get(place.id)
+            ride_in = (
+                transfer_to(hotel, place, info, party, fare, fare_rub)
+                if leg_in and leg_in.mode == "flight"
+                else None
             )
-        if leg_out and leg_out.mode == "ground" and i < len(route.stops) - 1:
-            text = f"Около {leg_out.hours:g} ч по земле: поезд, автобус или такси после завтрака. Цена оценочная, около {money(_ground_rub(leg_out))} на человека."
-            checks.append(
-                Check("info", f"Переезд {leg_out.origin} → {leg_out.destination}", text, kind="move")
+            ride_out = (
+                transfer_to(hotel, place, info, party, fare, fare_rub)
+                if leg_out and leg_out.mode == "flight"
+                else None
             )
-        if arrival.move and leg_in:
-            moves[j_in] = replace(arrival.move, leg=legs[j_in])  # the whole leg, its parts included
-        if departure.move and leg_out:
-            moves.setdefault(j_out, replace(departure.move, leg=legs[j_out]))
-        if departure.back and leg_out:
-            lands = departure.back.arrives.astimezone(home_tz) if departure.back.arrives and home_tz else None
-            moves.setdefault(j_out, Move(legs[j_out], departure.back.departs, lands))
-        climate = s.climate.get(month, {})
-        stay = Stay(
-            guide=stop.guide,
-            check_in=check_in,
-            check_out=departure.check_out,
-            arrive=arrival.reached,
-            leave=departure.leave,
-            hotel_at=(hotel.lat, hotel.lon),
-            sea="sea" in place.kinds,
-            sea_warm=(climate.get("sea_temp") or 0) >= SEA_WARM_C,
-            all_inclusive=pick.best.rate.meal == "all_inclusive",
-        )
-        per_stop.append((stop, plan_days(stay, party), [*arrival.items, *departure.items]))
-        planned.append(stop)
-        cursor = departure.leave
+            arrival = _arrival(leg_in, fixed, nominal, cursor, info, hotel.name, ride_in)
+            check_in = (arrival.reached - NIGHT_ENDS).date()
+            if i < len(route.stops) - 1:
+                abroad = route.stops[i + 1].place.country.code != place.country.code
+            else:
+                abroad = place.country.name != origin.country if origin else not place.domestic
+            last = i == len(route.stops) - 1
+            departure = _departure(
+                leg_out, fixed, check_in, route.nights[i], info, abroad, ride_out, hotel.check_out, last
+            )
+            pick = _with_nights(pick, (departure.check_out - check_in).days)
+            stayed.append((check_in, (departure.check_out - check_in).days))
+            stop = StopPlan(s, check_in, departure.check_out, pick, found_guides[i], ride_in, ride_out)
+            if arrival.landing:
+                checks += arrival_checks(arrival.landing, hotel, info, ride_in.minutes if ride_in else 0)
+            if departure.back:
+                checks += departure_checks(
+                    departure.back, hotel, info, ride_out.minutes if ride_out else 0, abroad, last
+                )
+            if leg_out and leg_out.mode == "ground" and i < len(route.stops) - 1:
+                text = f"Около {leg_out.hours:g} ч по земле: поезд, автобус или такси после завтрака. Цена оценочная, около {money(_ground_rub(leg_out))} на человека."
+                checks.append(
+                    Check("info", f"Переезд {leg_out.origin} → {leg_out.destination}", text, kind="move")
+                )
+            if arrival.move and leg_in:
+                moves[j_in] = replace(arrival.move, leg=legs[j_in])  # the whole leg, its parts included
+            if departure.move and leg_out:
+                moves.setdefault(j_out, replace(departure.move, leg=legs[j_out]))
+            if departure.back and leg_out:
+                lands = (
+                    departure.back.arrives.astimezone(home_tz) if departure.back.arrives and home_tz else None
+                )
+                moves.setdefault(j_out, Move(legs[j_out], departure.back.departs, lands))
+            climate = s.climate.get(month, {})
+            stay = Stay(
+                guide=stop.guide,
+                check_in=check_in,
+                check_out=departure.check_out,
+                arrive=arrival.reached,
+                leave=departure.leave,
+                hotel_at=(hotel.lat, hotel.lon),
+                sea="sea" in place.kinds,
+                sea_warm=(climate.get("sea_temp") or 0) >= SEA_WARM_C,
+                all_inclusive=pick.best.rate.meal == "all_inclusive",
+            )
+            per_stop.append((stop, plan_days(stay, party), [*arrival.items, *departure.items]))
+            planned.append(stop)
+            cursor = departure.leave
+        # live rates hold for the dates they were asked for: when the stay moved (a night flight lands the next
+        # morning), the hotels are priced again for the nights really spent there, and the stops laid out again
+        moved = [
+            i
+            for i, (check_in, nights) in enumerate(stayed)
+            if any(h.provider for h in stays[i]) and (check_in, nights) != (nominals[i], route.nights[i])
+        ]
+        if priced or not moved:
+            break
+        again = await asyncio.gather(*(hotels_at(i, route.stops[i].place, *stayed[i]) for i in moved))
+        stays = [again[moved.index(i)] if i in moved else found for i, found in enumerate(stays)]
 
     # a flight with no ticket on the plan's day links the live search on that day
     for j, leg in enumerate(legs):

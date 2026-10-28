@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowPathIcon, CheckIcon, ExclamationTriangleIcon } from '@heroicons/react/20/solid'
-import type { BookingEvent, TripPlanEvent } from '@/types/api'
+import type { BookingEvent, PlanHotel, TripPlanEvent } from '@/types/api'
 import { cn } from '@/components/ui/utils'
 import { CurrencyContext, RUB, formatMoney } from '../widgets'
 import { TripArt } from '../components/TripArt'
@@ -110,10 +110,16 @@ function CheckoutBar({ plan, booking, canAct, onCheckout }: CheckoutBarProps) {
         )}
       </div>
       <p className="m-0 mt-1.5 hidden text-[11px] text-faint sm:block">
-        {plan.stops.some((s) => s.hotel.real) ? 'Цены отелей ориентировочные' : 'Отели демонстрационные'}, оплата имитируется
+        {hotelPrices(plan.stops.map((s) => s.hotel))}, оплата имитируется
       </p>
     </div>
   )
+}
+
+/** Whose hotel prices these are, in a few words under the checkout button. */
+function hotelPrices(hotels: PlanHotel[]): string {
+  if (hotels.every((h) => h.price_source)) return hotels.some((h) => h.sandbox) ? 'Цены отелей LiteAPI в тестовом режиме' : 'Цены отелей на ваши даты'
+  return hotels.some((h) => h.real) ? 'Цены отелей ориентировочные' : 'Отели демонстрационные'
 }
 
 interface TripPlanProps {

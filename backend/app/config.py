@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # against the hotel's site and reviews. Off in tests.
     osm_hotels: bool = True
     hotel_wishes: bool = True
+    # Live hotel rates, rooms and photos (LiteAPI). A `sand_…` key gets the provider's test rates, and the plan
+    # says so; without a key the hotels keep the estimates above.
+    lite_api: str = ""
     # Destinations beyond the catalogue: cities the route map flies to, with climate fetched from Open-Meteo
     # in the background (app/destinations). Off in tests. The departure cities whose destinations load first.
     destination_climate: bool = True

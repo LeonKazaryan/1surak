@@ -3,7 +3,8 @@
 Today the only provider is EstimatedOffers: a declared formula on stars, the place's price level and the
 season, calibrated like the demo hotels. Its offers say `kind="estimate"` and `terms_known=False`, so the
 plan shows «цена ориентировочная, условия уточним» and never invents a meal plan or a cancellation rule.
-A real provider (ETG / Ostrovok, any other) returns `kind="real"` offers through the same Protocol.
+A real provider returns `kind="real"` offers through the same Protocol: LiteAPI does (liteapi.py), with the room
+it sells and the exact price of the stay for the whole party.
 """
 
 import hashlib
@@ -29,11 +30,13 @@ class StayQuery:
     nights: int
     adults: int = 2
     children: tuple[int, ...] = ()
+    nationality: str = ""  # a live provider prices by the guest's passport
 
     @property
     def key(self) -> str:
         kids = ",".join(map(str, self.children))
-        return f"{self.check_in.isoformat()}:{self.nights}:{self.adults}:{kids}"
+        key = f"{self.check_in.isoformat()}:{self.nights}:{self.adults}:{kids}"
+        return f"{key}:{self.nationality}" if self.nationality else key
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,11 @@ class Offer:
     terms_known: bool = False  # the meal, cancellation and payment rules are the provider's, not ours
     kind: OfferKind = "estimate"
     source: str = ESTIMATE_SOURCE
+    # a live offer's room and its whole stay for the whole party (night_rub is then the party's night)
+    room: str | None = None
+    room_id: str | None = None
+    stay_rub: int | None = None
+    cancel_until: str | None = None  # ISO date: free to cancel until then
 
     def as_dict(self) -> dict:
         return asdict(self)

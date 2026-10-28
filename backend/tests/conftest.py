@@ -148,6 +148,7 @@ def settings(db_url, static_dir):
         live_rates=False,  # nor the exchange rates
         live_guides=False,  # nor Wikidata and OpenStreetMap
         osm_hotels=False,  # nor Nominatim
+        lite_api="",  # nor LiteAPI
     )
 
 

@@ -405,8 +405,33 @@ export interface HotelEvidence {
   source_url: string | null
 }
 
+/** The room a live offer sells, as the hotel names it; size, beds, view and amenities are said in Russian. */
+export interface PlanRoom {
+  name: string | null
+  size_m2: number | null
+  beds: string | null
+  view: string | null
+  amenities: string[]
+  /** How many of the hotel's `photos` are this room's: they come first. */
+  photos: number
+}
+
+/** A hotel with a live offer (LiteAPI): its photos, the room it sells, the refund deadline and whose price it is. */
+export interface LiveOffer {
+  photos?: string[]
+  room?: PlanRoom | null
+  /** What guests rate it for: «Расположение» 9.1. */
+  scores?: { label: string; score: number }[]
+  /** Free cancellation until this day. */
+  cancel_until?: string | null
+  /** «LiteAPI»: the price is the provider's for these dates; absent for an estimate. */
+  price_source?: string | null
+  /** The provider's test rates: the hotel and room are real, the price is for trying it out. */
+  sandbox?: boolean
+}
+
 /** One hotel of search_hotels: real ones carry their photo and source; the price is for the whole stay. */
-export interface HotelOption {
+export interface HotelOption extends LiveOffer {
   id: string
   name: string
   stars: number
@@ -425,6 +450,8 @@ export interface HotelOption {
   /** The hotel already in the plan. */
   current: boolean
   evidence?: HotelEvidence[]
+  rating?: number | null
+  reviews?: number | null
 }
 
 export interface HotelOptionsEvent {
@@ -502,7 +529,7 @@ export interface PlanDay {
 }
 
 /** A demo hotel, shaped like an Ostrovok offer: prices in roubles for all rooms of the party. */
-export interface PlanHotel {
+export interface PlanHotel extends LiveOffer {
   id: string
   name: string
   stars: number

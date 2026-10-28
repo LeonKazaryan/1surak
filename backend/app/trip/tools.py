@@ -6,6 +6,7 @@ They are built per chat around a TripState, so whatever the model learns survive
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -49,6 +50,9 @@ from app.trip.routes import (
     route_for_model,
 )
 from app.visas import fees
+
+if TYPE_CHECKING:
+    from app.hotels import HotelSource
 
 SLOT_TITLES: dict[Slot, str] = {
     "origin": "Откуда летите?",
@@ -208,6 +212,7 @@ def trip_tools(
     sessionmaker: async_sessionmaker[AsyncSession],
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     flights: Flights | None = None,
+    hotels: "HotelSource | None" = None,
 ) -> list[Tool]:
     catalog = load_catalog()
     flights = flights or NoFlights()
@@ -391,6 +396,8 @@ def trip_tools(
         # for the trip plan, if one of them is picked: the city's taxi fare and its guide
         await taxi().warm(p.id for p in on_cards)
         await guides().warm(p.id for p in on_cards)
+        if hotels:  # its hotels and their rooms: the plan then only waits for the rates
+            hotels.warm(on_cards)
         cards, unknown = [], []
         for pick in args.picks:
             if pick.route:

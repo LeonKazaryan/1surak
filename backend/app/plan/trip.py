@@ -7,6 +7,7 @@ from datetime import date, datetime
 from app.catalog.catalog import Place
 from app.catalog.search import Snapshot
 from app.flights.dictionary import airline_name
+from app.hotels.card import live_card
 from app.maps import google_maps_url
 from app.money import money
 from app.photos import place_photo
@@ -124,7 +125,8 @@ def choice_view(c: HotelChoice) -> dict:
         "check_out": h.check_out.strftime("%H:%M"),
         "reasons": c.reasons,
         "misses": c.misses,
-        # a real hotel: its name, place, stars and photo are real, the price is our estimate until booking
+        # a real hotel: its name, place, stars and photo are real; the price is our estimate until booking unless
+        # a live offer priced it (then its room, photos and refund deadline come too)
         "demo": not h.real,
         "real": h.real,
         "stars_known": h.stars_known,
@@ -135,6 +137,7 @@ def choice_view(c: HotelChoice) -> dict:
         "price_estimate": c.rate.estimate or not h.real,
         "terms_known": c.rate.terms_known,
         "evidence": [asdict(e) for e in h.evidence],
+        **live_card(h, c.rate),
     }
 
 
@@ -163,6 +166,18 @@ def _choice_for_model(c: HotelChoice) -> dict:
         "why": c.reasons,
         "misses": c.misses,
         "wishes": [wish_for_model(e) for e in h.evidence],
+    } | _offer_for_model(c)
+
+
+def _offer_for_model(c: HotelChoice) -> dict:
+    """A live offer: the room it sells, until when it is free to cancel, and whose rates these are."""
+    if not c.hotel.provider:
+        return {}
+    rate = c.rate
+    return {
+        "room": rate.room,
+        "free_cancel_until": rate.cancel_until.isoformat() if rate.cancel_until else None,
+        "price_source": f"{c.hotel.provider} (test rates)" if c.hotel.sandbox else c.hotel.provider,
     }
 
 

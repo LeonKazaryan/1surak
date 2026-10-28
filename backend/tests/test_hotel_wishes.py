@@ -701,10 +701,14 @@ def test_should_not_list_the_chosen_hotel_as_ruled_out_when_every_hotel_says_no(
     ]
 
 
-def test_should_check_at_most_five_wishes():
-    wishes = [f"с видом на море {i}" for i in range(8)]
+def test_should_check_at_most_five_wishes_and_each_once():
+    wishes = ["с видом на море", "с ванной", "балкон", "бассейн", "кухня", "парковка", "спа", "фитнес"]
 
     assert hotel_wishes(wishes) == wishes[:5]
+    assert hotel_wishes(["с ванной", "отель с видом на море", "отель с ванной"]) == [
+        "с ванной",
+        "отель с видом на море",
+    ]
 
 
 def test_should_rule_out_a_hotel_only_on_its_own_word_and_rank_a_bad_review_lower():

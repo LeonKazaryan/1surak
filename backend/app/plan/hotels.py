@@ -9,19 +9,26 @@ import hashlib
 import math
 import random
 from dataclasses import dataclass, field
-from datetime import time
-from typing import Literal
+from datetime import date, time
+from typing import Any, Literal
 
 from app.catalog.catalog import Place
 
-Meal = Literal["room_only", "breakfast", "half_board", "all_inclusive"]
+Meal = Literal["room_only", "breakfast", "half_board", "full_board", "all_inclusive"]
 MEAL_LABELS: dict[Meal, str] = {
     "room_only": "без питания",
     "breakfast": "завтраки",
     "half_board": "завтраки и ужины",
+    "full_board": "трёхразовое питание",
     "all_inclusive": "всё включено",
 }
-MEAL_FACTOR: dict[Meal, float] = {"room_only": 1.0, "breakfast": 1.1, "half_board": 1.3, "all_inclusive": 1.6}
+MEAL_FACTOR: dict[Meal, float] = {
+    "room_only": 1.0,
+    "breakfast": 1.1,
+    "half_board": 1.3,
+    "full_board": 1.45,
+    "all_inclusive": 1.6,
+}
 # A room for two, 3 stars, average season, by the catalogue price level. Anchored on RUTI's Russian averages
 # (8-9 thousand a night) and Türkiye, Dubai and Thailand ADR figures (docs/07-data-sources.md).
 NIGHT_BASE_RUB = {1: 4000, 2: 6500, 3: 11000}
@@ -32,6 +39,7 @@ ALL_INCLUSIVE_COUNTRIES = {"TR", "EG", "TN", "CU", "MV", "MU"}
 EXTRA_GUEST_FACTOR = 0.2
 ROOM_SIZE = 3  # two adults and a child sleep in one room; four people need two
 HOTELS_PER_PLACE = 6
+ADULTS_ONLY = "только для взрослых, а с вами ребёнок"
 
 NAMES = (
     "Лазурная бухта",
@@ -68,16 +76,25 @@ WISH_WORDS = {
 @dataclass(frozen=True)
 class Rate:
     meal: Meal
-    night_rub: int  # a room for two, one night
+    night_rub: int  # a room for two, one night; with for_party, every room of the party
     free_cancel_days: int | None  # free cancellation until this many days before arrival; None: no refund
     pay_at_hotel: bool
     terms_known: bool = True  # False for an estimate: the meal, refund and payment rules are not known yet
     estimate: bool = False  # the price is our estimate, not a provider's offer
+    # A provider's live offer: the room it sells, the exact price of the stay it was asked for, and until when
+    # it is free to cancel.
+    room: str | None = None  # as the hotel names it: «Studio Ocean View»
+    room_id: str | None = None  # the provider's room, for its photos, view and amenities
+    for_party: bool = False  # night_rub already covers every guest in every room
+    stay_rub: int | None = None
+    stay_nights: int | None = None
+    cancel_until: date | None = None
 
 
 Verdict = Literal["yes", "no", "unknown"]
 SITE = "сайт отеля"
 OSM_SOURCE = "OpenStreetMap"
+LITEAPI = "LiteAPI"  # the rooms on sale, their view and amenities, the hotel's facilities and rules
 
 
 @dataclass(frozen=True)
@@ -126,6 +143,14 @@ class Hotel:
     website: str | None = None
     tags: dict[str, str] = field(default_factory=dict, hash=False, compare=False)
     evidence: tuple[Evidence, ...] = field(default=(), hash=False, compare=False)
+    # A hotel with live offers (app/hotels/liteapi.py): its own photos, its rooms by the provider's room id, and
+    # what guests rate it for. `sandbox`: the offers are the provider's test rates.
+    provider: str | None = None
+    provider_id: str | None = None
+    sandbox: bool = False
+    gallery: tuple[str, ...] = field(default=(), hash=False, compare=False)
+    rooms: dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
+    scores: tuple[tuple[str, float], ...] = field(default=(), hash=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -167,6 +192,9 @@ class HotelChoice:
 
     @property
     def total_rub(self) -> int:
+        # the provider's own total when the stay is the one it priced, not a night's price times the nights
+        if self.rate.stay_rub and self.rate.stay_nights == self.nights:
+            return self.rate.stay_rub
         return self.night_rub * self.nights
 
 
@@ -185,6 +213,8 @@ def hundreds(value: float) -> int:
 
 def party_night(rate: Rate, party: Party) -> int:
     """One night for the whole party: enough rooms, and a share more for every guest beyond two a room."""
+    if rate.for_party:
+        return rate.night_rub
     extra = 1 + EXTRA_GUEST_FACTOR * max(0, party.guests - 2 * party.rooms)
     return hundreds(rate.night_rub * party.rooms * extra)
 
@@ -287,7 +317,9 @@ def hotels_for(place: Place, month: int | None) -> list[Hotel]:
 
 
 def _rate(hotel: Hotel, all_inclusive: bool) -> Rate:
-    by_meal = {r.meal: r for r in hotel.rates}
+    by_meal: dict[Meal, Rate] = {}
+    for r in sorted(hotel.rates, key=lambda r: r.night_rub):  # the cheapest room of each meal plan
+        by_meal.setdefault(r.meal, r)
     if all_inclusive and "all_inclusive" in by_meal:
         return by_meal["all_inclusive"]
     return by_meal.get("breakfast") or hotel.rates[0]
@@ -302,6 +334,13 @@ def _explain(
             reasons.append("в центре")
         if hotel.stars_known:
             reasons.append(f"{hotel.stars}★")
+        if hotel.provider:  # a live offer: the guests' rating and the rate's own terms
+            if hotel.rating and hotel.rating >= 9:
+                reasons.append(f"оценка гостей {hotel.rating:.1f}".replace(".", ","))
+            if rate.free_cancel_days is not None:
+                reasons.append("бесплатная отмена")
+            else:
+                misses.append("без бесплатной отмены")
         return reasons, misses
     if party.children_ages:
         (reasons if hotel.kids_club else misses).append(
@@ -359,9 +398,7 @@ def choose_hotel(
     place_ai = any(r.meal == "all_inclusive" for h in hotels for r in h.rates)
     # families in an all-inclusive resort get it by default: that is how these trips are sold there
     all_inclusive = wishes.all_inclusive or (place_ai and bool(party.children_ages))
-    excluded = [
-        (h, "только для взрослых, а с вами ребёнок") for h in hotels if h.adults_only and party.children_ages
-    ]
+    excluded = [(h, ADULTS_ONLY) for h in hotels if h.adults_only and party.children_ages]
     unmet = []
     if all(h.real for h in hotels):
         return _choose_real(hotels, party, wishes, level, nights, prefer)
@@ -432,12 +469,14 @@ def _said_no(e: Evidence) -> str:
     quote = (
         e.quote if not e.quote or len(e.quote) <= SAID_NO_CHARS else f"{e.quote[:SAID_NO_CHARS].rstrip()}…"
     )
-    return f"«{e.wish}»: «{quote}» ({e.source})" if quote else f"«{e.wish}»: нет"
+    if quote:
+        return f"«{e.wish}»: «{quote}» ({e.source})"
+    return f"«{e.wish}»: {e.note}" if e.note else f"«{e.wish}»: нет"
 
 
 def _rules_out(e: Evidence) -> bool:
     """Only the hotel's own word rules it out: a review's «no» is one guest's story, so it only ranks lower."""
-    return e.verdict == "no" and e.source in (SITE, OSM_SOURCE)
+    return e.verdict == "no" and e.source in (SITE, OSM_SOURCE, LITEAPI)
 
 
 def _choose_real(
@@ -454,6 +493,9 @@ def _choose_real(
     excluded = [
         (h, _said_no(no)) for h in hotels if (no := next((e for e in h.evidence if _rules_out(e)), None))
     ]
+    if party.children_ages:
+        said = {h.id for h, _ in excluded}
+        excluded += [(h, ADULTS_ONLY) for h in hotels if h.adults_only and h.id not in said]
     ruled_out = {h.id for h, _ in excluded}
     allowed = [h for h in hotels if h.id not in ruled_out]
     if not allowed:  # every hotel said no: the plan still needs one, and the unmet line says why
@@ -484,7 +526,13 @@ def _choose_real(
 
     ranked = sorted(allowed, key=lambda h: -fit(h))
     best = next((h for h in allowed if h.id == prefer), ranked[0])
+
+    def confirmed(h: Hotel) -> int:
+        return sum(e.verdict == "yes" for e in h.evidence)
+
+    # the other options keep the wishes the best one has, where any hotel can: cheaper, not worse
     rest = [h for h in ranked if h.id != best.id]
+    rest = [h for h in rest if confirmed(h) >= confirmed(best)] or rest
     cheaper = min(
         (h for h in rest if rates[h.id].night_rub < rates[best.id].night_rub),
         key=lambda h: rates[h.id].night_rub,

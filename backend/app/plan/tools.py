@@ -13,6 +13,7 @@ from app.catalog.catalog import load_catalog
 from app.destinations import snapshots_by_id
 from app.flights import Flights, NoFlights, city, current_origin
 from app.hotels import HotelSource
+from app.hotels.card import live_card
 from app.hotels.evidence import hotel_wishes
 from app.maps import google_maps_url
 from app.money import current_currency, money
@@ -38,6 +39,14 @@ def _central(h: Hotel) -> bool:
     return h.area in ("в центре", "в историческом центре")
 
 
+def _price_note(cards: list[dict]) -> str:
+    if not cards or not all(c.get("price_source") for c in cards):
+        return "Prices are estimates for real hotels: say so once."
+    if any(c.get("sandbox") for c in cards):
+        return "Prices are live LiteAPI rates for these dates, from its sandbox (test rates): say so once."
+    return "Prices are live rates for these dates, rooms and refund terms included."
+
+
 def _hotel_card(h: Hotel, rate, night: int, nights: int, current: bool) -> dict:
     """One hotel as the «more hotels» card draws it; real ones carry their photo and source."""
     return {
@@ -59,6 +68,9 @@ def _hotel_card(h: Hotel, rate, night: int, nights: int, current: bool) -> dict:
         "terms_known": rate.terms_known,
         "current": current,
         "evidence": [asdict(e) for e in h.evidence],
+        "rating": h.rating,
+        "reviews": h.reviews,
+        **live_card(h, rate),
     }
 
 
@@ -72,7 +84,8 @@ BUILD_DESCRIPTION = (
 )
 HOTELS_DESCRIPTION = (
     "More hotels in one place of the trip, for its dates and party: real hotels with their stars, photo and "
-    "distance from the centre, and the price for the whole stay (an estimate, terms confirmed at booking). "
+    "distance from the centre, and the price for the whole stay: a live rate with its room and refund terms "
+    "where the provider has one, else an estimate with terms confirmed at booking. "
     "Use it when the user wants other hotels, a cheaper or a central one, or more stars. The list is shown as "
     "cards; the user picks one, then call build_trip with `hotels` set to that hotel's name."
 )
@@ -251,11 +264,12 @@ def plan_tools(
             "hotels": [
                 {k: c[k] for k in ("name", "stars", "area", "total", "current")}
                 | {"price_is_estimate": c["price_estimate"]}
+                | ({"room": c["room"]["name"]} if c.get("room") else {})
                 | ({"wishes": [wish_for_model(e) for e in h.evidence]} if h.evidence else {})
                 for c, (h, _) in zip(cards, shown, strict=True)
             ],
             "note": "The hotels are on screen as cards. When the user picks one, call build_trip with `hotels` "
-            "set to its name. Prices are estimates for real hotels: say so once.",
+            "set to its name. " + _price_note(cards),
         }
         if said_no:
             result["ruled_out"] = [

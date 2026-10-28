@@ -5,11 +5,12 @@ import { motion } from 'motion/react'
 import { MapPinIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { HotelOption, HotelOptionsEvent } from '@/types/api'
-import { HotelPhoto, SourceBadge } from '../plan/PlanStay'
+import { HotelGallery } from '../plan/HotelGallery'
+import { HotelPhoto, PriceSource, SourceBadge } from '../plan/PlanStay'
 import { Stars } from '../plan/planParts'
-import { nightsText } from '../plan/planFormat'
+import { dayText, nightsText } from '../plan/planFormat'
 import { WishChips } from '../plan/WishProof'
-import { CurrencyContext, RUB, formatMoney } from '../widgets'
+import { CurrencyContext, RUB, formatMoney, plural } from '../widgets'
 
 function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: number; canPick: boolean; onPick: () => void }) {
   const currency = useContext(CurrencyContext)
@@ -23,10 +24,22 @@ function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: 
         hotel.current ? 'border-primary' : 'border-border',
       )}
     >
-      {hotel.photo && <HotelPhoto photo={hotel.photo} name={hotel.name} />}
+      {hotel.photos?.length ? (
+        <HotelGallery photos={hotel.photos} roomPhotos={hotel.room?.photos} name={hotel.name} className="-mx-4 -mt-4 h-44" />
+      ) : (
+        hotel.photo && <HotelPhoto photo={hotel.photo} name={hotel.name} />
+      )}
       <div className="flex items-start gap-2">
         <h4 className="m-0 min-w-0 flex-1 text-[15px] leading-snug font-semibold text-foreground">{hotel.name}</h4>
         <SourceBadge hotel={hotel} />
+        {hotel.rating != null && (
+          <span
+            title={hotel.reviews ? `${hotel.reviews.toLocaleString('ru-RU')} ${plural(hotel.reviews, ['отзыв', 'отзыва', 'отзывов'])}` : undefined}
+            className="shrink-0 rounded-lg bg-highlight px-1.5 py-0.5 text-[12px] font-semibold text-white tabular-nums"
+          >
+            {hotel.rating.toLocaleString('ru-RU', { minimumFractionDigits: 1 })}
+          </span>
+        )}
       </div>
       <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
         {hotel.stars_known && <Stars count={hotel.stars} />}
@@ -40,6 +53,12 @@ function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: 
           </a>
         )}
       </p>
+      {hotel.room?.name && (
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+          <span className="font-medium text-foreground">{hotel.room.name}</span>
+          {[hotel.room.size_m2 && `${hotel.room.size_m2} м²`, hotel.room.view].filter(Boolean).map((fact) => ` · ${fact}`)}
+        </p>
+      )}
       <WishChips evidence={hotel.evidence} />
       <div className="mt-auto flex items-end gap-3 pt-1">
         <span className="min-w-0 flex-1">
@@ -50,6 +69,7 @@ function Option({ hotel, index, canPick, onPick }: { hotel: HotelOption; index: 
           <span className="block text-[12px] text-muted-foreground">
             {formatMoney(hotel.night_rub, currency)} за ночь{hotel.terms_known ? ` · ${hotel.meal_label}` : ''}
           </span>
+          {hotel.cancel_until && <span className="block text-[12px] font-medium text-[#3f7d22]">{`Бесплатная отмена до ${dayText(hotel.cancel_until)}`}</span>}
         </span>
         {hotel.current ? (
           <span className="shrink-0 rounded-full bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground">В плане</span>
@@ -82,6 +102,7 @@ export function HotelOptionsCards({ widget, canPick, onPick }: { widget: HotelOp
         ))}
       </ul>
       {widget.hotels.some((hotel) => fromOsm(hotel.source_url)) && <DataCredit sources={['osm']} className="mt-2" />}
+      {widget.hotels[0] && <PriceSource hotel={widget.hotels[0]} className="mt-2" />}
     </CurrencyContext.Provider>
   )
 }

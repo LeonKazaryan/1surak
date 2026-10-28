@@ -28,6 +28,8 @@ from app.ground.yandex import YandexRasp
 from app.hotels import EstimatedOffers, HotelSource
 from app.hotels.cache import CachedOffers, OfferStore
 from app.hotels.evidence import EvidenceFinder, WishJudge
+from app.hotels.liteapi import LiteApi, LiteOffers
+from app.hotels.live import LiveStays
 from app.hotels.osm import OsmHotels
 from app.kb.embeddings import Embedder, FastEmbedder
 from app.kb.page import page_tools_for
@@ -45,6 +47,7 @@ from app.tools import ToolRegistry, build_registry
 from app.visas import NoFees, VisaFees
 from app.visas import configure as configure_fees
 from app.visas.router import router as visa_router
+from app.visas.rules import current_passport
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -122,17 +125,27 @@ def create_app(
             if settings.hotel_wishes and pages and isinstance(agent_llm, OpenAICompatibleLLM)
             else None
         )
+        # live rates, rooms and photos where LiteAPI has them; the estimates above everywhere else
+        stays = None
+        if settings.lite_api:
+            lite = LiteApi(settings.lite_api, LookupStore(app.state.sessionmaker))
+            live_offers = CachedOffers(LiteOffers(lite), OfferStore(app.state.sessionmaker))
+            stays = LiveStays(lite, live_offers, current_passport)
+            log.info("Hotels: live LiteAPI rates%s", " (sandbox)" if lite.sandbox else "")
         app.state.hotels = HotelSource(
             hotel_offers,
             live=OsmHotels(app.state.sessionmaker) if settings.osm_hotels else None,
             evidence=wishes,
+            stays=stays,
         )
-        hotel_refresher = None
+        hotel_refreshers = []
         if settings.fare_refresh_minutes > 0:
             every = timedelta(minutes=settings.fare_refresh_minutes)
-            hotel_refresher = asyncio.create_task(
-                hotel_offers.keep_fresh(every, settings.fare_refresh_budget)
-            )
+            hotel_refreshers = [
+                asyncio.create_task(offers.keep_fresh(every, settings.fare_refresh_budget))
+                for offers in (hotel_offers, stays and stays.offers)
+                if offers
+            ]
         climate = ClimateFetcher(app.state.sessionmaker) if settings.destination_climate else None
         # where people fly from each city now, from Aviasales; the stale route map only fills the gaps
         token = settings.travelpayouts_token
@@ -183,10 +196,12 @@ def create_app(
         if isinstance(app.state.llm, StubLLM):
             log.warning("LLM_API_KEY or LLM_MODEL is not set, chat replies come from the stub")
         yield
-        for task in (refresher, hotel_refresher):
+        for task in (refresher, *hotel_refreshers):
             if task:
                 task.cancel()
         await hotel_offers.settle()
+        if stays:
+            await stays.settle()
         await visa_fees.settle()
         await taxi_fares.settle()
         await city_guides.settle()
