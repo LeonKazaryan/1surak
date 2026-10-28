@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from typing import Any, Protocol
 from openai import AsyncOpenAI
 
 from app.config import Settings
+
+log = logging.getLogger(__name__)
 
 STUB_REPLY = (
     "LLM пока не подключён: задайте LLM_API_KEY и LLM_MODEL в .env и перезапустите сервис. "
@@ -68,12 +71,43 @@ class StubLLM:
             yield TextDelta(token)
 
 
+class ModelStalled(TimeoutError):
+    """The model sent nothing for too long, or took too long in all."""
+
+
+async def _bounded(stream: Any, idle_s: float, total_s: float) -> AsyncIterator[Any]:
+    """A model's stream, each chunk within `idle_s` and all of it within `total_s`. A provider can keep the
+    connection alive with pings and send nothing, which a read timeout never catches: the turn would hang."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + total_s
+    chunks = stream.__aiter__()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(chunks.__anext__(), max(0.01, min(idle_s, deadline - loop.time())))
+        except StopAsyncIteration:
+            return
+        except TimeoutError:
+            if close := getattr(stream, "close", None):
+                await close()
+            raise ModelStalled(f"no answer from the model in {idle_s:g} s or {total_s:g} s in all") from None
+        yield chunk
+
+
 class OpenAICompatibleLLM:
-    def __init__(self, client: Any, model: str, openai: bool = False, reasoning_effort: str = ""):
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        openai: bool = False,
+        reasoning_effort: str = "",
+        idle_s: float = 60.0,
+        total_s: float = 180.0,
+    ):
         self._client = client
         self._model = model
         self._openai = openai  # the real OpenAI API, not another provider behind the same SDK
         self._reasoning_effort = reasoning_effort
+        self._idle_s, self._total_s = idle_s, total_s
 
     @property
     def client(self) -> Any:
@@ -83,13 +117,23 @@ class OpenAICompatibleLLM:
     def model(self) -> str:
         return self._model
 
-    def stream(
+    async def stream(
         self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str | None = None
     ) -> AsyncIterator[LLMEvent]:
         # OpenAI's newer models call tools on Chat Completions only with reasoning off
-        if self._openai:
-            return self._stream_responses(messages, tools, tool_choice)
-        return self._stream_chat(messages, tools, tool_choice)
+        ask = self._stream_responses if self._openai else self._stream_chat
+        # a model that stalls before saying anything is asked once more; one that stalls mid-answer is not
+        for again in (False, True):
+            said = False
+            try:
+                async for event in ask(messages, tools, tool_choice):
+                    said = said or not isinstance(event, ToolStarting)
+                    yield event
+                return
+            except ModelStalled:
+                if said or again:
+                    raise
+                log.warning("The model stalled before answering: asking again")
 
     async def _stream_responses(
         self, messages: list[dict], tools: list[dict] | None, tool_choice: str | None
@@ -113,7 +157,7 @@ class OpenAICompatibleLLM:
 
         calls: list[ToolCall] = []
         usage: Usage | None = None
-        async for event in response:
+        async for event in _bounded(response, self._idle_s, self._total_s):
             if event.type == "response.output_text.delta":
                 yield TextDelta(event.delta)
             elif event.type == "response.output_item.added" and event.item.type == "function_call":
@@ -154,7 +198,7 @@ class OpenAICompatibleLLM:
         # Tool calls arrive in fragments keyed by index; they are only usable once complete.
         calls: dict[int, dict[str, str]] = {}
         usage: Usage | None = None
-        async for chunk in response:
+        async for chunk in _bounded(response, self._idle_s, self._total_s):
             if getattr(chunk, "usage", None):
                 usage = _usage(chunk.usage)
             if not chunk.choices:
@@ -242,4 +286,6 @@ def build_llm(settings: Settings) -> LLM:
         model=settings.llm_model,
         openai=not settings.llm_base_url,
         reasoning_effort=settings.llm_reasoning_effort,
+        idle_s=settings.llm_timeout_s,
+        total_s=3 * settings.llm_timeout_s,
     )

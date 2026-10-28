@@ -246,3 +246,51 @@ def test_should_pass_the_configured_effort_to_openai(monkeypatch):
 def test_should_reject_an_unknown_effort():
     with pytest.raises(ValidationError):
         Settings(llm_reasoning_effort="turbo")
+
+
+class StallingCompletions:
+    """A provider that keeps the stream open and sends nothing: the first `stalls` times, then it answers."""
+
+    def __init__(self, stalls: int, after: list | None = None):
+        self.stalls, self.after, self.asked = stalls, after or [], 0
+
+    async def create(self, **kwargs):
+        self.asked += 1
+        stalled = self.asked <= self.stalls
+
+        async def iterate():
+            for c in self.after if not stalled else ([chunk("Сек")] if self.after == ["mid"] else []):
+                yield c
+            if stalled:
+                await asyncio.sleep(3600)
+
+        return iterate()
+
+
+def stalling(stalls: int, after: list | None = None) -> tuple[OpenAICompatibleLLM, StallingCompletions]:
+    completions = StallingCompletions(stalls, after)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    return OpenAICompatibleLLM(client=client, model="m", idle_s=0.05, total_s=0.2), completions
+
+
+def test_should_ask_again_when_the_model_stalls_before_saying_anything():
+    llm, completions = stalling(1, [chunk("Готово")])
+
+    out = asyncio.run(collect(llm.stream([{"role": "user", "content": "hi"}])))
+
+    assert out == [TextDelta("Готово")] and completions.asked == 2
+
+
+def test_should_end_the_turn_instead_of_hanging_when_the_model_keeps_stalling():
+    from app.llm import ModelStalled
+
+    llm, completions = stalling(5)
+    with pytest.raises(ModelStalled):
+        asyncio.run(collect(llm.stream([{"role": "user", "content": "hi"}])))
+    assert completions.asked == 2  # asked once more, not forever
+
+    # stalled mid-answer: what was said is on screen, so it is not asked again
+    mid, completions = stalling(5, ["mid"])
+    with pytest.raises(ModelStalled):
+        asyncio.run(collect(mid.stream([{"role": "user", "content": "hi"}])))
+    assert completions.asked == 1

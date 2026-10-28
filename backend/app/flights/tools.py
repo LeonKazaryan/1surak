@@ -140,6 +140,10 @@ def flight_tools(flights: Flights) -> list[Tool]:
             view["total"] = money(view.pop("total_price_rub")) if view["total_price_rub"] else None
             if with_hubs := view.pop("total_with_connections_rub", None):
                 view["total_with_connections"] = money(with_hubs)
+            # the id build_trip takes to make it a whole trip: hotels, days, the bill
+            places = [catalog.find(s.name) for s in p.stops]
+            if all(places):
+                view["trip_id"] = "+".join(place.id for place in places)
             views.append(view)
         result = {
             "from": home_city.name,
@@ -148,8 +152,9 @@ def flight_tools(flights: Flights) -> list[Tool]:
             "plans": views,
             "notes": notes,
             "next": "The route is on screen as a card with prices and buy links. Answer now in 2-4 sentences: "
-            "the best order, the total, the dates, cheaper_via if any; do not list every ticket. Do not call "
-            "build_trip or show_trip: this route is not one of the shown destinations.",
+            "the best order, the total, the dates, cheaper_via if any; do not list every ticket. When the user "
+            "asks for the whole trip (hotels, days, the bill), call build_trip with the chosen plan's trip_id, "
+            "then show_trip.",
         }
         if not plans:
             return result

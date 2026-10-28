@@ -157,6 +157,8 @@ def test_should_cap_the_open_order_and_report_unknown_cities():
     reply = asyncio.run(tool.handler(PlanArgs(stops=["Стамбул"], month=11)))
     ok = reply.result
     assert ok["from"] == "Москва" and ok["plans"][0]["order"] == ["Стамбул"]
+    # the id that makes it a whole trip, when the user asks for one
+    assert ok["plans"][0]["trip_id"] == load_catalog().find("Стамбул").id and "build_trip" in ok["next"]
     assert tool.preview(ok).startswith("Москва → Стамбул → Москва")
     # the plan is also drawn as a card, and the agent's turn goes on
     assert reply.event["type"] == "flight_plan" and not reply.ends_turn
