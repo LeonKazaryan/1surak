@@ -7,8 +7,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db import init_db
 from app.llm import ToolCall
-from evals.run import CASES_PATH, report, run_case
-from evals.scoring import ToolCallRecord, Transcript, count_questions, score, ungrounded_numbers
+from evals.run import CASES_PATH, Deps, report, run_case
+from evals.scoring import (
+    ToolCallRecord,
+    Transcript,
+    count_questions,
+    score,
+    stitching_errors,
+    ungrounded_numbers,
+)
 from tests.conftest import FakeLLM
 
 GOLDEN = json.loads(CASES_PATH.read_text(encoding="utf-8"))["cases"][0]
@@ -82,33 +89,76 @@ def test_should_match_ranges_any_of_and_contains():
     assert not score(case, bad).passed
 
 
-def test_should_run_a_two_turn_case_and_record_tool_results(db_url):
+def test_should_run_a_case_through_the_chat_and_record_what_it_did(db_url):
+    from app.catalog.tools import catalog_tools
+    from app.tools import ToolRegistry
+
     llm = FakeLLM(
         rounds=[
             [ToolCall(id="c1", name="search_destinations", arguments='{"month": 11, "kinds": ["sea"]}')],
             ["Смотрю."],
-            ["Вот так."],
+            ["Вот так. Сколько лет ребёнку?"],
         ]
     )
-    case = {"id": "two", "turns": ["к морю в ноябре", "а почему?"], "origin": "Казань"}
+    case = {"id": "two", "turns": ["к морю в ноябре"], "origin": "Казань"}
 
     async def go():
         engine = create_async_engine(db_url)
         await init_db(engine)
+        sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
         try:
-            return await run_case(case, llm, async_sessionmaker(engine, expire_on_commit=False))
+            return await run_case(case, Deps(sessionmaker, llm, ToolRegistry(catalog_tools(sessionmaker))))
         finally:
             await engine.dispose()
 
     transcript = asyncio.run(go())
 
     assert transcript.error is None
-    assert transcript.replies == ["Смотрю.", "Вот так."]
+    assert transcript.replies == ["Вот так. Сколько лет ребёнку?"]
     assert [c.name for c in transcript.calls] == ["search_destinations"]
-    assert json.loads(transcript.calls[0].content)["from"] == "Москва"
-    second_turn = llm.conversations[2]
-    assert [m["role"] for m in second_turn[1:]] == ["user", "assistant", "user"]
-    assert second_turn[-1]["content"].startswith("а почему?\n\nГород вылета: Казань (")
+    assert json.loads(transcript.calls[0].content)["from"] == "Казань"  # the case's departure city
+    assert transcript.asked_rounds == 1 and transcript.first_step_s is not None
+
+
+def test_should_find_nights_without_a_bed_and_flights_that_miss_the_stay():
+    stops = [
+        {"name": "Рим", "check_in": "2026-11-21", "check_out": "2026-11-25"},
+        {"name": "Барселона", "check_in": "2026-11-25", "check_out": "2026-12-02"},
+    ]
+    legs = [
+        {
+            "from": "Астана",
+            "to": "Рим",
+            "to_stop": 0,
+            "departs": "2026-11-21T05:05",
+            "arrives": "2026-11-21T08:25",
+        },
+        {
+            "from": "Рим",
+            "to": "Барселона",
+            "from_stop": 0,
+            "to_stop": 1,
+            "departs": "2026-11-25T22:55",
+            "arrives": "2026-11-26T00:45",
+        },  # lands after midnight: the night before is booked
+        {
+            "from": "Барселона",
+            "to": "Астана",
+            "from_stop": 1,
+            "departs": "2026-12-02T15:00",
+            "arrives": "2026-12-03T06:00",
+        },
+    ]
+    assert stitching_errors({"stops": stops, "legs": legs}) == ([], 3)
+
+    broken = [{**stops[0], "check_out": "2026-11-24"}, stops[1]]
+    late = [legs[0], {**legs[1], "departs": "2026-11-26T10:00", "arrives": "2026-11-26T12:00"}, legs[2]]
+    errors, _ = stitching_errors({"stops": broken, "legs": late})
+    assert errors == [
+        "Рим → Барселона: выезд 2026-11-24, заезд 2026-11-25",
+        "Рим → Барселона: прилёт 2026-11-26T12:00, заезд 2026-11-25",
+        "Рим → Барселона: вылет 2026-11-26T10:00, выезд 2026-11-24",
+    ]
 
 
 def test_should_render_a_report_with_the_brief_metrics():
@@ -127,11 +177,30 @@ def test_should_render_a_report_with_the_brief_metrics():
 
     text = report([passed], "test-model", datetime(2026, 10, 25, 12, 0))
 
-    assert text.startswith("# Eval: 1/1 сценариев пройдено")
-    assert "Уточняющих вопросов в среднем" in text and "| golden |" in text
+    assert text.startswith("# Eval: 1 из 1 сценариев доведены до конца")
+    assert "Уточнений на сценарий" in text and "Ошибки в стыковках" in text and "| golden |" in text
 
 
 def test_should_read_a_dash_between_numbers_as_a_range_not_a_minus():
     calls = [search_call({}, {"near": "море около 23.5 °C", "other": 23.7})]
 
     assert ungrounded_numbers("море около 23,5-23,7 °C, ночью -3 °C", calls) == ["-3 °"]
+
+
+def test_should_write_the_metrics_into_the_readme_between_its_markers(tmp_path):
+    from datetime import datetime
+
+    from evals.run import update_readme
+
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# Проект\n\n<!-- eval:start -->\nстарое\n<!-- eval:end -->\n\n## Дальше\n", encoding="utf-8"
+    )
+    text = report(
+        [score(GOLDEN, Transcript(replies=["Хургада."], first_token_s=[1.0]))], "m", datetime(2026, 10, 29)
+    )
+
+    assert update_readme(text, readme)
+    page = readme.read_text(encoding="utf-8")
+    assert "старое" not in page and "| Доля доведённых до конца сценариев |" in page
+    assert page.endswith("<!-- eval:end -->\n\n## Дальше\n") and "| Кейс |" not in page

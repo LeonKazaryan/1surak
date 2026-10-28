@@ -24,7 +24,7 @@ DETAILED = 8  # the hotels whose rooms are read for the card
 # a bath or a pool is only in a hotel's own page: more hotels are read to find the ones that have it
 DETAILED_FOR_WISHES = 20
 DETAILS_WAIT_S = 6.0  # a hotel whose rooms take longer is shown without them; they are cached for next time
-WARMED = 20  # read while the cards are looked at: the plan then waits for none
+WARMED = 10  # read while the cards are looked at, a few a second, so a plan seldom waits for one
 ADULTS_ONLY_NAME = re.compile(r"adults?[\s-]only|только для взрослых", re.IGNORECASE)
 CENTRE_M = 1500
 

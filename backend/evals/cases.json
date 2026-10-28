@@ -1,5 +1,5 @@
 {
-  "about": "Eval cases for the agent, from docs/06-test-queries.md. Each case is one conversation. Checks: expect_tools (every tool must be called), expect_any_tool (at least one), expect_args (some search_destinations call matches all: a value, {\"range\": [lo, hi]}, {\"any_of\": [...]} or {\"contains\": [...]}), expect_any (the final answer contains at least one, case-insensitive), forbid (contains none), max_questions and min_questions (question marks across all replies), expect_source (the final answer names a source link or site).",
+  "about": "Eval cases for the agent, from docs/06-test-queries.md. Each case is one conversation, run through the chat service with every tool. Checks: expect_tools (every tool must be called), expect_any_tool (at least one), expect_args (some search_destinations call matches all: a value, {\"range\": [lo, hi]}, {\"any_of\": [...]} or {\"contains\": [...]}), expect_any (the reply or what the cards and the plan show names one of these), forbid (the reply never says these), expect_source (the reply names a source), expect_plan (a whole trip plan is on screen), max_questions / min_questions (on the clarifying cards and in the text). Every trip plan shown is checked for connection errors.",
   "cases": [
     {
       "id": "golden",
@@ -187,7 +187,7 @@
         "month": 12
       },
       "expect_any": [
-        "Москв"
+        "Казан"
       ],
       "max_questions": 1
     },
@@ -505,6 +505,56 @@
       ],
       "expect_source": true,
       "max_questions": 1
+    },
+    {
+      "id": "plan_family_sea",
+      "category": "trip",
+      "turns": [
+        "Хотим в Анталью на неделю с 8 ноября, двое взрослых и ребёнок 6 лет, бюджет 400 тысяч рублей. Собери поездку с отелем"
+      ],
+      "expect_tools": [
+        "build_trip",
+        "show_trip"
+      ],
+      "expect_plan": true,
+      "expect_any": [
+        "Анталь"
+      ],
+      "max_questions": 2
+    },
+    {
+      "id": "plan_two_cities",
+      "category": "trip",
+      "turns": [
+        "Рим и Барселона на 10 дней в конце ноября, двое взрослых, бюджет 700 тысяч рублей, шенген есть, городская поездка. Собери всю поездку"
+      ],
+      "expect_tools": [
+        "build_trip",
+        "show_trip"
+      ],
+      "expect_plan": true,
+      "expect_any": [
+        "Рим",
+        "Барселон"
+      ],
+      "max_questions": 2
+    },
+    {
+      "id": "plan_hotel_wishes",
+      "category": "trip",
+      "turns": [
+        "Нячанг на неделю с 10 декабря, двое взрослых и ребёнок 5 лет, бюджет 500 тысяч рублей, отель с видом на море и с ванной"
+      ],
+      "expect_tools": [
+        "build_trip",
+        "show_trip"
+      ],
+      "expect_plan": true,
+      "expect_any": [
+        "вид на море",
+        "видом на море"
+      ],
+      "max_questions": 2
     }
   ]
 }

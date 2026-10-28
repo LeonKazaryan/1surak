@@ -38,6 +38,8 @@ MISSED_FOR = timedelta(days=1)
 HOTEL_PHOTOS = 12
 ROOM_PHOTOS = 8
 OFFERS_PER_HOTEL = 12
+BUSY_WAITS_S = (1.0, 2.0, 0.0)  # «too many requests»: asked again after these pauses, the last answer stands
+MAX_BUSY_WAIT_S = 5.0
 NO_AVAILABILITY = 2001  # LiteAPI's error code for «no rooms that night»: an answer, not a failure
 MEALS = {
     "RO": "room_only",
@@ -396,8 +398,14 @@ class LiteApi:
         return details_from(data) if isinstance(data, dict) and data.get("id") else None
 
     async def _call(self, method: str, path: str, **kwargs) -> dict:
-        await self._limit.wait()
-        response = await self._client.request(method, path, **kwargs)
+        for (
+            wait_s
+        ) in BUSY_WAITS_S:  # the key's rate is shared with every process that uses it: wait, then again
+            await self._limit.wait()
+            response = await self._client.request(method, path, **kwargs)
+            if response.status_code != 429:
+                break
+            await asyncio.sleep(min(float(response.headers.get("retry-after") or wait_s), MAX_BUSY_WAIT_S))
         body = response.json() if response.content else {}
         error = body.get("error") if isinstance(body, dict) else None
         if isinstance(error, dict) and error.get("code") == NO_AVAILABILITY:

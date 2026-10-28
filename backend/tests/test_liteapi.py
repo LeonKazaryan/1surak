@@ -349,3 +349,13 @@ def test_should_price_the_hotel_for_the_nights_really_spent_there():
     assert (
         stop.pick.best.total_rub == stop.pick.best.rate.stay_rub
     )  # the provider's own price for those nights
+
+
+def test_should_wait_and_ask_again_when_the_key_is_busy():
+    answers = iter(
+        [httpx.Response(429, headers={"retry-after": "0"}), httpx.Response(200, json={"data": LISTED})]
+    )
+    client = httpx.AsyncClient(base_url=BASE_URL, transport=httpx.MockTransport(lambda _: next(answers)))
+    api = LiteApi("sand_test", client=client)
+
+    assert len(asyncio.run(api.around(NHA_TRANG))) == len(LISTED)

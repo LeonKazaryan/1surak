@@ -3,6 +3,8 @@
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from itertools import pairwise
 
 # «26 °C», «26°», «26 градусов», «5 ч», «5,5 часа», «9.5 h», «-3 °C»
 # (?<![\d.,]) keeps the dash of a range («23,5-23,7 °C») from reading as a minus
@@ -12,6 +14,11 @@ SOURCE = re.compile(
 )
 HOURS = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:ч\b|час|h\b|hour)", re.IGNORECASE)
 GROUNDING_TOLERANCE = 1.0
+# What puts a recommendation on screen: destination cards, a route, the whole trip, more hotels.
+RECOMMENDATIONS = {"destinations", "flight_plan", "trip_plan", "hotel_options"}
+NIGHT_ENDS = (
+    "06:00"  # land before it and the night before is booked; leave before it and the last night is paid
+)
 
 
 @dataclass
@@ -33,6 +40,12 @@ class Transcript:
     input_tokens: int = 0
     cached_tokens: int = 0
     output_tokens: int = 0
+    clarify_questions: int = 0  # fields on the clarifying cards
+    asked_rounds: int | None = None  # replies that asked something: a card or a question in the text
+    first_step_s: float | None = None  # until the first step of the agent's work was on screen
+    first_pick_s: float | None = None  # until the first recommendation was on screen
+    shown: list[str] = field(default_factory=list)  # names on the cards, the route and the plan
+    plans: list[dict] = field(default_factory=list)  # every trip plan shown, as the screen got it
 
 
 def research_sources(calls: list[ToolCallRecord]) -> list[str]:
@@ -62,6 +75,12 @@ class Score:
     input_tokens: int = 0
     cached_tokens: int = 0
     output_tokens: int = 0
+    first_pick_s: float | None = None
+    first_step_s: float | None = None
+    card_fields: int = 0
+    plans: int = 0
+    legs_checked: int = 0
+    stitch_errors: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -87,6 +106,47 @@ def ungrounded_numbers(answer: str, calls: list[ToolCallRecord], user_text: str 
         for m in pattern.finditer(answer)
     ]
     return [text for text, value in claims if not any(abs(value - k) <= GROUNDING_TOLERANCE for k in known)]
+
+
+def _next_day(iso: str) -> str:
+    return (date.fromisoformat(iso) + timedelta(days=1)).isoformat()
+
+
+def stitching_errors(plan: dict) -> tuple[list[str], int]:
+    """What a trip plan must never have: a night without a bed or paid twice, a flight that leaves before the
+    previous one lands, a landing or a take-off that misses the hotel nights. Times are local to the city they
+    happen in, so a landing and the next take-off from the same city compare. Returns the errors and the number
+    of timed legs checked."""
+    errors: list[str] = []
+    stops = plan.get("stops") or []
+    for stop in stops:
+        if stop["check_in"] >= stop["check_out"]:
+            errors.append(f"{stop['name']}: ни одной ночи")
+    for a, b in pairwise(stops):
+        if a["check_out"] != b["check_in"]:
+            errors.append(f"{a['name']} → {b['name']}: выезд {a['check_out']}, заезд {b['check_in']}")
+    checked, landed = 0, None
+    for leg in plan.get("legs") or []:
+        departs, arrives = leg.get("departs"), leg.get("arrives")
+        if not (departs and arrives):
+            landed = None  # no ticket on this leg: the live search link picks its times
+            continue
+        checked += 1
+        route = f"{leg.get('from')} → {leg.get('to')}"
+        if landed and departs < landed:
+            errors.append(f"{route}: вылет {departs} раньше прилёта {landed}")
+        if (into := leg.get("to_stop")) is not None:
+            stay, day, hour = stops[into], arrives[:10], arrives[11:]
+            night_before = day == _next_day(stay["check_in"]) and hour <= NIGHT_ENDS
+            if day != stay["check_in"] and not night_before:
+                errors.append(f"{route}: прилёт {arrives}, заезд {stay['check_in']}")
+        if (out := leg.get("from_stop")) is not None:
+            stay, day, hour = stops[out], departs[:10], departs[11:]
+            red_eye = day == _next_day(stay["check_out"]) and hour <= NIGHT_ENDS
+            if day != stay["check_out"] and not red_eye:
+                errors.append(f"{route}: вылет {departs}, выезд {stay['check_out']}")
+        landed = arrives
+    return errors, checked
 
 
 def _arg_matches(actual, expected) -> bool:
@@ -128,13 +188,24 @@ def score(case: dict, transcript: Transcript) -> Score:
         failures.append(
             f"no search matched {json.dumps(case['expect_args'], ensure_ascii=False)}; got {seen}"
         )
-    if case.get("expect_any") and not any(s.casefold() in final.casefold() for s in case["expect_any"]):
+    # what the user got: the reply and what the cards, the route and the plan put on screen
+    seen = "\n".join([final, *transcript.shown]).casefold()
+    if case.get("expect_any") and not any(s.casefold() in seen for s in case["expect_any"]):
         failures.append(f"answer mentions none of {case['expect_any']}")
+    if case.get("expect_plan") and not transcript.plans:
+        failures.append("no trip plan on screen")
+    stitch, legs = [], 0
+    for plan in transcript.plans:
+        found, checked = stitching_errors(plan)
+        stitch, legs = stitch + found, legs + checked
+    if stitch:
+        failures.append(f"connection errors: {stitch}")
     for bad in case.get("forbid", []):
         if bad.casefold() in answer.casefold():
             failures.append(f"answer contains forbidden {bad!r}")
 
-    questions = count_questions(answer)
+    # one clarification is one round: a card with its fields, or questions in a reply, answered at once
+    questions = transcript.asked_rounds if transcript.asked_rounds is not None else count_questions(answer)
     if questions > case.get("max_questions", 1):
         failures.append(f"{questions} questions, max {case.get('max_questions', 1)}")
     if questions < case.get("min_questions", 0):
@@ -161,4 +232,10 @@ def score(case: dict, transcript: Transcript) -> Score:
         input_tokens=transcript.input_tokens,
         cached_tokens=transcript.cached_tokens,
         output_tokens=transcript.output_tokens,
+        first_pick_s=transcript.first_pick_s,
+        first_step_s=transcript.first_step_s,
+        card_fields=transcript.clarify_questions,
+        plans=len(transcript.plans),
+        legs_checked=legs,
+        stitch_errors=stitch,
     )
