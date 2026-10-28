@@ -152,6 +152,18 @@ def test_should_hint_routes_when_the_user_wants_several_cities():
     assert chips(brief(kinds=["city"], multi_city=True))[-1] == "Несколько городов"
 
 
+def test_should_hint_routes_through_several_countries_when_the_user_wants_them():
+    b = merge(brief(destination="Северная Африка", nights_min=10), BriefPatch(multi_country=True))
+
+    assert b.multi_city  # several countries are several cities
+    hint = search_hint(b, load_catalog())
+    assert hint["min_countries"] == 3 and hint["multi_city"]
+    assert sorted(hint["countries"]) == ["Алжир", "Египет", "Ливия", "Марокко", "Тунис"]  # not all of Africa
+    assert "Несколько стран" in chips(b) and "Несколько городов" not in chips(b)
+    week = merge(brief(nights_min=7), BriefPatch(multi_country=True))
+    assert search_hint(week, load_catalog())["min_countries"] == 2
+
+
 @pytest.fixture(scope="module")
 def sessionmaker():
     db_url = fresh_database("trip")
@@ -302,6 +314,30 @@ def test_should_keep_routes_in_the_region_the_user_named_when_the_model_leaves_i
     stops = [s for r in result["routes"] for s in r["stops"]]
     assert all(s["country"] in europe for s in stops)  # never Tbilisi or Istanbul
     assert stops or "Франция" in result["note"]  # nothing in Europe: the fallback stays there too
+
+
+def test_should_build_a_route_through_the_cities_of_the_route_map_the_model_named(sessionmaker):
+    flights = FakeFlights({"CMN": route(400), "TUN": route(300), "NQZ": route(400)})
+    state = TripState(asked(brief(destination="Северная Африка", month=12, nights_min=10, multi_city=True)))
+    registry = ToolRegistry(trip_tools(state, sessionmaker, flights=flights))
+
+    # Casablanca and Tunis are not in the catalogue: this used to fail on a missing snapshot
+    found = call(registry, "search_routes", {"month": 12, "nights": 10, "places": ["city-cmn", "city-tun"]})
+
+    [route_found] = json.loads(found.content)["routes"]
+    assert {s["id"] for s in route_found["stops"]} == {"city-cmn", "city-tun"}
+
+
+def test_should_ask_for_cities_not_single_cards_when_no_route_crosses_the_countries(sessionmaker):
+    state = TripState(
+        asked(brief(destination="Европа", month=12, nights_min=10, multi_country=True, multi_city=True))
+    )
+    registry = ToolRegistry(trip_tools(state, sessionmaker, flights=FakeFlights()))
+
+    found = call(registry, "search_routes", {"month": 12, "kinds": ["city"], "countries": ["Атлантида"]})
+
+    result = json.loads(found.content)
+    assert result["routes"] == [] and "places" in result["note"] and "single" in result["note"]
 
 
 def test_should_refuse_a_pick_that_is_neither_a_place_nor_a_route(sessionmaker):

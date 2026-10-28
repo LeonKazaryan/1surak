@@ -106,6 +106,22 @@ def _reach() -> dict[str, int]:
 
 
 @cache
+def _fame() -> dict[str, int]:
+    """City code > in how many Wikipedias its article exists (scripts/build_fame_seed.py, Wikidata)."""
+    return json.loads((SEED / "fame.json").read_text(encoding="utf-8"))
+
+
+def fame(code: str | None) -> int | None:
+    """How well known the city is: Wikipedias with an article on it, London 357, Marrakech 142, Nador 53."""
+    return _fame().get(city_code(code))
+
+
+def reach(code: str | None) -> int:
+    """How many cities have a direct flight from this one: how big and well known the place is."""
+    return _reach().get(city_code(code), 0)
+
+
+@cache
 def _by_name() -> dict[str, City]:
     """A name of several cities is the best connected one: «Лондон» is London with 324 routes, not London,
     Ontario with two; «Барселона» is in Spain, not in Venezuela."""

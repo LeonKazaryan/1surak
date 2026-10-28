@@ -291,6 +291,24 @@ def test_should_look_at_a_named_countrys_main_cities_even_with_no_flight_from_ho
     assert country_cities([f"страна {i}" for i in range(6)], network()) == []  # a region: live and map only
 
 
+def test_should_route_through_a_whole_regions_best_known_cities():
+    from collections import Counter
+
+    from app.destinations import REGION_CITIES, REGION_PER_COUNTRY, region_cities
+    from app.destinations.regions import countries_in
+    from app.flights import city
+
+    europe = region_cities(countries_in("Европа"), network(), per_country=8)
+
+    names = {city(code).name for code in europe}
+    assert {"Вена", "Прага", "Париж", "Будапешт"} <= names  # not an empty list for 39 countries any more
+    assert "Шалон" not in names  # Paris Vatry serves Paris, but its own city is not Paris
+    assert len(europe) <= REGION_CITIES
+    assert max(Counter(city(code).country_code for code in europe).values()) <= REGION_PER_COUNTRY
+    # a few countries keep their main airports, as many as asked
+    assert region_cities(["Эфиопия"], network(), per_country=8)[0] == "ADD"
+
+
 class GatewayFlights:
     """Cached tickets to Addis Ababa and on to Mekele, none straight to Mekele."""
 

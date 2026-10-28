@@ -612,6 +612,8 @@ export interface TripPassport {
   budget: string | null
   origin: { code: string; name: string; from: string; lat: number; lon: number } | null
   multi_city: boolean
+  /** «Несколько стран»: every route crosses several of them. */
+  multi_country?: boolean
   visa_free_only: boolean
   by_land: boolean
   wishes: string[]

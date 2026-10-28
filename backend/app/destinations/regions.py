@@ -64,6 +64,8 @@ CENTRAL_ASIA = {"KZ", "UZ", "KG", "TJ", "TM"}
 SOUTHEAST_ASIA = {"TH", "VN", "ID", "MY", "SG", "PH", "KH", "LA", "MM", "BN", "TL"}
 ASIA = SOUTHEAST_ASIA | {"CN", "JP", "KR", "MN", "IN", "LK", "MV", "NP", "BD", "PK", "BT", "TW", "HK", "MO"}
 MIDDLE_EAST = {"AE", "OM", "QA", "BH", "KW", "SA", "JO", "IL", "LB", "IQ", "IR"}
+MAGHREB = {"MA", "DZ", "TN"}
+NORTH_AFRICA = MAGHREB | {"EG", "LY"}
 AFRICA = {
     "EG",
     "TN",
@@ -133,7 +135,11 @@ REGIONS: dict[str, set[str]] = {
     "юго-восточн": SOUTHEAST_ASIA,
     "ближн восток": MIDDLE_EAST,
     "ближний восток": MIDDLE_EAST,
-    "африк": AFRICA,
+    "магриб": MAGHREB,
+    "северная африк": NORTH_AFRICA,
+    "северной африк": NORTH_AFRICA,
+    "северную африк": NORTH_AFRICA,
+    "африк": AFRICA,  # after its parts: «северная африка» is matched first
     "америк": AMERICAS,
     "ази": ASIA,  # last: «юго-восточная азия» and «средняя азия» are matched first
 }

@@ -81,6 +81,7 @@ def passport(b: TripBrief) -> dict:
             else None
         ),
         "multi_city": bool(b.multi_city),
+        "multi_country": bool(b.multi_country),
         "visa_free_only": bool(b.visa_free_only),
         "by_land": bool(b.by_land),
         "wishes": list(b.wishes or []),

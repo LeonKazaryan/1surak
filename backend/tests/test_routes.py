@@ -5,7 +5,15 @@ import asyncio
 from app.catalog.catalog import Country, Place
 from app.catalog.search import Snapshot
 from app.flights import City
-from app.trip.routes import RouteQuery, candidate_routes, find_routes, named_route, price_route, split_nights
+from app.trip.routes import (
+    RouteQuery,
+    candidate_routes,
+    find_routes,
+    named_route,
+    popularity,
+    price_route,
+    split_nights,
+)
 from tests.conftest import FakeFlights, route
 
 OCT = 10
@@ -292,3 +300,122 @@ def test_should_keep_the_wish_for_trains_in_the_hint():
     hint = search_hint(TripBrief(multi_city=True, month=11, by_land=True), load_catalog())
 
     assert hint["by_land"] is True
+
+
+DEC = 12
+EGYPT = Country("EG", "Египет", "visa_on_arrival", 30, "")
+TUNISIA = Country("TN", "Тунис", "visa_free", 90, "")
+MOROCCO = Country("MA", "Марокко", "visa_free", 30, "")
+
+
+def city_of(name: str, country: Country, lat: float, lon: float, airport: str) -> Snapshot:
+    """A city from the route map: nobody curated it, so how well known it is comes from the data."""
+    found = Place(
+        id=f"city-{airport.lower()}",
+        qid=f"iata:{airport}",
+        name=name,
+        country=country,
+        kinds=("city",),
+        airport=airport,
+        lat=lat,
+        lon=lon,
+        price_level=1,
+        kids="ok",
+        highlights=(),
+        watch_out=(),
+        train_min=None,
+        verified=False,
+    )
+    return Snapshot(place=found, climate={DEC: {"air_max": 20}}, visa_rule="visa_free")
+
+
+CAIRO = city_of("Каир", EGYPT, 30.04, 31.24, "CAI")
+TUNIS = city_of("Тунис", TUNISIA, 36.81, 10.18, "TUN")
+ENFIDHA = city_of("Энфида", TUNISIA, 36.13, 10.38, "NBE")
+DJERBA = city_of("Джерба", TUNISIA, 33.81, 10.85, "DJE")
+CASABLANCA = city_of("Касабланка", MOROCCO, 33.57, -7.59, "CMN")
+MARRAKECH = city_of("Марракеш", MOROCCO, 31.63, -8.0, "RAK")
+NADOR = city_of("Надор", MOROCCO, 35.17, -2.93, "NDR")
+NORTH_AFRICA = [CAIRO, TUNIS, ENFIDHA, DJERBA, CASABLANCA]
+
+
+def countries_of(plan) -> set[str]:
+    return {s.place.country.code for s in plan.stops}
+
+
+def test_should_cross_as_many_countries_as_the_user_wants():
+    query = RouteQuery(month=DEC, kinds=["city"], nights=10, min_countries=3)
+
+    plans = candidate_routes(NORTH_AFRICA, query, ASTANA)
+
+    # Cairo → Tunis is 2100 km and Tunis → Casablanca 1650: one direct flight each, still legs of one trip
+    assert plans and all(countries_of(p) == {"EG", "TN", "MA"} for p in plans)
+    assert {"Каир", "Тунис", "Касабланка"} <= {s.place.name for s in plans[0].stops}
+
+
+def test_should_keep_a_trip_in_one_region_to_short_hops_without_the_wish_for_countries():
+    plans = candidate_routes(NORTH_AFRICA, RouteQuery(month=DEC, kinds=["city"], nights=10), ASTANA)
+
+    assert plans and all(countries_of(p) == {"TN"} for p in plans)  # nothing else is close enough
+
+
+def test_should_take_as_many_countries_as_can_be_reached_when_fewer_than_asked():
+    query = RouteQuery(month=DEC, kinds=["city"], nights=10, min_countries=3)
+
+    plans = candidate_routes([TUNIS, ENFIDHA, DJERBA, CAIRO], query, ASTANA)
+
+    assert plans and all(countries_of(p) == {"EG", "TN"} for p in plans)
+
+
+def test_should_rank_the_well_known_city_before_an_obscure_one():
+    # the same trip on paper: the obscure city put where Marrakech is, so only how well known they are differs
+    obscure = city_of("Надор", MOROCCO, MARRAKECH.place.lat, MARRAKECH.place.lon, "NDR")
+    query = RouteQuery(month=DEC, kinds=["city"], nights=6, max_stops=2)
+
+    plans = candidate_routes([CASABLANCA, MARRAKECH, obscure], query, ASTANA)
+
+    assert popularity(MARRAKECH) > popularity(obscure)  # 142 Wikipedias against 53
+    ranked = [{s.place.name for s in p.stops} for p in plans]
+    assert ranked.index({"Касабланка", "Марракеш"}) < ranked.index({"Касабланка", "Надор"})
+
+
+class PairFlights(FakeFlights):
+    """Flights by (origin, destination): a small airport may have no fare home while its neighbour has."""
+
+    async def route(self, origin: str, destination: str, month: int | None = None):
+        self.asked.append((origin, destination, month))
+        return self.table.get((origin, destination))
+
+
+def test_should_rank_a_route_with_no_fare_home_below_one_that_flies_home():
+    rabat = city_of("Рабат", MOROCCO, 34.02, -6.84, "RBA")
+    tickets = PairFlights(
+        {
+            ("NQZ", "CAI"): route(420),
+            ("CAI", "TUN"): route(210),
+            ("TUN", "CMN"): route(180),
+            ("CMN", "NQZ"): route(600),  # nothing flies home from Rabat
+        }
+    )
+    query = RouteQuery(month=DEC, kinds=["city"], nights=10, min_countries=3, limit=1)
+
+    [best] = asyncio.run(find_routes([CAIRO, TUNIS, CASABLANCA, rabat], query, tickets, ASTANA))
+
+    assert best.stops[-1].place.name == "Касабланка" and best.legs[-1].flights is not None
+
+
+def test_should_not_mark_a_route_down_for_visas_the_user_does_not_mind():
+    schengen = Country("AT", "Австрия", "visa_required", None, "")
+    vienna = snap(place("vienna", schengen, 48.21, 16.37, airport="VIE"))
+    prague = snap(
+        place("prague", Country("CZ", "Чехия", "visa_required", None, ""), 50.08, 14.44, airport="PRG")
+    )
+    free = [YEREVAN, TBILISI]
+
+    def best(stops, **fields):
+        return candidate_routes(stops, RouteQuery(month=OCT, kinds=["city"], nights=8, **fields), ASTANA)[0]
+
+    minded = best([vienna, prague]).score
+    assert best([vienna, prague], visas_matter=False).score > minded
+    # a visa is marked down by the share of stops that need it: a whole route of them loses 0.1, not 0.1 a city
+    assert minded > best(free).score - 0.2

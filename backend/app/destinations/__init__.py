@@ -128,6 +128,22 @@ def candidates(live: list[str], network: Network, origin: str, limit: int = MAX_
 
 NAMED_COUNTRIES = 5  # a search naming this few countries looks at their main cities, wherever they are
 CITIES_PER_COUNTRY = 3
+REGION_CITIES = 50  # a route through a whole region («по Европе»): its best-known cities, this many at most
+REGION_PER_COUNTRY = 3
+
+
+def _flying(names: list[str], network: Network) -> dict[str, list[tuple[int, str]]]:
+    """The cities with a flight out in each of the countries named, as (direct routes, code) by country."""
+    from app.flights.dictionary import cities
+
+    wanted = {n.casefold() for n in names}
+    by_country: dict[str, list[tuple[int, str]]] = {}
+    for c in cities().values():
+        if c.country.casefold() in wanted or (c.country_code and _catalog_name(c.country_code) in wanted):
+            links = len(network.links_from(c.code))
+            if links:
+                by_country.setdefault(c.country_code or c.country, []).append((links, c.code))
+    return by_country
 
 
 def country_cities(
@@ -137,19 +153,37 @@ def country_cities(
     «хочу в Эфиопию» from Astana is Addis Ababa with a change. The best connected airports come first."""
     if not names or len(names) > NAMED_COUNTRIES:
         return []
-    from app.flights.dictionary import cities
+    return [
+        code
+        for ranked in _flying(names, network).values()
+        for _, code in sorted(ranked, reverse=True)[:per_country]
+    ]
 
-    wanted = {n.casefold() for n in names}
-    by_country: dict[str, list[tuple[int, str]]] = {}
-    for c in cities().values():
-        if c.country.casefold() in wanted or (c.country_code and _catalog_name(c.country_code) in wanted):
-            by_country.setdefault(c.country_code or c.country, []).append(
-                (len(network.links_from(c.code)), c.code)
-            )
-    found = []
-    for ranked in by_country.values():
-        found += [code for links, code in sorted(ranked, reverse=True)[:per_country] if links]
-    return found
+
+def region_cities(
+    names: list[str] | None, network: Network, per_country: int = CITIES_PER_COUNTRY
+) -> list[str]:
+    """The cities a route through these countries may pass. A few countries: their main airports, as
+    country_cities. A whole region («по Европе», 39 countries): its best-known cities across all of them, a few
+    per country, so a route can cross three countries and the search stays quick: Vienna, Prague and Berlin
+    rather than every airport of Germany."""
+    if not names:
+        return []
+    by_country = _flying(names, network)
+    if len(by_country) <= NAMED_COUNTRIES:
+        return [
+            code for ranked in by_country.values() for _, code in sorted(ranked, reverse=True)[:per_country]
+        ]
+    from app.flights.dictionary import fame
+
+    known = [
+        code
+        for ranked in by_country.values()
+        for code in sorted((code for _, code in ranked), key=lambda code: -(fame(code) or 0))[
+            :REGION_PER_COUNTRY
+        ]
+    ]
+    return sorted(known, key=lambda code: -(fame(code) or 0))[:REGION_CITIES]
 
 
 def _catalog_name(code: str) -> str | None:

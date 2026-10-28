@@ -32,7 +32,7 @@ export function passportChips(p: TripPassport | null | undefined, ghosts = true)
   if (!p?.destination && p?.kinds.length) {
     chips.push({ key: 'kinds', kind: 'kinds', text: capital(p.kinds.map((k) => k.label).join(', ')) })
   }
-  if (p?.multi_city) chips.push({ key: 'multi', kind: 'multi', text: 'Несколько городов' })
+  if (p?.multi_city) chips.push({ key: 'multi', kind: 'multi', text: p.multi_country ? 'Несколько стран' : 'Несколько городов' })
   if (p?.visa_free_only) chips.push({ key: 'visa', kind: 'visa', text: 'Без визы' })
   if (p?.by_land) chips.push({ key: 'land', kind: 'land', text: 'Поездом' })
   for (const wish of p?.wishes ?? []) chips.push({ key: `wish:${wish}`, kind: 'wish', text: wish })

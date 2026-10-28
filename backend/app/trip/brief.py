@@ -70,6 +70,11 @@ class BriefPatch(BaseModel):
         description="True when the user wants several cities in one trip: 'по Европе', 'Ереван и Тбилиси', "
         "'несколько городов', 'маршрут'. False when they want to stay in one place.",
     )
+    multi_country: bool | None = Field(
+        None,
+        description="True when the user wants several countries in one trip: 'несколько стран', "
+        "'Грузия и Армения', 'объехать Балканы'. It is a route too: set multi_city as well.",
+    )
     by_land: bool | None = Field(
         None,
         description="True when the user wants to go by train or bus, not by plane: 'на поезде', "
@@ -121,6 +126,8 @@ def merge(brief: TripBrief, patch: BriefPatch) -> TripBrief:
         updates["children_ages"] = []
     if "date_from" in updates and "month" not in updates:
         updates["month"] = updates["date_from"].month
+    if updates.get("multi_country"):
+        updates["multi_city"] = True  # several countries are several cities
     return brief.model_copy(update=updates)
 
 
@@ -310,7 +317,17 @@ def search_hint(b: TripBrief, catalog: Catalog) -> dict:
         _, nights = night_range(b)
         if nights:
             hint["nights"] = nights
+        if b.multi_country:
+            hint["min_countries"] = countries_for(nights)
     return hint
+
+
+def countries_for(nights: int | None) -> int:
+    """How many countries «several countries» means for this many nights: two for a week, three from nine."""
+    return 3 if (nights or 0) >= MULTI_COUNTRY_NIGHTS else 2
+
+
+MULTI_COUNTRY_NIGHTS = 9
 
 
 VARIETY_KINDS = 3  # this many kinds of trip at once is «всего понемногу»
@@ -368,7 +385,9 @@ def chips(b: TripBrief) -> list[str]:
         result.append(f"до {CURRENCIES[b.budget_currency or 'RUB'].amount(b.budget_total)}")
     elif b.budget_level is not None:
         result.append(BUDGET_LABELS[b.budget_level])
-    if b.multi_city:
+    if b.multi_country:
+        result.append("Несколько стран")
+    elif b.multi_city:
         result.append("Несколько городов")
     if b.visa_free_only:
         result.append("Без визы")

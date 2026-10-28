@@ -9,6 +9,7 @@ and buses where an open timetable has them (app.ground), else an honest estimate
 
 import asyncio
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import pairwise, permutations
@@ -29,7 +30,7 @@ from app.catalog.search import (
 )
 from app.flights import City, Flights, Ticket
 from app.flights.client import merged
-from app.flights.dictionary import city
+from app.flights.dictionary import city, fame, reach
 from app.flights.network import network
 from app.ground import transport
 from app.money import money
@@ -52,6 +53,17 @@ log = logging.getLogger(__name__)
 __all__ = ["ROAD_DETOUR", "Leg", "RoutePlan", "RouteQuery", "km_between"]
 
 MAX_LEG_KM = 1100  # further than this the hop is a separate trip, not a leg of one
+# through several countries a direct flight of about three and a half hours is still one leg: Cairo → Tunis
+MAX_ACROSS_KM = 2600
+FAMOUS_LINKS = 200  # Wikipedias with an article on a city as well known as it gets for a route (Cairo 261)
+POPULAR_ROUTES = 100  # without that, direct routes of a city as well known as it gets (Cairo 86, Tunis 58)
+POPULAR_WEIGHT = 0.15  # Cairo before Asyut, Marrakech before Nador
+COUNTRIES_WEIGHT = 0.15  # several countries asked for: a route through fewer of them fits that much less
+# a route with fewer cities than its nights hold ranks a little lower: 10 nights → 4 cities
+STOPS_WEIGHT = 0.06
+# the ends of a route are where the flights from and to home go: a small airport there costs this much more
+# travel than a big one, so Cairo → … → Rabat → Casablanca flies home from Casablanca, not from Rabat
+SMALL_END_KM = 500
 BORDER_LAND_KM = (
     350  # across a border, a longer hop by land (a mountain pass, a closed crossing) needs a plane
 )
@@ -98,9 +110,22 @@ class RouteQuery(SearchQuery):
         min_length=2,
         max_length=MAX_STOPS,
         description="The cities the user named, catalogue ids (route_places from the hint): the route goes "
-        "through exactly these, the filters are not applied.",
+        "through exactly these, the filters are not applied. Also for a theme the filters cannot see "
+        "(Christmas markets, wine, carnivals): the 3-5 best-known cities for it, in different countries when "
+        "the user wants several; names are fine ('Вена', 'Прага').",
     )
     order_fixed: bool = Field(False, description="With places: keep the user's order of the cities.")
+    min_countries: int = Field(
+        1,
+        ge=1,
+        le=MAX_STOPS,
+        description="Fewest countries the route crosses: min_countries from the hint when the user wants "
+        "several countries («несколько стран»).",
+    )
+    visas_matter: bool = Field(
+        True,
+        description="False when the user said the visa does not matter: no route is marked down for one.",
+    )
     by_land: bool = Field(
         False,
         description="The user wants trains or buses, not planes («на поезде», «без самолётов»): every hop "
@@ -111,6 +136,10 @@ class RouteQuery(SearchQuery):
     def land(self) -> bool:
         """Trains wanted: by_land, or without_flight as the destination search names it."""
         return self.by_land or self.without_flight
+
+    @property
+    def max_leg_km(self) -> int:
+        return MAX_ACROSS_KM if self.min_countries > 1 else MAX_LEG_KM
 
 
 @dataclass
@@ -204,10 +233,41 @@ def score_route(stops: list[Snapshot], q: RouteQuery) -> tuple[float, int]:
     comfort = sum(_comfort(s, q.month) for s in stops) / len(stops)
     hops = [hop_hours(_km(a, b), _km(a, b) >= FLIGHT_FROM_KM) for a, b in pairwise(stops)]
     ease = 1 - min(sum(hops) / len(hops) / 8, 1)
-    visas = sum(s.visa_rule not in EASY_VISA for s in stops)
+    # the share of stops with a visa to get, not their count: five Schengen cities are one visa, not five
+    visas = sum(s.visa_rule not in EASY_VISA for s in stops) / len(stops) if q.visas_matter else 0
     match = 0.55 * interest + 0.15 * variety + 0.2 * comfort + 0.1 * ease - 0.1 * visas
-    score = match - 0.04 * sum(s.place.price_level for s in stops) / len(stops)
+    if q.min_countries > 1:
+        crossed = min(_countries(stops), q.min_countries) - 1
+        match -= COUNTRIES_WEIGHT * (1 - crossed / (q.min_countries - 1))
+    known = sum(popularity(s) for s in stops) / len(stops)
+    target = min(q.max_stops or MAX_STOPS, default_stops(q.nights or DEFAULT_NIGHTS))
+    filled = min(len(stops), target) / target
+    score = (
+        match
+        - 0.04 * sum(s.place.price_level for s in stops) / len(stops)
+        + POPULAR_WEIGHT * (known - 1)
+        + STOPS_WEIGHT * (filled - 1)
+    )
     return score, max(0, min(100, round(match * 100)))
+
+
+def popularity(s: Snapshot) -> float:
+    """How well known a place is, 0 to 1: the team's own places are; a city from the route map by the
+    Wikipedias that write about it (Marrakech 0.84, Nador 0.51), else by how many cities fly to it directly."""
+    if s.place.verified:
+        return 1.0
+    links = fame(s.place.airport) if s.place.airport else None
+    return min(1.0, math.sqrt(links / FAMOUS_LINKS)) if links is not None else connected(s)
+
+
+def connected(s: Snapshot) -> float:
+    """How many cities fly to the place directly, 0 to 1: none without an airport."""
+    routes = reach(s.place.airport) if s.place.airport else 0
+    return min(1.0, math.log1p(routes) / math.log1p(POPULAR_ROUTES))
+
+
+def _countries(stops: list[Snapshot]) -> int:
+    return len({s.place.country.code for s in stops})
 
 
 def plan_of(stops: list[Snapshot], q: RouteQuery) -> RoutePlan:
@@ -227,13 +287,13 @@ def _by_train(a_country: str, b_country: str, km: int) -> bool:
     return km <= (TRAIN_KM if a_country == b_country else TRAIN_BORDER_KM)
 
 
-def _hop_ok(a: Snapshot, b: Snapshot, km: int, land: bool = False) -> bool:
+def _hop_ok(a: Snapshot, b: Snapshot, km: int, land: bool = False, max_km: int = MAX_LEG_KM) -> bool:
     """Close enough to go by land, or a direct flight on the route map between them, still one leg of a trip.
     The map is what keeps Yerevan → Baku out: both have airports, but nothing flies between them."""
     countries = a.place.country.name, b.place.country.name
     if _by_land(*countries, km) or (land and _by_train(*countries, km)):
         return True
-    if km > MAX_LEG_KM or not (a.place.airport and b.place.airport):
+    if km > max_km or not (a.place.airport and b.place.airport):
         return False
     return network().direct(a.place.airport, b.place.airport)
 
@@ -244,19 +304,21 @@ def candidate_routes(snapshots: list[Snapshot], q: RouteQuery, home: City | None
     stops = [s for s in snapshots if _stop_scope(s, q) and stop_fits(s, q)]
     nights = q.nights or DEFAULT_NIGHTS
     most = min(q.max_stops or default_stops(nights), max(2, nights // MIN_NIGHTS_PER_STOP), len(stops))
-    least = min(q.min_stops, most)
+    least = min(max(q.min_stops, q.min_countries), most)
     sized = q.model_copy(update={"nights": nights})
     km = [[_km(a, b) for b in stops] for a in stops]
     reach = [
-        [i != j and _hop_ok(stops[i], stops[j], km[i][j], q.land) for j in range(len(stops))]
+        [i != j and _hop_ok(stops[i], stops[j], km[i][j], q.land, q.max_leg_km) for j in range(len(stops))]
         for i in range(len(stops))
     ]
     start_km = [km_between(home.lat, home.lon, s.place.lat, s.place.lon) if home else 0 for s in stops]
+    small_end = [SMALL_END_KM * (1 - connected(s)) if home else 0 for s in stops]
 
     def travel(path: tuple[int, ...]) -> float:
         # out from home and back from the last city count less than the hops: a loop beats a zigzag
         # ties go to starting nearer home: the first flight is the one people check first
-        return 0.31 * start_km[path[0]] + 0.29 * start_km[path[-1]] + sum(km[a][b] for a, b in pairwise(path))
+        ends = 0.31 * start_km[path[0]] + 0.29 * start_km[path[-1]] + small_end[path[0]] + small_end[path[-1]]
+        return ends + sum(km[a][b] for a, b in pairwise(path))
 
     beam: list[tuple[int, ...]] = [(i,) for i in range(len(stops))]
     plans: list[RoutePlan] = []
@@ -272,14 +334,33 @@ def candidate_routes(snapshots: list[Snapshot], q: RouteQuery, home: City | None
                 key = frozenset(grown)
                 if key not in best or rank > best[key][0]:
                     best[key] = (rank, grown, plan)
-        ranked = sorted(best.values(), key=lambda r: -r[0])[:BEAM]
+        ranked = sorted(best.values(), key=lambda r: -r[0])
+        if q.min_countries > 1:
+            ranked = _mixes_first(ranked, stops)
+        ranked = ranked[:BEAM]
         beam = [path for _, path, _ in ranked]
         if size >= least:
             # grown one city at a time, a path can zigzag: the shortest order of the same cities replaces it
             plans.extend(
                 plan_of([stops[i] for i in _shortest(path, travel, reach)], sized) for _, path, _ in ranked
             )
+    if q.min_countries > 1 and plans:
+        # through as many of the countries as asked, or as many as can be reached
+        wanted = min(q.min_countries, max(_countries(p.stops) for p in plans))
+        plans = [p for p in plans if _countries(p.stops) >= wanted]
     return sorted(plans, key=lambda p: -p.score)
+
+
+def _mixes_first(ranked: list, stops: list[Snapshot]) -> list:
+    """The best path of every mix of countries first, then the rest by rank: a far country is not crowded out
+    of the beam by a cluster of near cities in another."""
+    seen: set[frozenset[str]] = set()
+    first, rest = [], []
+    for item in ranked:
+        mix = frozenset(stops[i].place.country.code for i in item[1])
+        (rest if mix in seen else first).append(item)
+        seen.add(mix)
+    return first + rest
 
 
 def _shortest(path: tuple[int, ...], travel, reach: list[list[bool]]) -> tuple[int, ...]:
@@ -638,7 +719,7 @@ async def named_route(
         km = [[_km(a, b) for b in stops] for a in stops]
         start = [km_between(origin.lat, origin.lon, s.place.lat, s.place.lon) if origin else 0 for s in stops]
         reach = [
-            [i != j and _hop_ok(a, b, km[i][j], q.land) for j, b in enumerate(stops)]
+            [i != j and _hop_ok(a, b, km[i][j], q.land, q.max_leg_km) for j, b in enumerate(stops)]
             for i, a in enumerate(stops)
         ]
 
@@ -660,22 +741,21 @@ async def find_routes(
 ) -> list[RoutePlan]:
     """The best routes with real prices; at most one route per set of overlapping cities. Candidates get
     plain fares first; only the picked ones get smart ways and trains, which cost more requests."""
-    candidates = candidate_routes(snapshots, q, origin)[:PRICED_CANDIDATES]
+    # half of them different routes, not near copies of the best one (those would leave a single card after
+    # the pick); the other half the best of the rest, so a near copy with a way home still gets its prices
+    ranked = candidate_routes(snapshots, q, origin)
+    candidates = _spread(ranked, PRICED_CANDIDATES // 2, (0.5,))
+    candidates += [p for p in ranked if p not in candidates][: PRICED_CANDIDATES - len(candidates)]
     await asyncio.gather(
         *(price_route(plan, flights, origin, q.month, improve=False, by_land=q.land) for plan in candidates)
     )
     for plan in candidates:
-        if not plan.legs or (plan.legs[0].mode == "flight" and not plan.legs[0].flights):
-            plan.score -= 0.3  # no way to get there from home this month
-    ranked = sorted(candidates, key=lambda p: -p.score)
-    picked: list[RoutePlan] = []
+        # no fare there from home this month, or none back home: a trip nobody can price yet
+        ends = (plan.legs[0], plan.legs[-1]) if plan.legs and origin else ()
+        if not plan.legs or any(leg.mode == "flight" and not leg.flights for leg in ends):
+            plan.score -= 0.3
     # first routes that share no city, so the choice is a real choice; then near ones if there are too few
-    for most_shared in (0.0, 0.5):
-        for plan in ranked:
-            ids = {s.place.id for s in plan.stops}
-            fresh = all(_overlap(ids, {s.place.id for s in o.stops}) <= most_shared for o in picked)
-            if len(picked) < q.limit and plan not in picked and fresh:
-                picked.append(plan)
+    picked = _spread(sorted(candidates, key=lambda p: -p.score), q.limit, (0.0, 0.5))
     # the picked ones in full: smarter ways, trains and buses (the fares are cached, so no new requests)
     await asyncio.gather(*(price_route(plan, flights, origin, q.month, by_land=q.land) for plan in picked))
     return picked
@@ -683,6 +763,19 @@ async def find_routes(
 
 def _overlap(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
+
+
+def _spread(plans: list[RoutePlan], count: int, most_shared: tuple[float, ...]) -> list[RoutePlan]:
+    """Up to `count` plans in their order, each sharing at most the first share of its cities with those
+    before it; the next share only when there are too few."""
+    picked: list[RoutePlan] = []
+    for share in most_shared:
+        for plan in plans:
+            ids = {s.place.id for s in plan.stops}
+            fresh = all(_overlap(ids, {s.place.id for s in o.stops}) <= share for o in picked)
+            if len(picked) < count and plan not in picked and fresh:
+                picked.append(plan)
+    return picked
 
 
 def _day(s: Snapshot, month: int | None) -> int | None:

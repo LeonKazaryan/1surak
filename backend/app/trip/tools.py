@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.catalog.catalog import load_catalog
 from app.catalog.search import card, load_snapshots, sea_matters, with_flights
-from app.destinations import country_cities, load_discovered, snapshots_by_id
+from app.destinations import load_discovered, region_cities, snapshots_by_id
 from app.destinations.gateway import fill_missing
 from app.flights import Flights, NoFlights, city, currency_for, current_origin
 from app.flights.dictionary import find_city
@@ -31,6 +31,7 @@ from app.trip.brief import (
     assumptions,
     cards_first,
     chips,
+    countries_for,
     merge,
     missing,
     per_night_budget,
@@ -95,7 +96,9 @@ ROUTES_DESCRIPTION = (
     "neighbouring airport (legs with `parts` and `via`; `instead` is the flight it replaced, so you can name "
     "the saving). Hops by land carry real trains (Tutu) or buses (FlixBus) when found (`ground`), else an "
     "estimate. Pass the same filters as for search_destinations plus `nights`; for a big tour pass "
-    "min_stops (4-5, or the number the user named, also as max_stops). When the user named the cities "
+    "min_stops (4-5, or the number the user named, also as max_stops). For several countries pass "
+    "min_countries from the hint: every route then crosses that many, with direct flights up to ~3.5 hours "
+    "between them, and well-known cities (Cairo, Marrakech) rank before obscure ones. When the user named the cities "
     "themselves (route_places in the hint), pass them as `places` (order_fixed if they gave the order): the "
     "route is built from exactly those, in the better order. When the user wants trains (by_land in the hint), "
     "pass by_land: hops go by train or bus wherever one runs. Do not offer routes to families with small "
@@ -289,23 +292,41 @@ def trip_tools(
             query = query.model_copy(update={"countries": named})
         if state.brief.by_land and not query.by_land:
             query = query.model_copy(update={"by_land": True})
-        async with sessionmaker() as db:
-            snapshots = await load_snapshots(db, catalog, now())
-            if query.countries and not query.places:
-                # the named country's own airports join the catalogue's places: «по Турции» can reach
-                # Cappadocia (Nevşehir, Kayseri) even though the team never curated it
-                named = country_cities(query.countries, network(), per_country=ROUTE_CITIES_PER_COUNTRY)
-                snapshots += await load_discovered(db, named, now(), need_climate=False)
+        if state.brief.multi_country and query.min_countries == 1:
+            # «несколько стран» holds even when the model leaves it out
+            query = query.model_copy(update={"min_countries": countries_for(query.nights)})
+        if state.brief.visa_free_only is False:
+            # «визы не важны»: a Schengen route is not marked down against a visa-free one
+            query = query.model_copy(update={"visas_matter": False})
         if query.places:
             places = [catalog.find(name) for name in query.places]
             if unknown := [n for n, p in zip(query.places, places, strict=True) if p is None]:
                 return {"error": f"Not in the catalogue: {unknown}. Use plan_route for these cities."}
-            by_id = {s.place.id: s for s in snapshots}
+            # the catalogue's places and route-map cities alike («city-cmn» is Casablanca)
+            async with sessionmaker() as db:
+                by_id = await snapshots_by_id(db, catalog, now(), [p.id for p in places])
+            if unplaced := [p.name for p in places if p.id not in by_id]:
+                return {"error": f"No data for {unplaced}. Use plan_route for these cities."}
             plans = [await named_route([by_id[p.id] for p in places], query, flights, origin)]
         else:
+            async with sessionmaker() as db:
+                snapshots = await load_snapshots(db, catalog, now())
+                if query.countries:
+                    # the named country's own airports join the catalogue's places: «по Турции» can reach
+                    # Cappadocia (Nevşehir, Kayseri) even though the team never curated it
+                    named = region_cities(query.countries, network(), per_country=ROUTE_CITIES_PER_COUNTRY)
+                    snapshots += await load_discovered(db, named, now(), need_climate=False)
             plans = await find_routes(snapshots, query, flights, origin)
         state.routes.update({p.id: p for p in plans})
         if not plans:
+            if query.min_countries > 1 and not query.places:
+                # several countries wanted: a route through the best cities, never single cards instead
+                note = (
+                    "No route fits the filters. The user wants several countries: call search_routes again with "
+                    "`places` = 3-5 well-known cities in different countries that fit the wish (names are fine, "
+                    "e.g. from search_destinations), not single places."
+                )
+                return {"routes": [], "note": note}
             again = {"countries": query.countries} if query.countries else {}
             note = "No route fits. Offer single places: call search_destinations with the same month"
             if again:  # the region the user asked for stays: without it the search drifts to other countries
