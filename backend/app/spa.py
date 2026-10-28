@@ -5,6 +5,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 log = logging.getLogger(__name__)
+# index.html is asked again on every visit, so a new build shows at once; the bundles it names have a content
+# hash in their names, so they can be kept forever
+FRESH = {"Cache-Control": "no-cache"}
+FOREVER = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 def mount_spa(app: FastAPI, static_dir: Path) -> None:
@@ -20,8 +24,9 @@ def mount_spa(app: FastAPI, static_dir: Path) -> None:
             raise HTTPException(status_code=404, detail="Not Found")
         try:
             candidate = (root / path).resolve()
-            if candidate.is_file() and candidate.is_relative_to(root):
-                return FileResponse(candidate)
+            if candidate.is_file() and candidate.is_relative_to(root) and candidate != index:
+                hashed = candidate.parent == root / "assets"
+                return FileResponse(candidate, headers=FOREVER if hashed else FRESH)
         except (ValueError, OSError):
             pass
-        return FileResponse(index)
+        return FileResponse(index, headers=FRESH)

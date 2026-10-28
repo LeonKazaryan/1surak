@@ -25,6 +25,7 @@ from app.catalog.search import (
     Snapshot,
     failures,
     in_scope,
+    route_visas,
     visa_info,
     visa_text,
 )
@@ -819,6 +820,8 @@ def route_for_model(plan: RoutePlan, month: int | None) -> dict:
             for s, n in zip(plan.stops, plan.nights, strict=True)
         ],
         "legs": [_leg_for_model(leg) for leg in plan.legs],
+        # one line per visa to get: the Schengen countries of the route share one
+        "visas": [chip["text"] for chip in route_visas(list(zip(plan.stops, plan.nights, strict=True)))],
         "tickets_total": money(plan.total_rub) if plan.total_rub else None,
         "tickets_guide": money(plan.guide_rub) if plan.guide_rub else None,
         "all_flights_priced": plan.priced,
@@ -861,6 +864,7 @@ def route_card(plan: RoutePlan, month: int | None, why: str, tradeoff: str | Non
         "month": MONTHS[month - 1] if month else None,
         "stops": stops,
         "legs": [leg.view() for leg in plan.legs],
+        "visas": route_visas(list(zip(plan.stops, plan.nights, strict=True))),
         "total_rub": (plan.total_rub + plan.guide_rub) or None,
         "total_complete": plan.priced,
         "total_guided": plan.guide_rub > 0,

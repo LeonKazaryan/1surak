@@ -65,6 +65,33 @@ describe('VisaChip', () => {
     expect(client.fetchVisa).toHaveBeenCalledTimes(1)
   })
 
+  it('should list the countries one Schengen visa opens and those that let it in', async () => {
+    const schengen: VisaInfo = {
+      ...usa('KZ-GR', FEE),
+      label: 'нужна многократная виза',
+      name: 'Шенген',
+      countries: ['Греция', 'Италия'],
+      also: [{ name: 'Черногория', days: 30, source: 'gov.me', url: 'https://www.gov.me/visa' }],
+    }
+    render(
+      <CurrencyContext value={KZT}>
+        <ul>
+          <VisaChip info={schengen} prefix="Шенген: " />
+        </ul>
+      </CurrencyContext>,
+    )
+
+    await userEvent.hover(screen.getByRole('button', { name: 'Шенген: нужна многократная виза' }))
+
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Шенген: нужна многократная виза')
+    expect(screen.getByRole('list', { name: 'Одна виза на страны' })).toHaveTextContent('ГрецияИталия')
+    const takes = screen.getByRole('list', { name: 'По этой визе пускают' })
+    expect(takes).toHaveTextContent('Черногория')
+    expect(takes).toHaveTextContent('до 30 дн.')
+    expect(screen.getByRole('link', { name: /gov\.me/ })).toHaveAttribute('href', 'https://www.gov.me/visa')
+  })
+
   it('should show a fee the card already has without asking', async () => {
     renderChips(usa('KZ-CA', FEE))
 

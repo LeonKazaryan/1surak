@@ -161,8 +161,12 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
   })
   const nights = card.stops.reduce((sum, s) => sum + s.nights, 0)
   const scenes = sceneKinds(card.stops)
-  // a country that needs a visa (or an e-visa, a permit) gets its chip; one with no visa needs no words
-  const visas = [...new Map(card.stops.filter((s) => s.visa_info && !NO_VISA.has(s.visa_info.rule)).map((s) => [s.country, s])).values()]
+  // one chip per visa to get (Italy, Spain and Portugal share a Schengen one); no visa needs no words
+  const visas =
+    card.visas ??
+    [...new Map(card.stops.filter((s) => s.visa_info && !NO_VISA.has(s.visa_info.rule)).map((s) => [s.country, s])).values()].map(
+      (s) => ({ ...s.visa_info!, name: s.country }),
+    )
   const dense = card.stops.length >= DENSE_FROM
   const tight = card.stops.length >= TIGHT_FROM
 
@@ -283,8 +287,8 @@ export function RouteCardView({ card, best, picked, dimmed, canPick, onPick, det
 
         {visas.length > 0 && (
           <ul className="m-0 flex list-none flex-wrap items-center gap-1.5 p-0" aria-label="Визы">
-            {visas.map((stop) => (
-              <VisaChip key={stop.country} info={stop.visa_info!} prefix={`${stop.country}: `} />
+            {visas.map((visa) => (
+              <VisaChip key={visa.name} info={visa} prefix={`${visa.name}: `} />
             ))}
           </ul>
         )}

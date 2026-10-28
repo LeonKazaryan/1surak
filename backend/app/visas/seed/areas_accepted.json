@@ -1,0 +1,68 @@
+{
+ "schengen": {
+  "AD": {
+   "checked": "2026-10-28",
+   "days": null,
+   "multiple_entry": false,
+   "quote": "Andorra does not issue its own tourist visas and has no independent visa requirement for short stays. The country is not part of the Schengen Area (nor the EU), but it is only accessible by crossing through Spain or France, both Schengen members. Therefore, a valid Schengen visa (if required for you",
+   "source": "en.wikipedia.org",
+   "url": "https://en.wikipedia.org/wiki/Visa_policy_of_Andorra"
+  },
+  "BA": {
+   "checked": "2026-10-28",
+   "days": 30,
+   "multiple_entry": true,
+   "quote": "Citizens of countries with which Bosnia and Herzegovina has a visa regime may enter Bosnia and Herzegovina with a passport, without the obligation to obtain a visa for entry, exit, transit and stay on the territory of Bosnia and Herzegovina, provided they hold a valid multiple-entry visa or a reside",
+   "source": "fipa.gov.ba",
+   "url": "https://fipa.gov.ba/en/visasinformation-for-visitors"
+  },
+  "CY": {
+   "checked": "2026-10-28",
+   "days": null,
+   "multiple_entry": true,
+   "quote": "Въезд на Кипр (Республику Кипр) по шенгенской визе без отдельной национальной визы Кипра возможен, но с важными условиями.",
+   "source": "gov.cy",
+   "url": "https://www.gov.cy/mfa/en/documents/categories-of-persons-and-countries-whose-nationals-do-not-require-a-visa/"
+  },
+  "GE": {
+   "checked": "2026-10-28",
+   "days": 90,
+   "multiple_entry": false,
+   "quote": "Шенгенская виза (виза любого государства ЕС/Шенгена или EFTA) позволяет въехать и находиться в Грузии **до 90 дней в течение любых 180 дней**. Виза или вид на жительство должна быть действительной на момент въезда (пересечения границы).",
+   "source": "en.wikipedia.org",
+   "url": "https://en.wikipedia.org/wiki/Visa_policy_of_Georgia"
+  },
+  "MC": {
+   "checked": "2026-10-28",
+   "days": 90,
+   "multiple_entry": false,
+   "quote": "No, with a valid passport and Schengen visa / Residence permit from an EU/EEA countries, no additional formalities for a short stay (less than 90 days) is necessary.",
+   "source": "ambassade-en-allemagne.gouv.mc",
+   "url": "https://ambassade-en-allemagne.gouv.mc/en/information-and-services/frequently-asked-questions-faq"
+  },
+  "ME": {
+   "checked": "2026-10-28",
+   "days": 30,
+   "multiple_entry": false,
+   "quote": "holders of valid foreign travel documents containing a valid Schengen visa … may enter, pass through the territory and stay in Montenegro up to 30 days, and not longer than the expiry of visa if the period of validity of the visa is less than 30 days.",
+   "source": "gov.me",
+   "url": "https://www.gov.me/en/diplomatic-missions/embassies-and-consulates-of-montenegro"
+  },
+  "MK": {
+   "checked": "2026-10-28",
+   "days": 15,
+   "multiple_entry": true,
+   "quote": "Third-country nationals with multiple-entry Schengen visa (type C) valid for at least 5 (five) days beyond the intended stay in the Republic of North Macedonia may stay no longer than 15 (fifteen) days upon every entry into the territory of the Republic of North Macedonia as long as the total length",
+   "source": "mfa.gov.mk",
+   "url": "https://mfa.gov.mk/en-GB/konzularni-uslugi/informacii-za-vlez-vo-rsm"
+  },
+  "RS": {
+   "checked": "2026-10-28",
+   "days": 90,
+   "multiple_entry": true,
+   "quote": "Да, путешественники, имеющие действующую визу Шенгена (или визу США, Великобритании, ЕС), могут въехать в Сербию без отдельной сербской визы. Они имеют право на пребывание до 90 дней в течение любого 6-месячного (180-дневного) периода, в пределах срока действия своей визы.",
+   "source": "mfa.gov.rs",
+   "url": "https://www.mfa.gov.rs/en/citizens/travel-serbia/visa-requirements"
+  }
+ }
+}

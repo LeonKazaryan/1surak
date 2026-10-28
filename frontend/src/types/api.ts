@@ -135,6 +135,12 @@ export interface VisaInfo {
   pair: string
   /** null: not found yet (or not anywhere); the chip asks when it opens. */
   fee?: VisaFee | null
+  /** On a route: what the chip names, the country or the visa area («Шенген»). */
+  name?: string
+  /** The countries one visa of an area opens on this route: «Италия», «Испания», «Португалия». */
+  countries?: string[]
+  /** Countries outside the area on this route that let its visa in instead of their own, with the source. */
+  also?: { name: string; days: number | null; source: string; url: string }[]
 }
 
 export interface DestinationCard {
@@ -270,6 +276,8 @@ export interface RouteCard {
   month_in: string | null
   stops: RouteStop[]
   legs: RouteLeg[]
+  /** One chip per visa to get: the Schengen countries of the route share one. */
+  visas?: VisaInfo[]
   total_rub: number | null
   total_complete: boolean
   /** Part of the total is the best fare of the nearest dates, for flights with no fare on their day. */

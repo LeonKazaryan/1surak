@@ -225,9 +225,39 @@ export function VisaChip({ info, prefix }: VisaChipProps) {
             >
               <p className="m-0 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
                 <ToneIcon tone={tone} />
+                {prefix}
                 {info.label}
               </p>
+              {info.countries && info.countries.length > 1 && (
+                <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label="Одна виза на страны">
+                  {info.countries.map((name) => (
+                    <li key={name} className="rounded-full bg-inset px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <p className="m-0 mt-1.5 text-[13px] leading-snug text-foreground">{info.text}</p>
+              {info.also && info.also.length > 0 && (
+                <ul className="m-0 mt-2 flex list-none flex-col gap-1 rounded-xl bg-accent/60 p-2 px-2.5" aria-label="По этой визе пускают">
+                  {info.also.map((place) => (
+                    <li key={place.name} className="flex items-center gap-1.5 text-[12px] text-foreground">
+                      <CheckBadgeIcon aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#4c9a2a]" />
+                      <span className="font-medium">{place.name}</span>
+                      {place.days && <span className="text-muted-foreground">до {place.days} дн.</span>}
+                      <a
+                        href={place.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-highlight underline-offset-2 hover:underline"
+                      >
+                        {place.source}
+                        <ArrowTopRightOnSquareIcon className="h-3 w-3" aria-hidden />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {paid && <FeeBlock state={fee} />}
               <p className="m-0 mt-2 text-[11px] leading-snug text-faint">Паспорт считаю по стране вылета, правила по Passport Index</p>
             </motion.div>

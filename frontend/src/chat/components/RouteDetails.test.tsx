@@ -113,3 +113,24 @@ describe('RouteDetails without a fare on the day', () => {
     expect(screen.getByRole('link', { name: 'Астана → Алматы, FlyArystan' })).toHaveTextContent('дороже обычного')
   })
 })
+
+describe('RouteCard visas', () => {
+  it('should show one chip for a visa several countries of the route share', () => {
+    const visa = {
+      rule: 'visa_required' as const,
+      label: 'нужна виза',
+      text: 'Для граждан Казахстана нужна шенгенская виза, одна на Италию, Испанию и Португалию.',
+      days: null,
+      pair: 'KZ-ES',
+      fee: null,
+      name: 'Шенген',
+      countries: ['Италия', 'Испания', 'Португалия'],
+    }
+    const props = { best: false, picked: false, dimmed: false, canPick: true, onPick: () => {}, detailsOpen: false, onDetails: () => {} }
+    render(<RouteCardView card={{ ...SMART_ROUTE, visas: [visa] }} {...props} />)
+
+    const chips = within(screen.getByRole('list', { name: 'Визы' })).getAllByRole('button')
+    expect(chips.map((c) => c.textContent)).toEqual(['Шенген: нужна виза'])
+  })
+})
+

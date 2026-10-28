@@ -2,13 +2,24 @@
 (found on the web once, then cached). See rules.py and fees.py."""
 
 from app.visas.fees import NoFees, VisaFee, VisaFees, configure, fees
-from app.visas.rules import VisaRule, current_passport, label, passport_of, rule_for, sentence, view
+from app.visas.rules import (
+    VisaRule,
+    area_of,
+    current_passport,
+    label,
+    passport_of,
+    rule_for,
+    sentence,
+    shared,
+    view,
+)
 
 __all__ = [
     "NoFees",
     "VisaFee",
     "VisaFees",
     "VisaRule",
+    "area_of",
     "configure",
     "current_passport",
     "fees",
@@ -16,5 +27,6 @@ __all__ = [
     "passport_of",
     "rule_for",
     "sentence",
+    "shared",
     "view",
 ]

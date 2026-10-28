@@ -25,7 +25,7 @@ from app.facts.service import Resolved, resolve_entities
 from app.flights import City, Flights, RouteFlights, city, current_origin
 from app.money import current_currency, money
 from app.photos import place_photo
-from app.visas import VisaRule, fees, rule_for
+from app.visas import VisaRule, fees, rule_for, shared
 from app.visas import label as visa_label
 from app.visas import sentence as visa_sentence
 from app.visas import view as visa_view
@@ -363,6 +363,12 @@ def visa_text(s: Snapshot) -> str:
         if s.visa_days:
             text += f", до {s.visa_days:.0f} дней"
     return f"{text} {s.visa_note}" if s.visa_note else text
+
+
+def route_visas(stays: list[tuple[Snapshot, int]]) -> list[dict]:
+    """The visa chips of a route: one per visa to get, Schengen countries together; fees already known."""
+    found = shared([(s.visa, n) for s, n in stays if s.visa])
+    return [{**chip, "fee": fee.view() if (fee := fees().known(rule)) else None} for rule, chip in found]
 
 
 def visa_info(s: Snapshot) -> dict | None:
