@@ -203,6 +203,18 @@ def test_should_say_a_long_intro_once_when_the_tool_shows_it_too():
     assert text_of(events) == intro
 
 
+def test_should_not_show_a_calls_arguments_written_as_text():
+    intro = "Собрал поездку в Нячанг: номер с видом на море и ванной подтверждён, отмена бесплатная. " * 3
+    args = json.dumps({"intro": intro}, ensure_ascii=False)
+    show = Tool(name="show", title="Показываю план", description="Show", args=IntroArgs, handler=_show)
+
+    events = run(FakeLLM(rounds=[[args, call("show", args)]]), ToolRegistry([show]))
+    assert text_of(events) == intro and "{" not in text_of(events)
+
+    # the same words with no call: what is inside is the reply
+    assert text_of(run(FakeLLM(rounds=[[args]]), ToolRegistry([show]))) == intro
+
+
 def test_should_say_the_reply_once_when_the_intro_says_it_again_in_other_words():
     said = (
         "Собрал Нячанг на двоих. Отель Luxury Nha Trang Hotel настоящий, трёхзвёздочный и в центре, цена "

@@ -40,11 +40,13 @@ def _central(h: Hotel) -> bool:
 
 
 def _price_note(cards: list[dict]) -> str:
-    if not cards or not all(c.get("price_source") for c in cards):
+    if not cards or not all(c.get("live_price") for c in cards):
         return "Prices are estimates for real hotels: say so once."
     if any(c.get("sandbox") for c in cards):
-        return "Prices are live LiteAPI rates for these dates, from its sandbox (test rates): say so once."
-    return "Prices are live rates for these dates, rooms and refund terms included."
+        return (
+            "Prices are live rates for these dates, test ones for now: say so once, naming no service or API."
+        )
+    return "Prices are live rates for these dates, rooms and refund terms included. Name no service or API."
 
 
 def _hotel_card(h: Hotel, rate, night: int, nights: int, current: bool) -> dict:

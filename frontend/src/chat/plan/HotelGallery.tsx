@@ -165,7 +165,7 @@ function Lightbox({ photos, room, name, at, onAt }: LightboxProps) {
             )}
           </div>
           {photos.length > 1 && (
-            <div ref={thumbs} className="scroll-row flex gap-2 overflow-x-auto px-4 pb-2">
+            <div ref={thumbs} className="scroll-row flex gap-2 overflow-x-auto px-4 pb-4">
               {photos.map((url, i) => (
                 <button
                   key={url}
@@ -184,7 +184,6 @@ function Lightbox({ photos, room, name, at, onAt }: LightboxProps) {
               ))}
             </div>
           )}
-          <p className="m-0 px-4 pb-4 text-center text-[11px] text-white/50">Фото: LiteAPI</p>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

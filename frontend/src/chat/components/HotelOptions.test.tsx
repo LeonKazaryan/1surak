@@ -56,7 +56,7 @@ describe('HotelOptionsCards', () => {
       photos: ['https://static.cupid.travel/rooms/1.jpg', 'https://static.cupid.travel/hotels/1.jpg'],
       room: { name: 'Guest room, 1 King, Ocean view', size_m2: 41, beds: null, view: 'вид на океан', amenities: [], photos: 1 },
       cancel_until: '2026-12-07',
-      price_source: 'LiteAPI',
+      live_price: true,
       sandbox: false,
     })
     render(<HotelOptionsCards widget={{ ...WIDGET, hotels: [live] }} canPick onPick={() => {}} />)
@@ -67,7 +67,7 @@ describe('HotelOptionsCards', () => {
     expect(screen.getByText('Бесплатная отмена до 7 декабря')).toBeInTheDocument()
     expect(screen.queryByText(/около/)).toBeNull()
     expect(screen.queryByText('цена ориентировочная')).toBeNull()
-    expect(screen.getByText('Цена и фото: LiteAPI на ваши даты')).toBeInTheDocument()
+    expect(screen.queryByText(/LiteAPI/)).toBeNull()
   })
 
   it('should ask for the picked hotel by name', async () => {

@@ -70,12 +70,12 @@ export function HotelPhoto({ photo, name }: { photo: Photo; name: string }) {
   )
 }
 
-/** Demo: invented whole. Real: the hotel exists, the price is our estimate until booking. Live: the provider's
+/** Demo: invented whole. Real: the hotel exists, the price is our estimate until booking. Live: the hotel's
  * price for these dates, said only when it is a test one. */
 export function SourceBadge({ hotel }: { hotel: { real?: boolean } & LiveOffer }) {
-  if (hotel.price_source && !hotel.sandbox) return null
-  const [label, title] = hotel.price_source
-    ? ['тестовая цена', `Настоящий отель и номер; цена из тестового режима ${hotel.price_source}`]
+  if (hotel.live_price && !hotel.sandbox) return null
+  const [label, title] = hotel.live_price
+    ? ['тестовая цена', 'Настоящий отель и номер; цена тестовая']
     : hotel.real
       ? ['цена ориентировочная', 'Настоящий отель; цену и условия уточним при бронировании']
       : ['демо', 'Демонстрационный отель: цены и номера сгенерированы']
@@ -127,21 +127,11 @@ function Scores({ scores }: { scores: NonNullable<LiveOffer['scores']> }) {
   )
 }
 
-/** Where the price is from: the provider's for these dates, or nothing to say. */
-export function PriceSource({ hotel, className }: { hotel: LiveOffer; className?: string }) {
-  if (!hotel.price_source) return null
-  return (
-    <p className={cn('m-0 text-[11px] text-faint', className)}>
-      Цена и фото: {hotel.price_source} на ваши даты{hotel.sandbox ? ' · тестовый режим' : ''}
-    </p>
-  )
-}
-
 function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: string | null }) {
   const currency = useContext(CurrencyContext)
   const where = [hotel.area, hotel.beach_m !== null && `до пляжа ${hotel.beach_m} м`].filter(Boolean).join(' · ')
   const unknownTerms = hotel.terms_known === false
-  const live = Boolean(hotel.price_source)
+  const live = Boolean(hotel.live_price)
   // check-in times live in «Дорога» next to the flights, unknown terms in the badge's title: said once
   const facts = [
     ...(unknownTerms ? [] : [hotel.meal_label, cancelText(hotel), hotel.pay_at_hotel ? 'оплата в отеле' : 'оплата при бронировании']),
@@ -197,7 +187,6 @@ function HotelCard({ hotel, transferText }: { hotel: PlanHotel; transferText: st
         </span>
         <span className="shrink-0 text-lg font-semibold whitespace-nowrap text-foreground tabular-nums">{formatMoney(hotel.total_rub, currency)}</span>
       </div>
-      <PriceSource hotel={hotel} className="-mt-2" />
       {fromOsm(hotel.source_url) && <DataCredit sources={['osm']} />}
     </div>
   )

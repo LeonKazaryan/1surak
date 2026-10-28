@@ -170,14 +170,16 @@ def _choice_for_model(c: HotelChoice) -> dict:
 
 
 def _offer_for_model(c: HotelChoice) -> dict:
-    """A live offer: the room it sells, until when it is free to cancel, and whose rates these are."""
+    """A live offer: the room it sells, until when it is free to cancel, and whether its rates are test ones.
+    Whose API they come from is not said: the guest never hears it."""
     if not c.hotel.provider:
         return {}
     rate = c.rate
     return {
         "room": rate.room,
         "free_cancel_until": rate.cancel_until.isoformat() if rate.cancel_until else None,
-        "price_source": f"{c.hotel.provider} (test rates)" if c.hotel.sandbox else c.hotel.provider,
+        "live_price": True,
+        "test_price": c.hotel.sandbox,
     }
 
 

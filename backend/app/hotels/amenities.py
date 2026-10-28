@@ -11,7 +11,16 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.hotels.liteapi import Details, Room
-from app.plan.hotels import LITEAPI, MEAL_LABELS, Evidence, Rate, Verdict
+from app.plan.hotels import (
+    HOTEL_DATA,
+    HOTEL_RULES,
+    MEAL_LABELS,
+    RATE_DATA,
+    ROOM_DATA,
+    Evidence,
+    Rate,
+    Verdict,
+)
 
 Scope = Literal["room", "rate", "hotel", "pets"]
 LISTED_AMENITIES = 5  # a room whose amenities are listed this fully and lack the wish does not have it
@@ -211,19 +220,21 @@ def judge(
     for wish, need in asked:
         if need.scope in ("hotel", "pets"):
             verdict, proof = _at_hotel(need, details)
-            evidence.append(Evidence(wish, verdict, proof, None if proof else NOT_SAID, LITEAPI))
+            source = HOTEL_RULES if need.scope == "pets" else HOTEL_DATA
+            evidence.append(Evidence(wish, verdict, proof, None if proof else NOT_SAID, source))
             continue
         verdicts = [s[wish] for s in said]
+        source = ROOM_DATA if need.scope == "room" else RATE_DATA
         if first is not None and said[first][wish][0] == "yes":
             proof = said[first][wish][1]
             note = "частичный" if proof and PARTIAL.search(proof) else None
             # a room is proved by its own name at least; a meal plan or a refund by the rate itself
             quote = proof or (rates[first].room if need.scope == "room" else None)
-            evidence.append(Evidence(wish, "yes", quote, note, LITEAPI))
+            evidence.append(Evidence(wish, "yes", quote, note, source))
         elif any(v == "yes" for v, _ in verdicts):
-            evidence.append(Evidence(wish, "unknown", None, OTHER_ROOM, LITEAPI))
+            evidence.append(Evidence(wish, "unknown", None, OTHER_ROOM, source))
         elif verdicts and all(v == "no" for v, _ in verdicts):
-            evidence.append(Evidence(wish, "no", verdicts[0][1], _none_on_sale(need, rates), LITEAPI))
+            evidence.append(Evidence(wish, "no", verdicts[0][1], _none_on_sale(need, rates), source))
         else:
-            evidence.append(Evidence(wish, "unknown", None, NOT_SAID, LITEAPI))
+            evidence.append(Evidence(wish, "unknown", None, NOT_SAID, source))
     return tuple(evidence), tuple(rates[i] for i in kept)

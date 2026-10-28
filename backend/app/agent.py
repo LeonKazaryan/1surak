@@ -117,12 +117,12 @@ search_routes с теми же countries и kinds (например, Антал�
 wishes_not_checked): прямо скажи «не нашёл» и предложи замену. Про перелёт «билетов не нашёл» не говори: \
 у рейса с price_guide_per_person цена посчитана по лучшему билету ближайших дат, а точная на день поездки в живом \
 поиске Aviasales по ссылке у рейса, скажи это одной фразой; у билета с dear скажи, что это лучший билет на эти даты, \
-но обычно дешевле, и предложи сдвинуть даты. Одной фразой скажи про отель: если у него есть price_source, цена живая на эти даты, \
-с номером room (назови его) и бесплатной отменой до free_cancel_until, если она есть; при «test rates» скажи, что цены \
-тестовые. Иначе если real_hotel, он настоящий, а цена ориентировочная и условия уточним при бронировании; иначе отель \
-демонстрационный. Пожелания к отелю (wishes у hotel) код проверил по номерам в продаже и правилам отеля (LiteAPI), \
-по сайту отеля и отзывам: про подтверждённое скажи, где это сказано («номер Studio Ocean View с видом на море», «в \
-отзывах пишут про вид с балкона»), неподтверждённое не обещай.
+но обычно дешевле, и предложи сдвинуть даты. Одной фразой скажи про отель: если у него live_price, цена живая на эти даты, \
+с номером room (назови его) и бесплатной отменой до free_cancel_until, если она есть; при test_price скажи, что цены \
+пока тестовые. Иначе если real_hotel, он настоящий, а цена ориентировочная и условия уточним при бронировании; иначе \
+отель демонстрационный. Пожелания к отелю (wishes у hotel) код проверил по описанию номеров в продаже, правилам и \
+описанию отеля, по сайту отеля и отзывам: про подтверждённое скажи, где это сказано («в описании номера Studio Ocean \
+View», «в отзывах пишут про вид с балкона»), неподтверждённое не обещай. Сервисы и API, из которых данные, не называй.
 5. Если план уже есть (current_plan) и пользователь меняет условие («на два дня позже», «бюджет меньше», \
 «с нами собака», «другой отель»), не начинай поиск заново: обнови бриф через update_trip_brief, \
 вызови build_trip с тем же id (другой отель: hotels с id из alternatives или названием, которое выбрал \
@@ -201,6 +201,21 @@ def _same_text(a: str, b: str) -> bool:
     passes to a tool, written twice with a date or a word changed. Shared words over the shorter text."""
     x, y = set(re.findall(r"\w+", a.casefold())), set(re.findall(r"\w+", b.casefold()))
     return bool(x and y) and len(x & y) / min(len(x), len(y)) >= SAME_TEXT_SHARE
+
+
+def _is_arguments(text: str) -> bool:
+    """Some models also write a call's arguments as plain text, «{"intro": "…"}»: a reply never starts so."""
+    return text.lstrip().startswith("{")
+
+
+def _said_in(arguments: str) -> str:
+    """The words inside arguments written as text: the longest string in them, else nothing."""
+    try:
+        found = json.loads(arguments)
+    except ValueError:
+        return ""
+    words = [v for v in found.values() if isinstance(v, str)] if isinstance(found, dict) else []
+    return max(words, key=len, default="")
 
 
 def _repeats_an_argument(text: str, calls: list[ToolCall]) -> bool:
@@ -301,8 +316,13 @@ async def _run(
                 text_parts.append(event.text)
                 if streaming:
                     yield {"type": "assistant_token", "text": event.text}
-                # with a reply already on screen, a later round's text waits: it is often the same reply again
-                elif not spoken and sum(map(len, text_parts)) > NARRATION_MAX_CHARS:
+                # with a reply already on screen, a later round's text waits: it is often the same reply again;
+                # so does text that is a call's arguments, to be dropped or unwrapped once it is all in
+                elif (
+                    not spoken
+                    and sum(map(len, text_parts)) > NARRATION_MAX_CHARS
+                    and not _is_arguments("".join(text_parts))
+                ):
                     streaming = True
                     for token in _tokens(text_parts, said_something):
                         yield token
@@ -314,6 +334,10 @@ async def _run(
             elif isinstance(event, Usage):
                 meter.add(event)
         text = "".join(text_parts)
+        if not streaming and _is_arguments(text):
+            # the call shows its own words; with no call, the words inside are the reply
+            text = "" if calls else _said_in(text)
+            text_parts = [text] if text else []
         if spoken and not streaming and _same_text(text, spoken):
             text_parts, text = [], ""  # the reply said again, often when the owed call is made: said once
         force = None

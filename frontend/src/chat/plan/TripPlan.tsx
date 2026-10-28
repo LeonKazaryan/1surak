@@ -118,7 +118,7 @@ function CheckoutBar({ plan, booking, canAct, onCheckout }: CheckoutBarProps) {
 
 /** Whose hotel prices these are, in a few words under the checkout button. */
 function hotelPrices(hotels: PlanHotel[]): string {
-  if (hotels.every((h) => h.price_source)) return hotels.some((h) => h.sandbox) ? 'Цены отелей LiteAPI в тестовом режиме' : 'Цены отелей на ваши даты'
+  if (hotels.every((h) => h.live_price)) return hotels.some((h) => h.sandbox) ? 'Цены отелей тестовые' : 'Цены отелей на ваши даты'
   return hotels.some((h) => h.real) ? 'Цены отелей ориентировочные' : 'Отели демонстрационные'
 }
 

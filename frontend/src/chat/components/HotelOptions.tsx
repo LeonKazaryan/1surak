@@ -6,7 +6,7 @@ import { MapPinIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { HotelOption, HotelOptionsEvent } from '@/types/api'
 import { HotelGallery } from '../plan/HotelGallery'
-import { HotelPhoto, PriceSource, SourceBadge } from '../plan/PlanStay'
+import { HotelPhoto, SourceBadge } from '../plan/PlanStay'
 import { Stars } from '../plan/planParts'
 import { dayText, nightsText } from '../plan/planFormat'
 import { WishChips } from '../plan/WishProof'
@@ -102,7 +102,6 @@ export function HotelOptionsCards({ widget, canPick, onPick }: { widget: HotelOp
         ))}
       </ul>
       {widget.hotels.some((hotel) => fromOsm(hotel.source_url)) && <DataCredit sources={['osm']} className="mt-2" />}
-      {widget.hotels[0] && <PriceSource hotel={widget.hotels[0]} className="mt-2" />}
     </CurrencyContext.Provider>
   )
 }

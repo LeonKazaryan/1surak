@@ -416,7 +416,7 @@ export interface PlanRoom {
   photos: number
 }
 
-/** A hotel with a live offer (LiteAPI): its photos, the room it sells, the refund deadline and whose price it is. */
+/** A hotel with a live offer: its photos, the room it sells, the refund deadline and whether the price is a test one. */
 export interface LiveOffer {
   photos?: string[]
   room?: PlanRoom | null
@@ -424,8 +424,8 @@ export interface LiveOffer {
   scores?: { label: string; score: number }[]
   /** Free cancellation until this day. */
   cancel_until?: string | null
-  /** «LiteAPI»: the price is the provider's for these dates; absent for an estimate. */
-  price_source?: string | null
+  /** The hotel's own price for these dates; absent for an estimate. */
+  live_price?: boolean
   /** The provider's test rates: the hotel and room are real, the price is for trying it out. */
   sandbox?: boolean
 }

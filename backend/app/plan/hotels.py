@@ -94,7 +94,13 @@ class Rate:
 Verdict = Literal["yes", "no", "unknown"]
 SITE = "сайт отеля"
 OSM_SOURCE = "OpenStreetMap"
-LITEAPI = "LiteAPI"  # the rooms on sale, their view and amenities, the hotel's facilities and rules
+LITEAPI = "LiteAPI"  # the provider of a live hotel; never shown to the guest
+# A live offer's data as the guest reads it next to the proof: what the hotel itself says, not whose API it is.
+ROOM_DATA = "описание номера"
+RATE_DATA = "условия тарифа"
+HOTEL_DATA = "описание отеля"
+HOTEL_RULES = "правила отеля"
+OWN_WORD = (SITE, OSM_SOURCE, ROOM_DATA, RATE_DATA, HOTEL_DATA, HOTEL_RULES)
 
 
 @dataclass(frozen=True)
@@ -476,7 +482,7 @@ def _said_no(e: Evidence) -> str:
 
 def _rules_out(e: Evidence) -> bool:
     """Only the hotel's own word rules it out: a review's «no» is one guest's story, so it only ranks lower."""
-    return e.verdict == "no" and e.source in (SITE, OSM_SOURCE, LITEAPI)
+    return e.verdict == "no" and e.source in OWN_WORD
 
 
 def _choose_real(

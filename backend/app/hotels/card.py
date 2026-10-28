@@ -1,5 +1,5 @@
 """What a hotel with a live offer shows: its photos (the booked room's first), the room as the hotel names it with
-its size, beds, view and the amenities worth a glance, what guests rate the hotel for, and where the price is from.
+its size, beds, view and the amenities worth a glance, what guests rate the hotel for, and whether its price is a test one.
 
 The provider speaks English: views, beds, amenities and the guests' categories are said in Russian from a fixed
 list, and anything not on it is left out rather than half translated.
@@ -124,6 +124,6 @@ def live_card(h: Hotel, rate: Rate) -> dict:
             {"label": label, "score": round(named[name], 1)} for name, label in SCORES if name in named
         ][:SHOWN_SCORES],
         "cancel_until": rate.cancel_until.isoformat() if rate.cancel_until else None,
-        "price_source": h.provider,
+        "live_price": True,  # the hotel's own price for these dates; whose API it comes from is not the guest's concern
         "sandbox": h.sandbox,
     }

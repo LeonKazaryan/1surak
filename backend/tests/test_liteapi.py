@@ -256,7 +256,7 @@ def test_should_rule_out_a_hotel_whose_rooms_say_no_and_never_take_silence_for_y
     out = {h.name: why for h, why in pick.excluded}
     assert out["Hotel 2"] == "«с ванной»: на ваши даты таких номеров нет"
     assert "No Window" in out["Hotel 3"]
-    assert out["Hotel 4"] == "«можно с собакой»: «Pets not allowed» (LiteAPI)"
+    assert out["Hotel 4"] == "«можно с собакой»: «Pets not allowed» (правила отеля)"
     # adults only, and a child comes: out whatever the wishes
     family = choose_hotel(live([]), FAMILY, Wishes(), 2, 7)
     assert [(h.name, why) for h, why in family.excluded] == [
@@ -304,7 +304,8 @@ def test_should_show_the_booked_rooms_photos_first_and_say_the_room_in_russian()
         "amenities": ["кондиционер", "мини-бар", "Wi-Fi", "ванна", "балкон"],
         "photos": 1,
     }
-    assert view["cancel_until"] == "2026-12-06" and view["price_source"] == "LiteAPI" and view["sandbox"]
+    assert view["cancel_until"] == "2026-12-06" and view["live_price"] and view["sandbox"]
+    assert "LiteAPI" not in json.dumps(view)  # the guest never sees whose API it is
     assert view["price_estimate"] is False and view["check_in"] == "15:00"
     assert view["scores"] == [{"label": "Расположение", "score": 9.1}]
     assert beds_text(((2, "Twin bed"), (1, "Sofa bed"))) == "2 односпальные кровати + 1 диван-кровать"
