@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Popover } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
@@ -7,42 +8,46 @@ import type { MemoryFact } from '@/types/api'
 interface MemoryPanelProps {
   facts: MemoryFact[]
   onForget: (key: string) => void
+  className?: string
 }
 
-/** «Что я о вас помню»: every fact the agent may offer, with the trip it comes from and a way to forget it. */
-export function MemoryPanel({ facts, onForget }: MemoryPanelProps) {
+/** «Что я о вас помню»: a pill next to the departure city and the currency; it opens every fact the agent may
+ * offer, with the trip it comes from and a way to forget it. */
+export function MemoryPanel({ facts, onForget, className }: MemoryPanelProps) {
   const [open, setOpen] = useState(false)
   if (!facts.length) return null
   return (
-    <section aria-label="Что я о вас помню" className="flex w-full flex-col items-center">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-card/70 hover:text-foreground"
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        aria-label={`Что я о вас помню: ${facts.length}`}
+        className={cn(
+          'inline-flex h-8 items-center gap-1.5 rounded-full bg-secondary/60 pr-2 pl-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary',
+          className,
+        )}
       >
         <img src="/mascot.png" alt="" draggable={false} className="h-5 w-5 object-contain" />
-        Что я о вас помню
+        Помню о вас
         <span className="text-faint tabular-nums">· {facts.length}</span>
-        <ChevronDownIcon aria-hidden className={cn('h-4 w-4 transition-transform duration-300', open && 'rotate-180')} />
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="w-full max-w-md overflow-hidden"
-          >
-            <ul className="m-0 mt-2 flex list-none flex-col gap-0.5 rounded-2xl border border-border bg-card p-1.5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.5)]">
+        <ChevronDownIcon aria-hidden className={cn('h-4 w-4 text-faint transition-transform duration-300', open && 'rotate-180')} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="center"
+          sideOffset={8}
+          collisionPadding={12}
+          aria-label="Что я о вас помню"
+          className="z-50 w-[min(26rem,92vw)] rounded-2xl border border-border bg-card p-1.5 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.45)]"
+        >
+          <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 420, damping: 30 }}>
+            <p className="m-0 px-2.5 pt-1.5 pb-1 text-[12px] font-semibold tracking-wider text-faint uppercase">Что я о вас помню</p>
+            <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
               <AnimatePresence initial={false}>
                 {facts.map((fact) => (
                   <motion.li
                     key={fact.key}
                     layout
                     exit={{ opacity: 0, x: -12, transition: { duration: 0.18 } }}
-                    className="flex items-center gap-3 rounded-xl px-2.5 py-1.5"
+                    className="flex items-center gap-3 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-secondary/50"
                   >
                     <span className="w-[4.5rem] shrink-0 text-[12px] text-faint">{fact.label}</span>
                     <span className="min-w-0 flex-1">
@@ -62,12 +67,12 @@ export function MemoryPanel({ facts, onForget }: MemoryPanelProps) {
                 ))}
               </AnimatePresence>
             </ul>
-            <p className="m-0 mt-1.5 px-4 text-center text-[11px] leading-snug text-faint">
+            <p className="m-0 px-2.5 pt-1.5 pb-1 text-[11px] leading-snug text-faint">
               Это из ваших поездок в этом браузере. Я предлагаю, но не решаю за вас. Удалите поездку из списка, и я её забуду.
             </p>
           </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }

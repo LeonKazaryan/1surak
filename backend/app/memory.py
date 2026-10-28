@@ -134,12 +134,15 @@ def _in_user_currency(budget: dict) -> dict:
 
 
 def _seen(b: TripBrief) -> str | None:
-    """What was looked at and left: the plan put together, else the places on the last cards."""
+    """What was looked at and left: the plan put together, else the first place on the last cards and how many
+    more («Рас-эль-Хайма +2»), short enough for a chip."""
     if b.plan:
         return b.plan["name"]
     catalog = load_catalog()
-    names = [p.name for i in b.shown[:3] if (p := catalog.find(i))]
-    return ", ".join(names) or None
+    names = [p.name for i in b.shown if (p := catalog.find(i))]
+    if not names:
+        return None
+    return f"{names[0]} +{len(names) - 1}" if len(names) > 1 else names[0]
 
 
 def remember(chats: list[dict], today: date, forget: set[str] = frozenset()) -> Memory:

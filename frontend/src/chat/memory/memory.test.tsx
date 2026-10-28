@@ -62,7 +62,7 @@ describe('Memory on the start screen', () => {
     render(<StartScreen onPick={() => {}} />)
 
     await userEvent.click(await screen.findByRole('button', { name: /Что я о вас помню/ }))
-    const panel = screen.getByRole('region', { name: 'Что я о вас помню' })
+    const panel = await screen.findByRole('dialog', { name: 'Что я о вас помню' })
     expect(within(panel).getByText('двое взрослых + ребёнок 6 лет')).toBeInTheDocument()
     expect(within(panel).getAllByText('Хургада · ноябрь')).toHaveLength(2)
 

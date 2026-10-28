@@ -76,6 +76,8 @@ def test_should_take_only_wishes_about_the_hotel_and_tastes_from_a_few_trips():
     assert memory.by_land and memory.fact("by_land").text == "поездом, а не самолётом"
     assert memory.fact("trip:c-hurghada").label == "Были"
     assert memory.fact("seen:c-rome").text == "Рим"  # a plan put together and left
+    looked = chat("c-looked", "2026-10-27", shown=["antalya", "hurghada", "dubai"])
+    assert remember([looked], TODAY).fact("seen:c-looked").text == "Анталья +2"  # short enough for a chip
     older = chat("c-old", "2026-10-10", shown=["antalya"])
     assert [f.key for f in remember([ROME, older], TODAY).facts if f.label == "Смотрели"] == ["seen:c-rome"]
 

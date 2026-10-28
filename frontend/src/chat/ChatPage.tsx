@@ -67,6 +67,8 @@ interface OpenDetails {
   currency: Currency
 }
 
+const PILL = 'bg-card/95 text-foreground shadow-sm ring-1 ring-border backdrop-blur-sm hover:bg-card'
+
 function readHandoffQuery(state: unknown): string | null {
   if (state && typeof state === 'object' && 'query' in state && typeof state.query === 'string') {
     return state.query.trim() || null
@@ -418,12 +420,13 @@ export default function ChatPage() {
                 </div>
                 {errorBanner}
                 {composer}
-                <div className="-mt-2 flex items-center justify-center gap-1.5">
-                  <DepartureCityPicker prefix="Вылет:" />
-                  <CurrencyPicker />
+                {/* a solid surface: over the dotted map a translucent pill loses its words */}
+                <div className="-mt-2 flex flex-wrap items-center justify-center gap-1.5">
+                  <DepartureCityPicker prefix="Вылет:" className={PILL} />
+                  <CurrencyPicker className={PILL} />
+                  <MemoryPanel facts={memory.facts} onForget={memory.forget} className={PILL} />
                 </div>
                 <IdeaChips ideas={memory.ideas} failed={memory.failed} onPick={pickIdea} disabled={isLoading} className="self-stretch max-md:-mx-4" />
-                <MemoryPanel facts={memory.facts} onForget={memory.forget} />
               </div>
             </div>
           )}
