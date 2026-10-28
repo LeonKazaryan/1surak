@@ -210,6 +210,7 @@ class HotelPick:
     alternatives: list[HotelChoice]
     excluded: list[tuple[Hotel, str]]
     unmet: list[str]
+    others: int = 0  # the other hotels that fit, beyond the alternatives: «Ещё отели» shows them
 
 
 def hundreds(value: float) -> int:
@@ -448,7 +449,7 @@ def choose_hotel(
         (h for h in rest if h.stars > best.stars or (h.rating or 0) > (best.rating or 0) + 0.3), None
     )
     alternatives = [choice(h) for h in dict.fromkeys(x for x in (cheaper, nicer) if x)]
-    return HotelPick(choice(best), alternatives, excluded, unmet)
+    return HotelPick(choice(best), alternatives, excluded, unmet, len(allowed) - 1 - len(alternatives))
 
 
 UNKNOWN_FOR_REAL = {
@@ -548,4 +549,4 @@ def _choose_real(
     # without stars to compare, the runner-up stands in for «nicer», so there is always a choice
     runner_up = next((h for h in rest if h not in (cheaper, nicer)), None)
     alternatives = [choice(h) for h in dict.fromkeys(x for x in (cheaper, nicer or runner_up) if x)]
-    return HotelPick(choice(best), alternatives, excluded, unmet)
+    return HotelPick(choice(best), alternatives, excluded, unmet, len(allowed) - 1 - len(alternatives))

@@ -590,6 +590,8 @@ export interface PlanStop {
   hotel: PlanHotel
   alternatives: PlanHotel[]
   excluded: { name: string; stars: number; reason: string }[]
+  /** The other hotels that fit on these dates, beyond the alternatives: «Ещё отели» shows them. */
+  more_hotels?: number
   transfer_in: PlanTransfer | null
   transfer_out: PlanTransfer | null
   food_intro: string | null

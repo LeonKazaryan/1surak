@@ -6,6 +6,7 @@ very rooms on sale (amenities.py): a hotel whose rooms say no is ruled out, a ho
 with that room.
 """
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import date, time
@@ -24,6 +25,7 @@ DETAILED = 8  # the hotels whose rooms are read for the card
 DETAILED_FOR_WISHES = 20
 DETAILS_WAIT_S = 6.0  # a hotel whose rooms take longer is shown without them; they are cached for next time
 WARMED = 20  # read while the cards are looked at: the plan then waits for none
+ADULTS_ONLY_NAME = re.compile(r"adults?[\s-]only|только для взрослых", re.IGNORECASE)
 CENTRE_M = 1500
 
 
@@ -68,7 +70,7 @@ def live_hotel(place: Place, a: Around, offers: list[Offer], nights: int, sandbo
         beach_m=None,
         kids_club=False,
         family_rooms=False,
-        adults_only=False,
+        adults_only=bool(ADULTS_ONLY_NAME.search(a.name)),
         pets=False,
         pool=False,
         spa=False,
@@ -106,7 +108,7 @@ def with_details(h: Hotel, d: Details) -> Hotel:
         website=d.website or h.website,
         kids_club=_has(d.facilities, "kids' club", "kids club", "children's club"),
         family_rooms=_has(d.facilities, "family rooms"),
-        adults_only=_has(d.facilities, "adult only", "adults only"),
+        adults_only=h.adults_only or _has(d.facilities, "adult only", "adults only"),
         pets=d.pets is True,
         pool=any("pool" in f.casefold() and "nearby" not in f.casefold() for f in d.facilities),
         spa=_has(d.facilities, "spa/wellness center", "spa", "full-service spa", "sauna"),

@@ -223,6 +223,7 @@ class StopPlan:
             "hotel": choice_view(self.pick.best),
             "alternatives": [choice_view(a) for a in self.pick.alternatives],
             "excluded": [{"name": h.name, "stars": h.stars, "reason": why} for h, why in self.pick.excluded],
+            "more_hotels": self.pick.others,
             "transfer_in": self.transfer_in.view() if self.transfer_in else None,
             "transfer_out": self.transfer_out.view() if self.transfer_out else None,
             "food_intro": guide.food_intro,

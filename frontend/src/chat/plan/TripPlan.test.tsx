@@ -122,7 +122,7 @@ describe('TripPlan', () => {
     expect(within(stay).getByRole('link', { name: 'Анна, CC BY 4.0' })).toBeInTheDocument()
     // the map is Google's, where the reviews are, not the Wikidata entry it was found in
     expect(within(stay).getByRole('link', { name: 'на карте' })).toHaveAttribute('href', real.maps_url)
-    await userEvent.click(within(stay).getByRole('button', { name: 'Ещё отели' }))
+    await userEvent.click(within(stay).getByRole('button', { name: `Ещё отели: ${stop.name}` }))
     expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
   })
 
@@ -202,29 +202,29 @@ describe('TripPlan', () => {
     expect(screen.queryByText(/Отели демонстрационные/)).toBeNull()
   })
 
-  it('should explain the hotel pick, offer the alternative and say what it ruled out', async () => {
+  it('should explain the hotel pick and offer the alternative', async () => {
     const { onAsk } = renderPlan()
 
     const stay = screen.getByRole('region', { name: 'Где живёте' })
     expect(within(stay).getByRole('heading', { name: 'Морской бриз' })).toBeInTheDocument()
     expect(within(stay).getAllByText('демо')[0]).toBeInTheDocument()
     expect(within(stay).getByText('детский клуб')).toBeInTheDocument()
-    expect(within(stay).getByText(/Солнечная терраса/)).toHaveTextContent('только для взрослых, а с вами ребёнок')
 
     await userEvent.click(within(stay).getByRole('button', { name: 'Выбрать «Дом у маяка»' }))
     expect(onAsk).toHaveBeenCalledWith('Хочу отель «Дом у маяка» вместо «Морской бриз»')
   })
 
-  it('should show the first ruled-out hotels and the rest on request', async () => {
+  it('should offer the other hotels for the same dates instead of listing the ruled-out ones', async () => {
     const stop = PLAN.stops[0]
-    const excluded = ['А', 'Б', 'В', 'Г', 'Д'].map((name) => ({ name, stars: 4, reason: '«с ванной»: на ваши даты таких номеров нет' }))
-    renderPlan({}, { ...PLAN, stops: [{ ...stop, excluded }, ...PLAN.stops.slice(1)] })
+    const { onAsk } = renderPlan({}, { ...PLAN, stops: [{ ...stop, more_hotels: 14 }, ...PLAN.stops.slice(1)] })
 
-    const out = screen.getByRole('list', { name: 'Не предлагаю' })
-    expect(within(out).getAllByRole('listitem')).toHaveLength(3)
-    await userEvent.click(screen.getByRole('button', { name: 'Ещё 2 отеля не подходят' }))
-    expect(within(out).getAllByRole('listitem')).toHaveLength(5)
-    expect(screen.queryByRole('button', { name: /не подходят/ })).toBeNull()
+    const stay = screen.getByRole('region', { name: 'Где живёте' })
+    expect(within(stay).queryByText(/Не предлагаю/)).toBeNull()
+    const more = within(stay).getByRole('button', { name: `Ещё отели: ${stop.name}` })
+    expect(more).toHaveTextContent('Ещё 14 отелей на ваши даты')
+    expect(more).toHaveTextContent('билеты и дни останутся как есть')
+    await userEvent.click(more)
+    expect(onAsk).toHaveBeenCalledWith(`Покажи ещё отели: ${stop.name}`)
   })
 
   it('should walk through the trip day by day', async () => {

@@ -262,6 +262,10 @@ def test_should_rule_out_a_hotel_whose_rooms_say_no_and_never_take_silence_for_y
     assert [(h.name, why) for h, why in family.excluded] == [
         ("Hotel 4", "только для взрослых, а с вами ребёнок")
     ]
+    # the hotels that fit and are not on the card yet: «Ещё отели» offers them
+    assert family.others == 3 - 1 - len(family.alternatives)
+    adults = choose_hotel(live([]), Party(2), Wishes(), 2, 7)
+    assert adults.others == 4 - 1 - len(adults.alternatives)
 
 
 def test_should_not_take_a_bath_or_shower_for_a_bath():

@@ -1,7 +1,7 @@
-import { useContext, useState } from 'react'
+import { useContext } from 'react'
 import { DataCredit } from '@/components/DataCredit'
 import { fromOsm } from '@/lib/dataSources'
-import { CheckIcon, MinusIcon } from '@heroicons/react/20/solid'
+import { BuildingOffice2Icon, CheckIcon, ChevronRightIcon, MinusIcon } from '@heroicons/react/20/solid'
 import { cn } from '@/components/ui/utils'
 import type { LiveOffer, Photo, PlanHotel, PlanRoom, PlanStop } from '@/types/api'
 import { CurrencyContext, formatMoney, plural } from '../widgets'
@@ -204,9 +204,10 @@ function Alternative({ hotel, best, canAct, onPick }: AlternativeProps) {
   const gap = hotel.total_rub - best.total_rub
   const thumb = hotel.photos?.[0] ?? hotel.photo?.url
   return (
-    <li className="flex items-center gap-3 rounded-2xl bg-inset px-3.5 py-3">
-      {thumb && <img src={thumb} alt="" loading="lazy" decoding="async" className="h-14 w-14 shrink-0 rounded-xl bg-secondary object-cover" />}
-      <span className="min-w-0 flex-1">
+    <li className="flex flex-wrap items-center gap-3 rounded-2xl bg-inset px-3.5 py-3 sm:flex-nowrap">
+      {thumb && <img src={thumb} alt="" loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-xl bg-secondary object-cover sm:h-14 sm:w-14" />}
+      {/* on a phone the button goes under the text, so the name and the price keep the width */}
+      <span className="min-w-[12rem] flex-1">
         <span className="flex flex-wrap items-center gap-x-1.5">
           <span className="text-[14px] font-semibold text-foreground">{hotel.name}</span>
           {hotel.stars_known !== false && <Stars count={hotel.stars} />}
@@ -232,7 +233,7 @@ function Alternative({ hotel, best, canAct, onPick }: AlternativeProps) {
         onClick={onPick}
         disabled={!canAct}
         aria-label={`Выбрать «${hotel.name}»`}
-        className="h-9 shrink-0 rounded-full border border-border bg-card px-4 text-[13px] font-semibold text-foreground transition-colors hover:border-highlight/30 hover:bg-accent disabled:opacity-50"
+        className="h-9 w-full shrink-0 rounded-full border border-border bg-card px-4 text-[13px] font-semibold text-foreground transition-colors hover:border-highlight/30 hover:bg-accent disabled:opacity-50 sm:w-auto"
       >
         Выбрать
       </button>
@@ -249,34 +250,37 @@ function transferText(stop: PlanStop, currency: Parameters<typeof formatMoney>[1
   return `трансфер из аэропорта: ${way}, около ${ride.minutes} мин, ${formatMoney(ride.price_rub, currency)} (${basis})`
 }
 
-const EXCLUDED_SHOWN = 3
+interface MoreHotelsProps {
+  place: string
+  /** The other hotels that fit, beyond the ones on the card. */
+  count?: number
+  disabled: boolean
+  onClick: () => void
+}
 
-/** The hotels ruled out and why: the first few, the rest a tap away, so a strict wish does not bury the plan. */
-function Excluded({ hotels }: { hotels: PlanStop['excluded'] }) {
-  const [all, setAll] = useState(false)
-  if (!hotels.length) return null
-  const shown = all ? hotels : hotels.slice(0, EXCLUDED_SHOWN)
-  const more = hotels.length - shown.length
+/** The way to other hotels for the same dates: the one picked replaces this one, the rest of the trip stays. */
+function MoreHotels({ place, count = 0, disabled, onClick }: MoreHotelsProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <ul aria-label="Не предлагаю" className="m-0 flex list-none flex-col gap-1 p-0 text-[12px] leading-snug text-muted-foreground">
-        {shown.map((hotel) => (
-          <li key={hotel.name} className="flex items-start gap-1.5">
-            <MinusIcon aria-hidden className="mt-px h-3.5 w-3.5 shrink-0 text-faint" />
-            {`Не предлагаю «${hotel.name}», ${hotel.stars} ${plural(hotel.stars, ['звезда', 'звезды', 'звёзд'])}: ${hotel.reason}`}
-          </li>
-        ))}
-      </ul>
-      {more > 0 && (
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="self-start pl-5 text-[12px] font-medium text-highlight underline-offset-4 hover:underline"
-        >
-          {`Ещё ${more} ${plural(more, ['отель не подходит', 'отеля не подходят', 'отелей не подходят'])}`}
-        </button>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={`Ещё отели: ${place}`}
+      className="group flex w-full items-center gap-3 rounded-2xl border border-highlight/25 bg-highlight/[0.04] px-3.5 py-3 text-left transition-colors hover:border-highlight/50 hover:bg-highlight/[0.08] disabled:opacity-50"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card shadow-sm">
+        <BuildingOffice2Icon aria-hidden className="h-5 w-5 text-highlight" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-semibold text-foreground">
+          {count > 0 ? `Ещё ${count} ${plural(count, ['отель', 'отеля', 'отелей'])} на ваши даты` : 'Другие отели на ваши даты'}
+        </span>
+        <span className="block text-[12px] leading-snug text-muted-foreground">
+          Выберете другой, и он встанет в план, а билеты и дни останутся как есть
+        </span>
+      </span>
+      <ChevronRightIcon aria-hidden className="h-5 w-5 shrink-0 text-highlight transition-transform group-hover:translate-x-0.5" />
+    </button>
   )
 }
 
@@ -312,15 +316,7 @@ export function PlanStay({ stops, canAct, onAsk }: PlanStayProps) {
               ))}
             </ul>
           )}
-          <button
-            type="button"
-            onClick={() => onAsk(`Покажи ещё отели: ${stop.name}`)}
-            disabled={!canAct}
-            className="self-start rounded-full px-1 text-[13px] font-medium text-highlight underline-offset-4 hover:underline disabled:opacity-50"
-          >
-            Ещё отели
-          </button>
-          <Excluded hotels={stop.excluded} />
+          <MoreHotels place={stop.name} count={stop.more_hotels} disabled={!canAct} onClick={() => onAsk(`Покажи ещё отели: ${stop.name}`)} />
         </div>
       ))}
     </PlanSection>
