@@ -9,7 +9,7 @@ or, when no pair of days connects, their prices added up and marked as an estima
 from app.catalog.search import Snapshot
 from app.flights import Flights, city, city_code
 from app.flights.client import search_link
-from app.flights.connections import connect
+from app.flights.connections import connect, through_hub
 from app.flights.network import Network
 from app.money import money
 
@@ -52,15 +52,34 @@ async def via_gateway(
     }
 
 
+async def via_hub(origin: str, s: Snapshot, flights: Flights, network: Network) -> dict | None:
+    """No fare on any day, not even through the country's main airport: two tickets through a world hub both
+    ends fly to directly (Astana → Dubai → Harare), their nearest-dates prices added up as an estimate."""
+    found = await through_hub(origin, s.place.airport, flights, network)
+    if found is None:
+        return None
+    return {
+        "via": found.hub.name,
+        "via_in": found.where,
+        "price_rub": found.price,
+        "price": money(found.price),
+        "estimate": True,  # nearest-dates prices: the days are matched when the tickets are bought
+        "separate_tickets": True,
+        "tickets": [found.first.view(), found.second.view()],
+    }
+
+
 async def fill_missing(
     snapshots: list[Snapshot], origin: str, flights: Flights, network: Network, month: int | None
 ) -> None:
-    """Search links for every place without a cached ticket; a way through the gateway for route-map cities."""
+    """Search links for every place without a cached ticket, and a price to plan with: two tickets through the
+    country's main airport for route-map cities, else through a world hub."""
     tried = 0
     for s in snapshots:
         if s.flights or not s.place.airport:
             continue
         s.search_link = search_link(origin, s.place.airport, month)
-        if not s.place.verified and tried < MAX_GATEWAYS:
+        if tried < MAX_GATEWAYS:
             tried += 1
-            s.via = await via_gateway(origin, s, flights, network, month)
+            gateway_way = None if s.place.verified else await via_gateway(origin, s, flights, network, month)
+            s.via = gateway_way or await via_hub(origin, s, flights, network)

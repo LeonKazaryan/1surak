@@ -6,6 +6,7 @@ matched so the second flight leaves 3 to 30 hours after the first lands: two pri
 of the month would be a plan nobody can fly.
 """
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -101,3 +102,86 @@ def connect(
             if best is None or value < best[0]:
                 best = (value, found)
     return best[1] if best else None
+
+
+GUIDE_HUBS = 3  # big airports tried at each end when nobody has a fare for a route on any day
+MAX_GUIDE_DETOUR = 1.6
+GUIDE_LAYOVER_MIN = 180  # a change of planes on separate tickets, counted into the time
+
+
+@dataclass(frozen=True)
+class HubGuide:
+    """Two tickets through a hub that stand in for a route nobody has a fare for: a price to plan with."""
+
+    hub: City
+    first: Ticket
+    second: Ticket
+
+    @property
+    def price(self) -> int:
+        return self.first.price + self.second.price
+
+    @property
+    def ticket(self) -> Ticket:
+        """Both flights as one guide ticket: the first one's departure and airline, both prices and times."""
+        a, b = self.first, self.second
+        return Ticket(
+            a.origin_airport,
+            b.destination_airport,
+            a.airline,
+            a.flight_number,
+            a.departure_at,
+            self.price,
+            a.transfers + b.transfers + 1,
+            a.duration_min + b.duration_min + GUIDE_LAYOVER_MIN,
+            a.link,
+        )
+
+    @property
+    def flights(self) -> RouteFlights:
+        return RouteFlights(cheapest=self.ticket, direct=None, fastest=self.ticket)
+
+    @property
+    def where(self) -> str:
+        return self.hub.name_in or self.hub.name  # «в Дубае»
+
+
+def _big(network: Network, codes: list[str], limit: int) -> list[str]:
+    """The best connected of these airports: a big hub has fares to almost anywhere."""
+    return sorted(dict.fromkeys(codes), key=lambda c: -len(network.links_from(c)))[:limit]
+
+
+def guide_hubs(network: Network, origin: str, destination: str) -> list[str]:
+    """Where to change for a route nobody has a fare for: the big airports that fly to the destination (for
+    Harare: Johannesburg, Addis Ababa, Nairobi) and the ones the origin flies to (for Astana: Istanbul,
+    Abu Dhabi), within a sane detour. Each half is priced by real fares, transfers and all."""
+    o, d = city_code(origin), city_code(destination)
+    a, b = city(o), city(d)
+    if a is None or b is None or o == d:
+        return []
+    direct_km = max(distance_km(a, b), 1.0)
+    near_end = _big(network, [link.origin.code for link in network.links_to(d)], GUIDE_HUBS)
+    near_start = _big(network, [link.destination.code for link in network.links_from(o)], GUIDE_HUBS)
+    return [
+        h
+        for h in dict.fromkeys([*near_end, *near_start])
+        if h not in (o, d)
+        and (c := city(h))
+        and (distance_km(a, c) + distance_km(c, b)) / direct_km <= MAX_GUIDE_DETOUR
+    ]
+
+
+async def through_hub(origin: str, destination: str, flights, network: Network) -> HubGuide | None:
+    """No fare for origin → destination on any day (Astana → Harare): the cheapest pair of nearest-dates fares
+    through a hub (Astana → Johannesburg, Johannesburg → Harare). A guide to the price, not a plan to fly: the
+    days are matched when the tickets are bought."""
+    found = guide_hubs(network, origin, destination)
+    if not found:
+        return None
+    pairs = await asyncio.gather(
+        *(asyncio.gather(flights.route(origin, h), flights.route(h, destination)) for h in found)
+    )
+    guides = [
+        HubGuide(city(h), a.cheapest, b.cheapest) for h, (a, b) in zip(found, pairs, strict=True) if a and b
+    ]
+    return min(guides, key=lambda g: g.price, default=None)

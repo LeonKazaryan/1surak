@@ -15,7 +15,7 @@ describe('PlanRoad', () => {
     expect(within(leg).getByRole('link', { name: 'Поезд Самарканд → Ташкент на Туту.ру' })).toHaveTextContent(
       'Расписание и билеты на Туту.ру',
     )
-    expect(within(leg).getByRole('link', { name: 'Купить билет Ташкент → Астана на Aviasales' })).toHaveAttribute(
+    expect(within(leg).getByRole('link', { name: 'Купить билет Ташкент → Астана' })).toHaveAttribute(
       'href',
       expect.stringContaining('/search/TAS2105NQZ2'),
     )

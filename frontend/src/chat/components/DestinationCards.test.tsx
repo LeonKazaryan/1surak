@@ -161,7 +161,7 @@ describe('DestinationCards', () => {
 })
 
 describe('a place with no cached ticket', () => {
-  it('should offer two tickets through the main airport and the live search on Aviasales', () => {
+  it('should offer two tickets through a hub and the live search, never naming the site', () => {
     renderCard({
       ...base,
       flight: null,
@@ -171,7 +171,8 @@ describe('a place with no cached ticket', () => {
 
     expect(screen.getByText(/≈ от 78\s100 ₽/)).toBeInTheDocument()
     expect(screen.getByText(/с пересадкой в Аддис-Абебе, два билета/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Найти билеты на Aviasales/ })).toHaveAttribute('href', 'https://www.aviasales.ru/search/NQZ1512MQX1')
+    expect(screen.getByRole('link', { name: /^Найти билеты/ })).toHaveAttribute('href', 'https://www.aviasales.ru/search/NQZ1512MQX1')
+    expect(screen.queryByText(/Aviasales/)).toBeNull()
     expect(screen.queryByText('билетов не нашлось')).toBeNull()
   })
 })

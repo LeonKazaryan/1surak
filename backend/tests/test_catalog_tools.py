@@ -115,4 +115,4 @@ def test_should_send_to_the_live_search_when_the_cache_has_no_fare(registry):
 
     assert "tickets" not in result  # empty fields are dropped
     assert result["search_link"].startswith("https://www.aviasales.ru/search/MOW")
-    assert preview.endswith("цены в живом поиске Aviasales")
+    assert preview.endswith("цены в живом поиске") and "Aviasales" not in preview

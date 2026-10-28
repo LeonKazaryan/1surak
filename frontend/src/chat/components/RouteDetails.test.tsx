@@ -100,7 +100,7 @@ describe('RouteDetails without a fare on the day', () => {
     const guided = { ...unpriced, guide: { ...ticket!, price_rub: 6_100 }, date: '2027-05-12', search_link: 'https://www.aviasales.ru/search/NQZ1205ALA1' }
     render(<RouteDetails card={{ ...SMART_ROUTE, legs: [guided, there, home], total_complete: false, total_guided: true }} />)
 
-    const row = screen.getByRole('link', { name: 'Астана → Алматы, цены в поиске Aviasales' })
+    const row = screen.getByRole('link', { name: 'Астана → Алматы, цены в живом поиске' })
     expect(row).toHaveAttribute('href', 'https://www.aviasales.ru/search/NQZ1205ALA1')
     expect(row).toHaveTextContent('ориентир по ближайшим датам')
     expect(row).toHaveTextContent(money('~6 100 ₽'))

@@ -104,7 +104,8 @@ def test_should_send_to_the_live_search_when_no_fare_is_cached_and_still_plan_th
     assert plan.stops[0].nights == 7
     assert plan.stops[0].check_in.month == 11
     assert not any("не нашлось" in c.title.lower() for c in plan.checks)
-    assert any(c.kind == "tickets" and "живом поиске Aviasales" in c.text for c in plan.checks)
+    assert any(c.kind == "tickets" and "живом поиске" in c.text for c in plan.checks)
+    assert not any("Aviasales" in c.text or "Aviasales" in c.title for c in plan.checks)
     there, back = (m.view() for m in plan.moves)
     assert there["search_link"] == "https://www.aviasales.ru/search/MOW1011AYT1"  # the plan's day there
     assert back["search_link"] == "https://www.aviasales.ru/search/AYT1711MOW1"  # and back

@@ -98,7 +98,7 @@ ROUTES_DESCRIPTION = (
     "(multi_city in the brief, or words like 'по Европе', 'Ереван и Тбилиси', 'большой тур'). The code chains "
     "places that are close to each other and fit the filters, orders them without zigzags, scores how well "
     "each route covers the user's interests (`kinds`), splits the nights and prices every leg with real "
-    "Aviasales tickets. A bad flight (transfers, no ticket) gets a smarter way: a hub, or a train or bus to a "
+    "real tickets. A bad flight (transfers, no ticket) gets a smarter way: a hub, or a train or bus to a "
     "neighbouring airport (legs with `parts` and `via`; `instead` is the flight it replaced, so you can name "
     "the saving). Hops by land carry real trains (Tutu) or buses (FlixBus) when found (`ground`), else an "
     "estimate. Pass the same filters as for search_destinations plus `nights`; for a big tour pass "

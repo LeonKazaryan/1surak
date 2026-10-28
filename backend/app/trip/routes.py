@@ -31,6 +31,7 @@ from app.catalog.search import (
 )
 from app.flights import City, Flights, Ticket
 from app.flights.client import merged
+from app.flights.connections import through_hub
 from app.flights.dictionary import city, fame, reach
 from app.flights.network import network
 from app.ground import transport
@@ -463,6 +464,14 @@ async def price_route(
         lacking, await asyncio.gather(*(flights.route(*leg.codes) for leg in lacking)), strict=True
     ):
         leg.nearby = near
+    # nobody has a fare for the route on any day (Astana → Harare): two tickets through a hub price it
+    alone = [leg for leg in flown if not leg.flights and not leg.nearby]
+    routes = network()
+    for leg, via in zip(
+        alone, await asyncio.gather(*(through_hub(*leg.codes, flights, routes) for leg in alone)), strict=True
+    ):
+        if via:
+            leg.nearby, leg.guide_via = via.flights, via.where
     plan.dates_chained = chain_dates(legs, plan.nights, start_at_home=home, start=start)
     if improve:
         await _improve(plan, points, flights, month)
@@ -797,7 +806,7 @@ def guide_for_model(guide: Ticket) -> str:
     when = f" ({guide.day:%d.%m})" if guide.day else ""
     return (
         f"{money(guide.price)}{when}: no fare cached for the trip's dates, so this is the best ticket of the "
-        "nearest dates, a guide to the price; the live search on Aviasales for the trip's day is linked"
+        "nearest dates, a guide to the price; the live search for the trip's day is linked"
     )
 
 

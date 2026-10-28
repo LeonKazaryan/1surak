@@ -12,15 +12,15 @@ from app.money import current_currency, money
 from app.tools.registry import Tool, ToolReply
 
 DESCRIPTION = (
-    "Real Aviasales tickets for one route, from the user's departure city unless `origin` is given: the cheapest "
+    "Real tickets for one route, from the user's departure city unless `origin` is given: the cheapest "
     "one-way ticket and the cheapest direct one, with airline, transfers, hours, departure and a link to buy. "
     "Use it for a city outside our catalogue, or when the user asks about prices or direct flights on one "
-    "route. For a trip through several cities use plan_route. Prices are found by Aviasales users in the "
+    "route. For a trip through several cities use plan_route. Prices are ones travellers found in the "
     "last days, not a live search."
 )
 PLAN_DESCRIPTION = (
     "Plan a trip through several cities from the user's departure city: prices every leg as a one-way "
-    "Aviasales ticket and returns ranked plans with legs, total price and travel time. With order_fixed=false "
+    "real ticket and returns ranked plans with legs, total price and travel time. With order_fixed=false "
     "it finds the best order of the stops (up to 5). Legs without a price say whether the route map has a "
     "direct flight and the estimated hours; places without an airport (Суздаль, Анапа) go by train from "
     "Moscow. A leg may have `cheaper_via`: two tickets through a hub that save money, with the layover; "
@@ -92,7 +92,7 @@ def flight_tools(flights: Flights) -> list[Tool]:
                 "No fare cached for these dates: `guide` is the cheapest of the nearest dates, a price guide."
             )
             return {**result, "guide": near.view(), "note": note}
-        return {**result, "note": "No fare cached yet: the live search on Aviasales has the day's fares."}
+        return {**result, "note": "No fare found yet: the live search linked on screen has the day's fares."}
 
     def preview(result: dict) -> str:
         if result.get("error"):
@@ -101,7 +101,7 @@ def flight_tools(flights: Flights) -> list[Tool]:
         if not ticket and result.get("guide"):
             return f"{result['from']} → {result['to']}: ориентир от {money(result['guide']['price_rub'])} по ближайшим датам"
         if not ticket:
-            return f"{result['from']} → {result['to']}: цены в живом поиске Aviasales"
+            return f"{result['from']} → {result['to']}: цены в живом поиске"
         stops = "прямой" if ticket["transfers"] == 0 else f"пересадок: {ticket['transfers']}"
         return f"{result['from']} → {result['to']}: от {money(ticket['price_rub'])}, {stops}"
 
@@ -128,7 +128,7 @@ def flight_tools(flights: Flights) -> list[Tool]:
         plans = await plan(request, flights, network())
         notes = ["Каждый перелёт — отдельный билет в одну сторону: пересадки между ними на свой риск."]
         if args.date_from:
-            notes.append("exact_day: false — цена самая низкая за месяц вылета у Aviasales, не на эту дату.")
+            notes.append("exact_day: false — цена самая низкая за месяц вылета, не на эту дату.")
         elif plans and not plans[0].dates_chained:
             notes.append(
                 "dates_chained: false — самые дешёвые даты не стыкуются, точные даты подберём при покупке."

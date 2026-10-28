@@ -53,7 +53,7 @@ describe('TripPlan', () => {
     expect(within(road).getByText(/09:40 → 13:40/)).toBeInTheDocument()
     expect(within(road).getAllByText(/Аэрофлот/)).toHaveLength(2)
     expect(within(road).getByText('Прилёт 13:40, заселение с 14:00')).toBeInTheDocument()
-    const buy = within(road).getAllByRole('link', { name: /Купить билет .* на Aviasales/ })
+    const buy = within(road).getAllByRole('link', { name: /^Купить билет / })
     expect(buy.map((a) => a.getAttribute('href'))).toEqual(['https://www.aviasales.ru/t', 'https://www.aviasales.ru/t'])
     buy.forEach((a) => expect(a).toHaveAttribute('target', '_blank'))
   })
@@ -73,7 +73,7 @@ describe('TripPlan', () => {
     expect(within(road).getByText(/ориентир по билету на 2 дек/)).toBeInTheDocument()
     expect(within(road).getByText(money(21_000).replace(/^/, '~'))).toBeInTheDocument()
     // two adults and a child: the search opens for three
-    expect(within(road).getByRole('link', { name: /Цены на 6 ноя.* в Aviasales: Москва → Анталья/ })).toHaveAttribute(
+    expect(within(road).getByRole('link', { name: /Цены на 6 ноя.*: Москва → Анталья/ })).toHaveAttribute(
       'href',
       'https://www.aviasales.ru/search/MOW0611AYT3',
     )
@@ -88,7 +88,7 @@ describe('TripPlan', () => {
 
     const road = screen.getByRole('region', { name: 'Дорога' })
     expect(within(road).getByText('ближайший найденный билет на 6 ноя, на 20 ноя цены в живом поиске')).toBeInTheDocument()
-    expect(within(road).getByRole('link', { name: /Цены на 20 ноя.* в Aviasales/ })).toHaveAttribute(
+    expect(within(road).getByRole('link', { name: /Цены на 20 ноя/ })).toHaveAttribute(
       'href',
       'https://www.aviasales.ru/search/MOW2011AYT3',
     )

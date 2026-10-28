@@ -40,7 +40,7 @@ function Budget({ plan, budget }: { plan: TripPlanEvent; budget: number }) {
         {over
           ? `На ${formatMoney(total - budget, currency)} больше бюджета ${formatMoney(budget, currency)}.`
           : partial
-            ? `Без перелёта, цена которого в поиске Aviasales: ${formatMoney(total, currency)} из ${formatMoney(budget, currency)}.`
+            ? `Без перелёта, цену которого покажет живой поиск: ${formatMoney(total, currency)} из ${formatMoney(budget, currency)}.`
             : `В бюджете: остаётся ${formatMoney(budget - total, currency)} из ${formatMoney(budget, currency)}.`}
         {swap && <span className="text-muted-foreground">{` Отель «${swap.name}» дешевле на ${formatMoney(swap.saves, currency)}.`}</span>}
         {plan.costs.flights_guide ? <span className="text-muted-foreground"> Перелёт по ориентиру ближайших дат.</span> : null}
@@ -77,7 +77,7 @@ export function PlanBill({ plan }: { plan: TripPlanEvent }) {
         <p className="m-0 text-[12px] leading-snug text-muted-foreground">
           {`Скорее всего от ${formatMoney(costs.low, currency)} до ${formatMoney(costs.high, currency)}: `}
           {costs.hotels_estimate
-            ? 'билеты по ценам Aviasales, отели и трансферы оценены, точную сумму назовём при бронировании.'
+            ? 'билеты по реальным ценам, отели и трансферы оценены, точную сумму назовём при бронировании.'
             : 'цены билетов могут измениться до покупки.'}
         </p>
       )}

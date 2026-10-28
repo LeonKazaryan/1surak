@@ -56,10 +56,10 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
               href={forPassengers(ticket.link, seats)}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Купить билет ${leg.from} → ${leg.to} на Aviasales`}
+              aria-label={`Купить билет ${leg.from} → ${leg.to}`}
               className={cn(BUY, 'bg-highlight/10 text-highlight hover:bg-highlight/20')}
             >
-              Купить на Aviasales
+              Купить билет
               <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
             </a>
           )}
@@ -103,9 +103,11 @@ function UnitInfo({ leg, seats }: { leg: RouteLeg; seats: number }) {
           <span className="mt-1 flex min-w-0 items-start gap-1.5 text-[12px] leading-snug text-muted-foreground">
             <AirlineLogo ticket={guide} className="h-4 w-4" />
             <span className="min-w-0">
-              {`${guide.airline_name} · ${stopsText(guide)}`}
+              {leg.guide_via ? `с пересадкой в ${leg.guide_via}, два билета` : `${guide.airline_name} · ${stopsText(guide)}`}
               {guide.hours > 0 && <span className="whitespace-nowrap">{` · ${hours(guide.hours)}`}</span>}
-              <span className="text-faint">{` · ориентир по билету на ${shortDate(guide.departure)}`}</span>
+              <span className="text-faint">
+                {leg.guide_via ? ' · ориентир по ближайшим датам' : ` · ориентир по билету на ${shortDate(guide.departure)}`}
+              </span>
             </span>
           </span>
         ) : (

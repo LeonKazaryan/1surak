@@ -66,7 +66,7 @@ MAX_NEAR_MISSES = 6
 SOURCES_NOTE = {
     "климат": "Open-Meteo (ERA5), средние за 2020–2024",
     "море": "Open-Meteo Marine, средние за 2021–2024",
-    "перелёты": "Aviasales (Travelpayouts): самые дешёвые билеты, найденные за последние дни, в одну сторону "
+    "перелёты": "реальные билеты: самые дешёвые, найденные путешественниками за последние дни, в одну сторону "
     "на человека; не живой поиск, цена может измениться",
     "поезда": "оценка команды, только из Москвы",
     "визы, уровень цен, дети": "оценка команды 1surak на 25.10.2026, не сверено с официальными источниками",
@@ -429,9 +429,7 @@ def describe(s: Snapshot, month: int | None = None, sea: bool | None = None) -> 
     if not s.flights and s.via:
         result["flight_via"] = {k: s.via[k] for k in ("via", "price", "estimate")}
     if not s.flights and s.search_link:
-        result["ticket_price"] = (
-            "the price for these dates is in the live search on Aviasales: the card links to it"
-        )
+        result["ticket_price"] = "the price for these dates is in the live search: the card links to it"
     return {k: v for k, v in result.items() if v is not None}
 
 

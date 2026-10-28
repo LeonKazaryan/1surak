@@ -88,7 +88,7 @@ export function TicketStrip({ flight, change }: { flight: RouteFlight; change?: 
   )
 }
 
-/** No cached ticket: two tickets through the main airport if we found them, and the live search on Aviasales. */
+/** No ticket found: two tickets through a hub if we found them, and the live search. */
 export function NoCachedTicket({ card }: { card: DestinationCard }) {
   const currency = useContext(CurrencyContext)
   const via = card.flight_via
@@ -109,7 +109,7 @@ export function NoCachedTicket({ card }: { card: DestinationCard }) {
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 self-start font-medium text-highlight underline-offset-2 hover:underline"
         >
-          Найти билеты на Aviasales
+          Найти билеты
           <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden />
         </a>
       )}

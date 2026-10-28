@@ -14,9 +14,9 @@ interface LiveSearchLinkProps {
   className?: string
 }
 
-/** The live search on Aviasales for a day its cache has no fare for: every fare of the day is there. */
+/** The live search for a day no fare was found for: every fare of the day is there. */
 export function LiveSearchLink({ href, day, from, to, className }: LiveSearchLinkProps) {
-  const label = day ? `Цены на ${shortDate(day)} в Aviasales` : 'Цены в поиске Aviasales'
+  const label = day ? `Цены на ${shortDate(day)}` : 'Цены в живом поиске'
   return (
     <a
       href={href}

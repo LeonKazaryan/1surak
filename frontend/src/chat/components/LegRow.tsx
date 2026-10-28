@@ -98,7 +98,7 @@ function LegLine({ leg }: { leg: RouteLeg }) {
       <>
         <AirlineLogo ticket={leg.guide} className="h-4 w-4" />
         <span className="truncate">
-          {leg.guide.airline_name}
+          {leg.guide_via ? `с пересадкой в ${leg.guide_via}` : leg.guide.airline_name}
           <span className="text-faint"> · ориентир по ближайшим датам</span>
         </span>
       </>
@@ -107,7 +107,7 @@ function LegLine({ leg }: { leg: RouteLeg }) {
   return (
     <span className="truncate">
       {leg.mode === 'ground' ? `по земле ~${hours(leg.hours)}, ${leg.km} км` : `~${hours(leg.hours)} лёту`}
-      <span className="text-faint"> · {leg.mode === 'ground' ? 'оценка' : 'цены в поиске Aviasales'}</span>
+      <span className="text-faint"> · {leg.mode === 'ground' ? 'оценка' : 'цены в живом поиске'}</span>
     </span>
   )
 }
@@ -147,7 +147,7 @@ function linkOf(leg: RouteLeg): string | undefined {
 }
 
 function labelOf(leg: RouteLeg): string {
-  const by = leg.ticket?.airline_name ?? leg.ground?.name ?? (leg.search_link ? 'цены в поиске Aviasales' : null)
+  const by = leg.ticket?.airline_name ?? leg.ground?.name ?? (leg.search_link ? 'цены в живом поиске' : null)
   return by ? `${leg.from} → ${leg.to}, ${by}` : `${leg.from} → ${leg.to}`
 }
 

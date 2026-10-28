@@ -36,7 +36,7 @@ MONTHS_OF = (
 SIGHTS_FOR_MODEL = 4
 FOOD_FOR_MODEL = 3
 DEMO_NOTE = (
-    "Hotels are demo data shaped like Ostrovok offers: say so once, briefly. Tickets are real Aviasales prices; "
+    "Hotels are demo data shaped like Ostrovok offers: say so once, briefly. Tickets are real prices; "
     "a transfer with a source is the city's airport taxi fare found on the web, scaled to the hotel; one "
     "without is an estimate by distance at the country's prices; ground hops are estimates by distance."
 )
@@ -97,6 +97,8 @@ class Move:
                 )
         elif self.leg.guide:
             view["price_guide_per_person"] = guide_for_model(self.leg.guide)
+            if self.leg.guide_via:  # no fare on any day: two tickets with a change there
+                view["change_in"] = self.leg.guide_via
         elif self.price_rub:
             view["estimate_per_person"] = money(self.price_rub)
             view["hours"] = self.leg.hours

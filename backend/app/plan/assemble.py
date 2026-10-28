@@ -126,10 +126,10 @@ def _smart_check(leg: Leg) -> Check | None:
 def _unticketed(leg: Leg) -> str:
     """What the day says of a flight with no ticket on it: the fare to plan with and where the day's fares are."""
     if leg.ticket and leg.ticket.day:
-        return f"ближайший билет {day_text(leg.ticket.day)} за {money(leg.ticket.price)}, на этот день: в поиске Aviasales"
+        return f"ближайший билет {day_text(leg.ticket.day)} за {money(leg.ticket.price)}, на этот день: в живом поиске"
     if leg.guide:
-        return f"ориентир {money(leg.guide.price)} по ближайшим датам, цена на этот день: в поиске Aviasales"
-    return "цены на этот день: в поиске Aviasales"
+        return f"ориентир {money(leg.guide.price)} по ближайшим датам, цена на этот день: в живом поиске"
+    return "цены на этот день: в живом поиске"
 
 
 def _key(moment: datetime) -> tuple[date, str]:
@@ -240,12 +240,12 @@ def _ticket_checks(route: RoutePlan, fixed: bool, brief: TripBrief) -> list[Chec
     checks = []
     if guided := [leg for leg in flown if not leg.flights and leg.guide]:
         legs = "; ".join(f"{leg.origin} → {leg.destination} от {money(leg.guide.price)}" for leg in guided)
-        text = f"Цен {when} в кэше Aviasales пока нет, поэтому перелёт посчитан по лучшему билету ближайших дат: {legs}. Точная цена на ваш день в живом поиске Aviasales, ссылка у рейса."
+        text = f"Цен {when} пока не нашлось, поэтому перелёт посчитан по лучшему билету ближайших дат: {legs}. Точная цена на ваш день в живом поиске, ссылка у рейса."
         checks.append(Check("info", "Цена перелёта по ориентиру", text, kind="tickets"))
     if blind := [leg for leg in flown if not leg.flights and not leg.guide]:
         names = ", ".join(f"{leg.origin} → {leg.destination}" for leg in blind)
-        text = f"{names}: цены на эти даты есть в живом поиске Aviasales, ссылка у рейса. В итог этот перелёт пока не входит."
-        checks.append(Check("info", "Цена в поиске Aviasales", text, kind="tickets"))
+        text = f"{names}: цены на эти даты есть в живом поиске, ссылка у рейса. В итог этот перелёт пока не входит."
+        checks.append(Check("info", "Цена в живом поиске", text, kind="tickets"))
     for leg in flown:
         if leg.pricey:
             text = f"{leg.origin} → {leg.destination}: {money(leg.ticket.price)}, а обычно на этом направлении около {money(leg.usual_rub)}. Это лучший билет, который сходится с датами поездки; если сдвинуть её на несколько дней, перелёт выйдет дешевле."
@@ -266,7 +266,9 @@ def _budget_check(costs: Costs, stops: list[StopPlan], fixed: bool) -> list[Chec
     if not costs.budget:
         return []
     if not costs.over_by and not costs.flights_complete:
-        text = f"Без перелёта, цена которого пока только в поиске Aviasales: {money(costs.total)} из {money(costs.budget)}."
+        text = (
+            f"Без перелёта, цену которого покажет живой поиск: {money(costs.total)} из {money(costs.budget)}."
+        )
         return [Check("info", "Бюджет", text, kind="budget")]
     guide = " Перелёт посчитан по ориентиру ближайших дат." if costs.flights_guide else ""
     if not costs.over_by:

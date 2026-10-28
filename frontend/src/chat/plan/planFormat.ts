@@ -59,7 +59,7 @@ export function billLines(plan: TripPlanEvent): BillLine[] {
   const lines: BillLine[] = []
   if (costs.flights || plan.legs.some((l) => l.mode === 'flight')) {
     const note = !costs.flights_complete
-      ? 'без перелётов, где цены только в поиске Aviasales'
+      ? 'без перелётов, цены которых покажет живой поиск'
       : costs.flights_guide
         ? `${guests} ${plural(guests, ['пассажир', 'пассажира', 'пассажиров'])}, часть по ориентиру ближайших дат`
         : `${guests} ${plural(guests, ['пассажир', 'пассажира', 'пассажиров'])}, все перелёты`

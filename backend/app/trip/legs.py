@@ -60,6 +60,9 @@ class Leg:
     # for the price (a guide, not a ticket for the trip's day), with the live search for that day.
     nearby: RouteFlights | None = None
     guide: Ticket | None = None
+    guide_via: str | None = (
+        None  # no fare on any day: the guide is two tickets with a change here, «Стамбуле»
+    )
     day: date | None = None  # the day the plan has this leg on, for the live search
 
     @property
@@ -166,6 +169,8 @@ class Leg:
             if self.guide:
                 view["guide"] = self.guide.view()
                 view["hours"] = round(self.guide.duration_min / 60 * 2) / 2 or self.hours
+                if self.guide_via:
+                    view["guide_via"] = self.guide_via
             if self.day:
                 view["date"] = self.day.isoformat()
             view["search_link"] = self.search_link

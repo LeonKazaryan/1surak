@@ -175,7 +175,7 @@ def leg_card(leg: Leg) -> dict:
     elif leg.mode == "none":
         view["estimate"] = "нет ни рейса, ни поезда"
     else:
-        view["estimate"] = "прямой рейс, цены в поиске" if leg.direct_on_map else "цены в поиске Aviasales"
+        view["estimate"] = "прямой рейс, цены в поиске" if leg.direct_on_map else "цены в живом поиске"
         if leg.origin.code and leg.destination.code:
             o, d = leg.origin.code, leg.destination.code
             view["search_link"] = search_on(o, d, leg.day) if leg.day else search_link(o, d, leg.month)

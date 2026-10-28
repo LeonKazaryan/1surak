@@ -305,9 +305,11 @@ export interface RouteLeg {
   instead?: LegDetour
   /** No fare cached for the leg's dates: the best ticket of the nearest dates, a guide to the price. */
   guide?: RouteFlight
+  /** No fare on any day: the guide is two tickets with a change here, «Стамбуле». */
+  guide_via?: string | null
   /** The day the plan has a flight without a ticket on, «2027-03-10». */
   date?: string
-  /** The live search on Aviasales for that day. */
+  /** The live search for that day. */
   search_link?: string | null
   /** The ticket costs clearly more than the route usually does that month: the usual fare. */
   usual_rub?: number

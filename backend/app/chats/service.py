@@ -28,7 +28,7 @@ TITLE_MAX_CHARS = 60
 HISTORY_TURNS = 40
 AGENT_ERROR_MESSAGE = "Не получилось получить ответ. Попробуйте ещё раз чуть позже."
 INTERRUPTED_MESSAGE = "Ответ прерван."
-REFRESHED_MESSAGE = "Обновил цены билетов по данным Aviasales. Рядом с ценой видно, как она изменилась."
+REFRESHED_MESSAGE = "Обновил цены билетов. Рядом с ценой видно, как она изменилась."
 
 
 def title_from(query: str) -> str:

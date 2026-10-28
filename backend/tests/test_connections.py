@@ -189,3 +189,31 @@ def test_should_refresh_popular_fares_before_they_expire():
 
     assert early == 0 and due == 1
     assert asked == ["IST", "AYT", "IST"]
+
+
+def test_should_price_a_route_nobody_has_a_fare_for_through_a_big_hub():
+    from app.flights.connections import through_hub
+    from app.flights.network import network
+
+    one, two = (
+        ticket(16_000, "2026-12-02T03:00:00+05:00", 300, 0),
+        ticket(30_000, "2026-11-20T10:00:00+03:00", 600, 1),
+    )
+    fares = {("NQZ", "IST"): one, ("IST", "HRE"): two}
+
+    class Fares:  # Astana → Harare: no fare on any day, only the two halves through Istanbul
+        async def route(self, origin, destination, month=None):
+            found = fares.get((origin, destination))
+            return RouteFlights(found, None, found) if found else None
+
+    guide = asyncio.run(through_hub("NQZ", "HRE", Fares(), network()))
+
+    assert guide is not None and guide.hub.code == "IST" and guide.where == "Стамбуле"
+    assert guide.price == 46_000 and guide.ticket.price == 46_000
+    assert guide.ticket.transfers == 2 and guide.ticket.duration_min == 300 + 600 + 180
+
+    class NoFares:
+        async def route(self, origin, destination, month=None):
+            return None
+
+    assert asyncio.run(through_hub("NQZ", "HRE", NoFares(), network())) is None
